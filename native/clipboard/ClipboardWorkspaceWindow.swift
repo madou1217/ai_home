@@ -13,9 +13,13 @@ private final class LumenWorkspaceHostWindow: NSWindow {
   }
 }
 
-/// Pure native AppKit management window for Paste Lumen V7.
-/// Strictly zero WebView/HTML. Shares `LumenClipboardStore` and `LumenPreviewWindow`
-/// with the separate Orbit NSPanel surface.
+/// Pure native AppKit management window for Paste Lumen V15 (zero WebView/HTML).
+/// Features:
+/// - 10 logical categories with live counts & ContentIdentityRegistry vector glyphs
+/// - Zero prototype global footer bar or sidebar "本地资料库" block (§17.3, A54)
+/// - Continuous interruptible 380ms left/right panel collapse with non-squishing clipping containers
+/// - Lag-free custom splitter drag + keyboard width adjustment (§17.3, A52, A53)
+/// - Preserved selection & scroll context across list/gallery toggle, search, and live captures
 final class ClipboardWorkspaceWindow: NSObject,
   NSWindowDelegate,
   NSTableViewDataSource,
@@ -35,6 +39,15 @@ final class ClipboardWorkspaceWindow: NSObject,
     case item(LumenClipboardItem)
   }
 
+  private struct PaneAnimation {
+    let startTime: TimeInterval
+    let duration: TimeInterval
+    let fromValue: CGFloat
+    let toValue: CGFloat
+    let onUpdate: (CGFloat, Double) -> Void
+    let onFinish: () -> Void
+  }
+
   let window: NSWindow
   private let hostWindow: LumenWorkspaceHostWindow
   private let store = LumenClipboardStore.shared
@@ -48,8 +61,9 @@ final class ClipboardWorkspaceWindow: NSObject,
   private var searchQuery = ""
   private var sortOrder: SortOrder = .newest
   private var isListMode = true
-  private var sidebarHidden = false
-  private var inspectorHidden = false
+  private var sidebarCollapsed = false
+  private var inspectorCollapsed = false
+  private var preferredInspectorWidth: CGFloat = LumenV15Tokens.inspectorDefaultWidth
 
   private var filteredItems: [LumenClipboardItem] = []
   private var listRows: [HistoryRowEntry] = []
@@ -57,38 +71,53 @@ final class ClipboardWorkspaceWindow: NSObject,
   private var multiSelectedIDs: Set<String> = []
   private var selectionAnchorID: String?
 
+  // Continuous interruptible pane animators (§17.3)
+  private var sidebarAnim: PaneAnimation?
+  private var inspectorAnim: PaneAnimation?
+  private var paneTimer: Timer?
+
   // Views
   private let rootContainer = NSView()
+  private let sidebarClipView = NSView()
   private let sidebarView = LumenSidebarView()
   private let sidebarDivider = NSView()
   private let workspaceContainer = NSView()
   private let toolbarView = NSView()
   private let toolbarDivider = NSView()
+  private let toggleSidebarBtn = LumenIconActionButton(glyph: .sidebar, glyphSize: 16, tip: "切换侧边栏")
+  private let addBtn = LumenIconActionButton(glyph: .plus, glyphSize: 16, tip: "新建文本记录 (⌘N)")
   private let headingLabel = NSTextField(labelWithString: "所有记录")
   private let subHeadingLabel = NSTextField(labelWithString: "0 条内容")
   private let searchField = NSSearchField()
   private let sortPopup = NSPopUpButton()
   private let viewSegment = NSSegmentedControl()
-  private let themeButton = NSButton()
+  private let toggleInspectorBtn = LumenIconActionButton(glyph: .inspector, glyphSize: 16, tip: "切换预览面板")
+  private let themeButton = LumenIconActionButton(glyph: .moon, glyphSize: 16, tip: "切换外观")
   private let orbitLaunchButton = NSButton()
-  private let splitView = NSSplitView()
+
+  private let contentArea = NSView()
   private let historyHost = NSView()
   private let listScroll = NSScrollView()
   private let listTable = NSTableView()
   private let galleryScroll = NSScrollView()
   private let galleryCollection = NSCollectionView()
   private let emptyLabel = NSTextField(labelWithString: "暂无剪贴板记录")
+  private let splitterView = LumenPaneSplitterView()
+  private let inspectorClipView = NSView()
   private let inspectorView = LumenInspectorView()
   private let settingsView = LumenSettingsView()
-  private let footerBar = NSView()
-  private let footerDivider = NSView()
-  private let footerLeft = NSTextField(labelWithString: "")
-  private let footerRight = NSTextField(labelWithString: "↑ ↓ 导航 · Space 预览 · ↵ 复制 · ⌘F 搜索")
   private let toastView = LumenToastBannerView()
   private let newClipSheet = LumenNewClipSheet()
 
+  // Animated layout constraints
   private var sidebarWidthConstraint: NSLayoutConstraint?
+  private var sidebarLeadingConstraint: NSLayoutConstraint?
+  private var sidebarDividerWidthConstraint: NSLayoutConstraint?
   private var leftToolsLeadingConstraint: NSLayoutConstraint?
+  private var splitterWidthConstraint: NSLayoutConstraint?
+  private var inspectorWidthConstraint: NSLayoutConstraint?
+  private var inspectorInnerWidthConstraint: NSLayoutConstraint?
+  private var inspectorInnerLeadingConstraint: NSLayoutConstraint?
 
   var onOpenOrbit: (() -> Void)?
   var onQuickOrbitPositionChanged: ((String) -> Void)?
@@ -108,18 +137,19 @@ final class ClipboardWorkspaceWindow: NSObject,
     window.isReleasedWhenClosed = false
     window.minSize = NSSize(width: 820, height: 540)
     window.delegate = self
-    window.setFrameAutosaveName("AIHClipboardWorkspaceV7")
+    window.setFrameAutosaveName("AIHClipboardWorkspaceV15")
     hostWindow.onKeyEvent = { [weak self] event in self?.handleWindowKey(event) ?? false }
 
     buildLayout()
     wireCallbacks()
     applyTheme()
+    updatePaneAccessibilityAndButtons()
 
     observerID = store.addObserver { [weak self] event in
       guard let self else { return }
       switch event {
       case .itemsUpdated:
-        self.rebuildFilteredState()
+        self.rebuildFilteredState(preserveScrollAndSearchFocus: true)
       case .itemsCaptured, .itemRestored:
         break
       case .settingsUpdated:
@@ -130,7 +160,7 @@ final class ClipboardWorkspaceWindow: NSObject,
         if self.activeNav == .settings { self.settingsView.reload() }
       case .preferencesUpdated:
         self.applyTheme()
-        self.rebuildFilteredState()
+        self.rebuildFilteredState(preserveScrollAndSearchFocus: true)
         if self.activeNav == .settings { self.settingsView.reload() }
       case .error(let msg):
         if self.window.isVisible {
@@ -141,6 +171,7 @@ final class ClipboardWorkspaceWindow: NSObject,
   }
 
   deinit {
+    paneTimer?.invalidate()
     if let id = observerID { store.removeObserver(id) }
   }
 
@@ -167,20 +198,33 @@ final class ClipboardWorkspaceWindow: NSObject,
   }
 
   func show() {
+    show(selectingItemID: nil)
+  }
+
+  func show(selectingItemID targetID: String?) {
     store.ensureConfiguredFromLocalConfig()
     guard isAvailable else { return }
     if !hasPositioned {
       hasPositioned = true
-      if !window.setFrameUsingName("AIHClipboardWorkspaceV7") {
+      if !window.setFrameUsingName("AIHClipboardWorkspaceV15") {
         window.setContentSize(NSSize(width: 1220, height: 800))
         window.center()
       }
     }
+    if let targetID {
+      selectedID = targetID
+      multiSelectedIDs.removeAll()
+      if activeNav == .settings {
+        activeNav = .all
+        selectDestination(.all)
+      }
+    }
     store.refreshAll()
-    rebuildFilteredState()
+    rebuildFilteredState(preserveScrollAndSearchFocus: false)
+    if targetID != nil {
+      scrollSelectionIntoView()
+    }
     window.makeKeyAndOrderFront(nil)
-    // Navigation must work on open; the search field would otherwise take the
-    // key view loop's initial responder and swallow arrows and Space.
     window.makeFirstResponder(listTable)
     NSApp.activate(ignoringOtherApps: true)
     _ = NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
@@ -190,13 +234,20 @@ final class ClipboardWorkspaceWindow: NSObject,
     window.orderOut(nil)
   }
 
-  // MARK: Layout
+  // MARK: Layout (Continuous 3-Pane, Zero Global Footer Bar — §17.3, A52–A54)
 
   private func buildLayout() {
     rootContainer.wantsLayer = true
     window.contentView = rootContainer
 
+    // Clipping container for smooth non-squishing left sidebar collapse
+    sidebarClipView.wantsLayer = true
+    sidebarClipView.layer?.masksToBounds = true
+    sidebarClipView.translatesAutoresizingMaskIntoConstraints = false
+
     sidebarView.translatesAutoresizingMaskIntoConstraints = false
+    sidebarClipView.addSubview(sidebarView)
+
     sidebarDivider.wantsLayer = true
     sidebarDivider.translatesAutoresizingMaskIntoConstraints = false
 
@@ -209,30 +260,32 @@ final class ClipboardWorkspaceWindow: NSObject,
     toolbarDivider.wantsLayer = true
     toolbarDivider.translatesAutoresizingMaskIntoConstraints = false
 
-    let toggleSidebarBtn = makeToolbarIconButton("sidebar.leading", tip: "切换侧边栏", action: #selector(toggleSidebar))
-    let addBtn = makeToolbarIconButton("plus", tip: "新建文本记录 (⌘N)", action: #selector(openNewClipSheet))
-    let localFileBtn = makeToolbarIconButton("doc.badge.plus", tip: "预览本地文件", action: #selector(openLocalPreview))
+    for btn in [toggleSidebarBtn, addBtn, toggleInspectorBtn, themeButton] {
+      btn.translatesAutoresizingMaskIntoConstraints = false
+      btn.widthAnchor.constraint(equalToConstant: 32).isActive = true
+      btn.heightAnchor.constraint(equalToConstant: 30).isActive = true
+    }
 
-    headingLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+    headingLabel.font = .systemFont(ofSize: 14.5, weight: .semibold)
     headingLabel.translatesAutoresizingMaskIntoConstraints = false
-    subHeadingLabel.font = .systemFont(ofSize: 10.5)
+    subHeadingLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     subHeadingLabel.translatesAutoresizingMaskIntoConstraints = false
     let titleStack = NSStackView(views: [headingLabel, subHeadingLabel])
     titleStack.orientation = .vertical
     titleStack.alignment = .leading
     titleStack.spacing = 1
 
-    let leftTools = NSStackView(views: [toggleSidebarBtn, titleStack, addBtn, localFileBtn])
+    let leftTools = NSStackView(views: [toggleSidebarBtn, titleStack, addBtn])
     leftTools.orientation = .horizontal
     leftTools.alignment = .centerY
     leftTools.spacing = 10
     leftTools.translatesAutoresizingMaskIntoConstraints = false
 
-    searchField.placeholderString = "搜索记录 (⌘F)"
+    searchField.placeholderString = "搜索内容或来源 (⌘F)"
     searchField.delegate = self
     searchField.sendsSearchStringImmediately = true
     searchField.translatesAutoresizingMaskIntoConstraints = false
-    searchField.widthAnchor.constraint(equalToConstant: 210).isActive = true
+    searchField.widthAnchor.constraint(equalToConstant: 214).isActive = true
 
     sortPopup.addItems(withTitles: ["最新优先", "最早优先", "按标题"])
     sortPopup.target = self
@@ -242,45 +295,34 @@ final class ClipboardWorkspaceWindow: NSObject,
     sortPopup.translatesAutoresizingMaskIntoConstraints = false
 
     viewSegment.segmentCount = 2
-    viewSegment.setImage(LumenIcons.symbol("list.bullet", size: 13), forSegment: 0)
-    viewSegment.setImage(LumenIcons.symbol("square.grid.2x2", size: 13), forSegment: 1)
+    viewSegment.setImage(LumenVectorGlyphs.actionImage(.list, size: 15), forSegment: 0)
+    viewSegment.setImage(LumenVectorGlyphs.actionImage(.grid, size: 15), forSegment: 1)
     viewSegment.selectedSegment = 0
     viewSegment.trackingMode = .selectOne
     viewSegment.target = self
     viewSegment.action = #selector(viewModeChanged)
     viewSegment.translatesAutoresizingMaskIntoConstraints = false
 
-    let toggleInspectorBtn = makeToolbarIconButton("sidebar.trailing", tip: "切换预览面板", action: #selector(toggleInspector))
-
-    themeButton.isBordered = false
-    themeButton.wantsLayer = true
-    themeButton.target = self
-    themeButton.action = #selector(toggleThemeClicked)
-    themeButton.toolTip = "切换外观"
-    themeButton.layer?.cornerRadius = 7
-    themeButton.translatesAutoresizingMaskIntoConstraints = false
-    themeButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    themeButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
-
-    orbitLaunchButton.title = "Orbit"
-    orbitLaunchButton.image = LumenIcons.symbol("sparkles", size: 12)
+    orbitLaunchButton.title = " Orbit"
+    orbitLaunchButton.image = LumenVectorGlyphs.actionImage(.sparkles, size: 13)
     orbitLaunchButton.imagePosition = .imageLeading
     orbitLaunchButton.isBordered = false
     orbitLaunchButton.wantsLayer = true
     orbitLaunchButton.font = .systemFont(ofSize: 11.5, weight: .semibold)
-    orbitLaunchButton.toolTip = "呼出 Orbit 快捷浮层"
+    orbitLaunchButton.toolTip = "呼出 Orbit 快捷浮层 (⌘⌥V)"
     orbitLaunchButton.target = self
     orbitLaunchButton.action = #selector(launchOrbitClicked)
-    orbitLaunchButton.layer?.cornerRadius = 7
+    orbitLaunchButton.layer?.cornerRadius = 8
+    orbitLaunchButton.layer?.cornerCurve = .continuous
     orbitLaunchButton.layer?.borderWidth = 1
     orbitLaunchButton.translatesAutoresizingMaskIntoConstraints = false
     orbitLaunchButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
-    orbitLaunchButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 66).isActive = true
+    orbitLaunchButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 70).isActive = true
 
     let rightTools = NSStackView(views: [searchField, sortPopup, viewSegment, toggleInspectorBtn, themeButton, orbitLaunchButton])
     rightTools.orientation = .horizontal
     rightTools.alignment = .centerY
-    rightTools.spacing = 8
+    rightTools.spacing = 7
     rightTools.translatesAutoresizingMaskIntoConstraints = false
 
     toolbarView.addSubview(leftTools)
@@ -312,9 +354,9 @@ final class ClipboardWorkspaceWindow: NSObject,
 
     // History gallery collection
     let flow = NSCollectionViewFlowLayout()
-    flow.itemSize = NSSize(width: 176, height: 174)
-    flow.minimumInteritemSpacing = 10
-    flow.minimumLineSpacing = 10
+    flow.itemSize = NSSize(width: 184, height: 196)
+    flow.minimumInteritemSpacing = 12
+    flow.minimumLineSpacing = 12
     flow.sectionInset = NSEdgeInsets(top: 12, left: 14, bottom: 16, right: 14)
     galleryCollection.collectionViewLayout = flow
     galleryCollection.register(LumenGalleryCardItem.self, forItemWithIdentifier: LumenGalleryCardItem.reuseID)
@@ -357,60 +399,72 @@ final class ClipboardWorkspaceWindow: NSObject,
       emptyLabel.centerYAnchor.constraint(equalTo: historyHost.centerYAnchor)
     ])
 
-    // SplitView (History | Inspector)
-    splitView.isVertical = true
-    splitView.dividerStyle = .thin
-    splitView.translatesAutoresizingMaskIntoConstraints = false
-    splitView.addArrangedSubview(historyHost)
-    splitView.addArrangedSubview(inspectorView)
-    splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
-    splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 1)
-    inspectorView.widthAnchor.constraint(greaterThanOrEqualToConstant: 290).isActive = true
-    historyHost.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+    // Custom lag-free splitter + clipping Inspector container (§17.3, A52, A53)
+    splitterView.translatesAutoresizingMaskIntoConstraints = false
+
+    inspectorClipView.wantsLayer = true
+    inspectorClipView.layer?.masksToBounds = true
+    inspectorClipView.translatesAutoresizingMaskIntoConstraints = false
+
+    inspectorView.translatesAutoresizingMaskIntoConstraints = false
+    inspectorClipView.addSubview(inspectorView)
+
+    contentArea.wantsLayer = true
+    contentArea.translatesAutoresizingMaskIntoConstraints = false
+    contentArea.addSubview(historyHost)
+    contentArea.addSubview(splitterView)
+    contentArea.addSubview(inspectorClipView)
 
     settingsView.isHidden = true
     settingsView.translatesAutoresizingMaskIntoConstraints = false
 
-    // Footer bar
-    footerBar.wantsLayer = true
-    footerBar.translatesAutoresizingMaskIntoConstraints = false
-    footerDivider.wantsLayer = true
-    footerDivider.translatesAutoresizingMaskIntoConstraints = false
-    footerLeft.font = .systemFont(ofSize: 10.5)
-    footerLeft.translatesAutoresizingMaskIntoConstraints = false
-    footerRight.font = .systemFont(ofSize: 10.5)
-    footerRight.translatesAutoresizingMaskIntoConstraints = false
-    footerBar.addSubview(footerDivider)
-    footerBar.addSubview(footerLeft)
-    footerBar.addSubview(footerRight)
-
     toastView.translatesAutoresizingMaskIntoConstraints = false
 
+    // §17.3 / A54: Zero global bottom footer bar! contentArea & settingsView reach bottomAnchor directly.
     workspaceContainer.addSubview(toolbarView)
-    workspaceContainer.addSubview(splitView)
+    workspaceContainer.addSubview(contentArea)
     workspaceContainer.addSubview(settingsView)
-    workspaceContainer.addSubview(footerBar)
     workspaceContainer.addSubview(toastView)
 
-    rootContainer.addSubview(sidebarView)
+    rootContainer.addSubview(sidebarClipView)
     rootContainer.addSubview(sidebarDivider)
     rootContainer.addSubview(workspaceContainer)
 
-    let sideWidth = sidebarView.widthAnchor.constraint(equalToConstant: 204)
-    sidebarWidthConstraint = sideWidth
-    let leftToolsLeading = leftTools.leadingAnchor.constraint(equalTo: toolbarView.leadingAnchor, constant: 14)
-    leftToolsLeadingConstraint = leftToolsLeading
+    let sideW = sidebarClipView.widthAnchor.constraint(equalToConstant: LumenV15Tokens.sidebarExpandedWidth)
+    let sideLead = sidebarView.leadingAnchor.constraint(equalTo: sidebarClipView.leadingAnchor, constant: 0)
+    let sideDivW = sidebarDivider.widthAnchor.constraint(equalToConstant: 1)
+    let leftLead = leftTools.leadingAnchor.constraint(equalTo: toolbarView.leadingAnchor, constant: 14)
+
+    let splitW = splitterView.widthAnchor.constraint(equalToConstant: 5)
+    let inspW = inspectorClipView.widthAnchor.constraint(equalToConstant: preferredInspectorWidth)
+    let inspInnerW = inspectorView.widthAnchor.constraint(equalToConstant: preferredInspectorWidth)
+    let inspInnerLead = inspectorView.leadingAnchor.constraint(equalTo: inspectorClipView.leadingAnchor, constant: 0)
+
+    sidebarWidthConstraint = sideW
+    sidebarLeadingConstraint = sideLead
+    sidebarDividerWidthConstraint = sideDivW
+    leftToolsLeadingConstraint = leftLead
+    splitterWidthConstraint = splitW
+    inspectorWidthConstraint = inspW
+    inspectorInnerWidthConstraint = inspInnerW
+    inspectorInnerLeadingConstraint = inspInnerLead
 
     NSLayoutConstraint.activate([
-      sidebarView.topAnchor.constraint(equalTo: rootContainer.topAnchor, constant: 28),
-      sidebarView.leadingAnchor.constraint(equalTo: rootContainer.leadingAnchor),
-      sidebarView.bottomAnchor.constraint(equalTo: rootContainer.bottomAnchor),
-      sideWidth,
+      sidebarClipView.topAnchor.constraint(equalTo: rootContainer.topAnchor, constant: 28),
+      sidebarClipView.leadingAnchor.constraint(equalTo: rootContainer.leadingAnchor),
+      sidebarClipView.bottomAnchor.constraint(equalTo: rootContainer.bottomAnchor),
+      sideW,
+
+      // Inner sidebar keeps fixed width so text never squishes while collapsing
+      sidebarView.topAnchor.constraint(equalTo: sidebarClipView.topAnchor),
+      sideLead,
+      sidebarView.widthAnchor.constraint(equalToConstant: LumenV15Tokens.sidebarExpandedWidth),
+      sidebarView.bottomAnchor.constraint(equalTo: sidebarClipView.bottomAnchor),
 
       sidebarDivider.topAnchor.constraint(equalTo: rootContainer.topAnchor),
-      sidebarDivider.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
+      sidebarDivider.leadingAnchor.constraint(equalTo: sidebarClipView.trailingAnchor),
       sidebarDivider.bottomAnchor.constraint(equalTo: rootContainer.bottomAnchor),
-      sidebarDivider.widthAnchor.constraint(equalToConstant: 1),
+      sideDivW,
 
       workspaceContainer.topAnchor.constraint(equalTo: rootContainer.topAnchor),
       workspaceContainer.leadingAnchor.constraint(equalTo: sidebarDivider.trailingAnchor),
@@ -420,9 +474,9 @@ final class ClipboardWorkspaceWindow: NSObject,
       toolbarView.topAnchor.constraint(equalTo: workspaceContainer.topAnchor),
       toolbarView.leadingAnchor.constraint(equalTo: workspaceContainer.leadingAnchor),
       toolbarView.trailingAnchor.constraint(equalTo: workspaceContainer.trailingAnchor),
-      toolbarView.heightAnchor.constraint(equalToConstant: 56),
+      toolbarView.heightAnchor.constraint(equalToConstant: 52),
 
-      leftToolsLeading,
+      leftLead,
       leftTools.centerYAnchor.constraint(equalTo: toolbarView.centerYAnchor),
       rightTools.trailingAnchor.constraint(equalTo: toolbarView.trailingAnchor, constant: -14),
       rightTools.centerYAnchor.constraint(equalTo: toolbarView.centerYAnchor),
@@ -433,30 +487,36 @@ final class ClipboardWorkspaceWindow: NSObject,
       toolbarDivider.bottomAnchor.constraint(equalTo: toolbarView.bottomAnchor),
       toolbarDivider.heightAnchor.constraint(equalToConstant: 1),
 
-      splitView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
-      splitView.leadingAnchor.constraint(equalTo: workspaceContainer.leadingAnchor),
-      splitView.trailingAnchor.constraint(equalTo: workspaceContainer.trailingAnchor),
-      splitView.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
+      contentArea.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
+      contentArea.leadingAnchor.constraint(equalTo: workspaceContainer.leadingAnchor),
+      contentArea.trailingAnchor.constraint(equalTo: workspaceContainer.trailingAnchor),
+      contentArea.bottomAnchor.constraint(equalTo: workspaceContainer.bottomAnchor),
+
+      historyHost.topAnchor.constraint(equalTo: contentArea.topAnchor),
+      historyHost.leadingAnchor.constraint(equalTo: contentArea.leadingAnchor),
+      historyHost.bottomAnchor.constraint(equalTo: contentArea.bottomAnchor),
+      historyHost.trailingAnchor.constraint(equalTo: splitterView.leadingAnchor),
+
+      splitterView.topAnchor.constraint(equalTo: contentArea.topAnchor),
+      splitterView.bottomAnchor.constraint(equalTo: contentArea.bottomAnchor),
+      splitterView.trailingAnchor.constraint(equalTo: inspectorClipView.leadingAnchor),
+      splitW,
+
+      inspectorClipView.topAnchor.constraint(equalTo: contentArea.topAnchor),
+      inspectorClipView.trailingAnchor.constraint(equalTo: contentArea.trailingAnchor),
+      inspectorClipView.bottomAnchor.constraint(equalTo: contentArea.bottomAnchor),
+      inspW,
+
+      // Inner inspector maintains natural width during collapse so content never stretches
+      inspectorView.topAnchor.constraint(equalTo: inspectorClipView.topAnchor),
+      inspInnerLead,
+      inspInnerW,
+      inspectorView.bottomAnchor.constraint(equalTo: inspectorClipView.bottomAnchor),
 
       settingsView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
       settingsView.leadingAnchor.constraint(equalTo: workspaceContainer.leadingAnchor),
       settingsView.trailingAnchor.constraint(equalTo: workspaceContainer.trailingAnchor),
-      settingsView.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
-
-      footerBar.leadingAnchor.constraint(equalTo: workspaceContainer.leadingAnchor),
-      footerBar.trailingAnchor.constraint(equalTo: workspaceContainer.trailingAnchor),
-      footerBar.bottomAnchor.constraint(equalTo: workspaceContainer.bottomAnchor),
-      footerBar.heightAnchor.constraint(equalToConstant: 28),
-
-      footerDivider.topAnchor.constraint(equalTo: footerBar.topAnchor),
-      footerDivider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
-      footerDivider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
-      footerDivider.heightAnchor.constraint(equalToConstant: 1),
-
-      footerLeft.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: 14),
-      footerLeft.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-      footerRight.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -14),
-      footerRight.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+      settingsView.bottomAnchor.constraint(equalTo: workspaceContainer.bottomAnchor),
 
       toastView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor, constant: 12),
       toastView.centerXAnchor.constraint(equalTo: workspaceContainer.centerXAnchor)
@@ -468,21 +528,40 @@ final class ClipboardWorkspaceWindow: NSObject,
       self?.selectDestination(dest)
     }
 
+    toggleSidebarBtn.onClick = { [weak self] in self?.toggleSidebar() }
+    addBtn.onClick = { [weak self] in self?.openNewClipSheet() }
+    toggleInspectorBtn.onClick = { [weak self] in self?.toggleInspector() }
+    themeButton.onClick = { [weak self] in self?.toggleThemeClicked() }
+
+    // Lag-free splitter dragging (§17.3, A53)
+    splitterView.onDragStateChanged = { [weak self] dragging in
+      guard let self else { return }
+      if dragging {
+        self.inspectorAnim = nil
+      }
+    }
+    splitterView.onDragDelta = { [weak self] dx in
+      self?.adjustInspectorWidthImmediately(delta: -dx)
+    }
+    splitterView.onKeyboardStep = { [weak self] delta in
+      self?.adjustInspectorWidthImmediately(delta: delta)
+    }
+
     inspectorView.onCopySingle = { [weak self] item in self?.copyItem(item) }
     inspectorView.onPreviewSingle = { [weak self] item in
       guard let self else { return }
-      // Carry the whole filtered list so the preview queue can step through it.
       let queue = self.filteredItems.isEmpty ? [item] : self.filteredItems
       self.openPreview(items: queue, initialID: item.id)
     }
     inspectorView.onPinSingle = { [weak self] item in self?.togglePin(item) }
+    inspectorView.onEditSingle = { [weak self] item in self?.openEditClipSheet(for: item) }
     inspectorView.onDeleteSingle = { [weak self] item in self?.deleteSingle(item) }
     inspectorView.onBatchPreview = { [weak self] items in self?.openPreview(items: items, initialID: self?.selectedID) }
     inspectorView.onBatchPin = { [weak self] items in self?.batchPin(items) }
     inspectorView.onBatchDelete = { [weak self] items in self?.batchDelete(items) }
     inspectorView.onClearSelection = { [weak self] in
       self?.multiSelectedIDs.removeAll()
-      self?.reloadHistoryPresentation()
+      self?.reloadHistoryPresentation(preserveScroll: true)
       self?.renderInspector()
     }
 
@@ -519,21 +598,6 @@ final class ClipboardWorkspaceWindow: NSObject,
     }
   }
 
-  private func makeToolbarIconButton(_ symbol: String, tip: String, action: Selector) -> NSButton {
-    let btn = NSButton()
-    btn.isBordered = false
-    btn.wantsLayer = true
-    btn.image = LumenIcons.symbol(symbol, size: 14, weight: .medium, description: tip)
-    btn.toolTip = tip
-    btn.target = self
-    btn.action = action
-    btn.layer?.cornerRadius = 7
-    btn.translatesAutoresizingMaskIntoConstraints = false
-    btn.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
-    return btn
-  }
-
   private func makeContextMenu() -> NSMenu {
     let menu = NSMenu(title: "条目操作")
     menu.addItem(withTitle: "复制到剪贴板", action: #selector(contextCopy), keyEquivalent: "")
@@ -543,6 +607,194 @@ final class ClipboardWorkspaceWindow: NSObject,
     menu.addItem(withTitle: "移除记录", action: #selector(contextDelete), keyEquivalent: "")
     menu.items.forEach { $0.target = self }
     return menu
+  }
+
+  // MARK: Continuous Interruptible Panel Collapse & Splitter (§17.3, A52, A53)
+
+  private func ensurePaneTimerRunning() {
+    guard paneTimer == nil else { return }
+    let timer = Timer(timeInterval: 1.0 / 90.0, repeats: true) { [weak self] _ in
+      self?.tickPaneAnimations()
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    paneTimer = timer
+  }
+
+  private func stopPaneTimerIfIdle() {
+    if sidebarAnim == nil && inspectorAnim == nil {
+      paneTimer?.invalidate()
+      paneTimer = nil
+    }
+  }
+
+  private func tickPaneAnimations() {
+    let now = CACurrentMediaTime()
+
+    if let anim = sidebarAnim {
+      let rawT = min(1.0, max(0.0, (now - anim.startTime) / max(0.001, anim.duration)))
+      let eased = LumenMotion.easeFluidPane(rawT)
+      let current = anim.fromValue + (anim.toValue - anim.fromValue) * CGFloat(eased)
+      anim.onUpdate(current, eased)
+      if rawT >= 1.0 {
+        sidebarAnim = nil
+        anim.onFinish()
+      }
+    }
+
+    if let anim = inspectorAnim {
+      let rawT = min(1.0, max(0.0, (now - anim.startTime) / max(0.001, anim.duration)))
+      let eased = LumenMotion.easeFluidPane(rawT)
+      let current = anim.fromValue + (anim.toValue - anim.fromValue) * CGFloat(eased)
+      anim.onUpdate(current, eased)
+      if rawT >= 1.0 {
+        inspectorAnim = nil
+        anim.onFinish()
+      }
+    }
+
+    stopPaneTimerIfIdle()
+  }
+
+  private func toggleSidebar() {
+    sidebarCollapsed.toggle()
+    let targetW: CGFloat = sidebarCollapsed ? 0 : LumenV15Tokens.sidebarExpandedWidth
+    let currentW = sidebarWidthConstraint?.constant ?? (sidebarCollapsed ? LumenV15Tokens.sidebarExpandedWidth : 0)
+
+    // Move focus out if firstResponder was inside collapsing sidebar (§17.3)
+    if sidebarCollapsed, let fr = window.firstResponder as? NSView, fr.isDescendant(of: sidebarClipView) {
+      window.makeFirstResponder(listTable)
+    }
+
+    sidebarClipView.isHidden = false
+    sidebarDivider.isHidden = false
+    updatePaneAccessibilityAndButtons()
+
+    guard LumenMotion.isEnabled else {
+      sidebarAnim = nil
+      applySidebarWidth(targetW)
+      finalizeSidebarState()
+      return
+    }
+
+    sidebarAnim = PaneAnimation(
+      startTime: CACurrentMediaTime(),
+      duration: LumenMotion.paneCollapseDuration,
+      fromValue: currentW,
+      toValue: targetW,
+      onUpdate: { [weak self] width, _ in
+        self?.applySidebarWidth(width)
+      },
+      onFinish: { [weak self] in
+        self?.finalizeSidebarState()
+      }
+    )
+    ensurePaneTimerRunning()
+  }
+
+  private func applySidebarWidth(_ width: CGFloat) {
+    let clamped = max(0, min(LumenV15Tokens.sidebarExpandedWidth, width))
+    let openRatio = clamped / LumenV15Tokens.sidebarExpandedWidth
+    sidebarWidthConstraint?.constant = clamped
+    sidebarDividerWidthConstraint?.constant = openRatio > 0.05 ? 1 : 0
+    // Slight outward slide & fade avoids cramped clipping feel
+    sidebarLeadingConstraint?.constant = -10.0 * (1.0 - openRatio)
+    sidebarView.alphaValue = openRatio
+    // Smoothly clear macOS traffic lights (14 -> 78) as sidebar retracts
+    leftToolsLeadingConstraint?.constant = 14.0 + 64.0 * (1.0 - openRatio)
+  }
+
+  private func finalizeSidebarState() {
+    let collapsed = sidebarCollapsed
+    applySidebarWidth(collapsed ? 0 : LumenV15Tokens.sidebarExpandedWidth)
+    sidebarClipView.isHidden = collapsed
+    sidebarDivider.isHidden = collapsed
+    updatePaneAccessibilityAndButtons()
+  }
+
+  private func toggleInspector() {
+    inspectorCollapsed.toggle()
+    let maxAllowed = max(LumenV15Tokens.inspectorMinWidth, min(LumenV15Tokens.inspectorMaxWidth, contentArea.bounds.width - 320))
+    let expandedW = max(LumenV15Tokens.inspectorMinWidth, min(maxAllowed, preferredInspectorWidth))
+    let targetW: CGFloat = inspectorCollapsed ? 0 : expandedW
+    let currentW = inspectorWidthConstraint?.constant ?? (inspectorCollapsed ? expandedW : 0)
+
+    if inspectorCollapsed, let fr = window.firstResponder as? NSView, fr.isDescendant(of: inspectorClipView) {
+      window.makeFirstResponder(listTable)
+    }
+
+    inspectorInnerWidthConstraint?.constant = expandedW
+    inspectorClipView.isHidden = false
+    splitterView.isHidden = false
+    updatePaneAccessibilityAndButtons()
+
+    guard LumenMotion.isEnabled else {
+      inspectorAnim = nil
+      applyInspectorWidth(targetW, naturalWidth: expandedW)
+      finalizeInspectorState(naturalWidth: expandedW)
+      return
+    }
+
+    inspectorAnim = PaneAnimation(
+      startTime: CACurrentMediaTime(),
+      duration: LumenMotion.paneCollapseDuration,
+      fromValue: currentW,
+      toValue: targetW,
+      onUpdate: { [weak self] width, _ in
+        self?.applyInspectorWidth(width, naturalWidth: expandedW)
+      },
+      onFinish: { [weak self] in
+        self?.finalizeInspectorState(naturalWidth: expandedW)
+      }
+    )
+    ensurePaneTimerRunning()
+  }
+
+  private func applyInspectorWidth(_ width: CGFloat, naturalWidth: CGFloat) {
+    let clamped = max(0, width)
+    let openRatio = naturalWidth > 1 ? min(1, clamped / naturalWidth) : 0
+    inspectorWidthConstraint?.constant = clamped
+    splitterWidthConstraint?.constant = openRatio > 0.05 ? 5 : 0
+    inspectorInnerLeadingConstraint?.constant = 12.0 * (1.0 - openRatio)
+    inspectorView.alphaValue = openRatio
+    splitterView.alphaValue = openRatio
+  }
+
+  private func finalizeInspectorState(naturalWidth: CGFloat) {
+    let collapsed = inspectorCollapsed
+    applyInspectorWidth(collapsed ? 0 : naturalWidth, naturalWidth: naturalWidth)
+    inspectorClipView.isHidden = collapsed
+    splitterView.isHidden = collapsed
+    updatePaneAccessibilityAndButtons()
+  }
+
+  /// Immediate pointer-tracking resize with zero easing lag (§17.3, A53).
+  private func adjustInspectorWidthImmediately(delta: CGFloat) {
+    guard !inspectorCollapsed else { return }
+    inspectorAnim = nil
+    let available = max(LumenV15Tokens.inspectorMinWidth, contentArea.bounds.width - 320)
+    let upper = min(LumenV15Tokens.inspectorMaxWidth, available)
+    let current = inspectorWidthConstraint?.constant ?? preferredInspectorWidth
+    let next = max(LumenV15Tokens.inspectorMinWidth, min(upper, current + delta))
+    preferredInspectorWidth = next
+    inspectorWidthConstraint?.constant = next
+    inspectorInnerWidthConstraint?.constant = next
+    inspectorInnerLeadingConstraint?.constant = 0
+    inspectorView.alphaValue = 1
+  }
+
+  private func updatePaneAccessibilityAndButtons() {
+    let palette = LumenPalette.current(store.preferences)
+    sidebarClipView.setAccessibilityElement(!sidebarCollapsed)
+    inspectorClipView.setAccessibilityElement(!inspectorCollapsed)
+    splitterView.setAccessibilityElement(!inspectorCollapsed)
+    splitterView.setAccessibilityEnabled(!inspectorCollapsed)
+
+    toggleSidebarBtn.configure(palette: palette, toggledOn: sidebarCollapsed)
+    toggleSidebarBtn.setAccessibilityExpanded(!sidebarCollapsed)
+    toggleSidebarBtn.setAccessibilityValue(sidebarCollapsed ? "已收起" : "已展开")
+    toggleInspectorBtn.configure(palette: palette, toggledOn: inspectorCollapsed)
+    toggleInspectorBtn.setAccessibilityExpanded(!inspectorCollapsed)
+    toggleInspectorBtn.setAccessibilityValue(inspectorCollapsed ? "已收起" : "已展开")
   }
 
   // MARK: Theme & State Sync
@@ -557,21 +809,24 @@ final class ClipboardWorkspaceWindow: NSObject,
     toolbarView.layer?.backgroundColor = palette.windowBackground.cgColor
     toolbarDivider.layer?.backgroundColor = palette.border.cgColor
     historyHost.layer?.backgroundColor = palette.windowBackground.cgColor
-    footerBar.layer?.backgroundColor = palette.sidebarBackgroundBottom.cgColor
-    footerDivider.layer?.backgroundColor = palette.border.cgColor
+    splitterView.applyTheme(palette)
 
     headingLabel.textColor = palette.ink
     subHeadingLabel.textColor = palette.muted
     emptyLabel.textColor = palette.muted
-    footerLeft.textColor = palette.muted
-    footerRight.textColor = palette.muted
 
-    themeButton.image = LumenIcons.symbol(palette.isDark ? "sun.max" : "moon", size: 14, weight: .medium)
-    themeButton.contentTintColor = palette.muted
+    addBtn.configure(palette: palette)
+    themeButton.configure(glyph: palette.isDark ? .sun : .moon, tip: "切换外观", palette: palette)
+    orbitLaunchButton.image = LumenVectorGlyphs.actionImage(.sparkles, size: 13, color: palette.accent)
     orbitLaunchButton.contentTintColor = palette.accent
+    orbitLaunchButton.attributedTitle = NSAttributedString(string: " Orbit", attributes: [
+      .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold),
+      .foregroundColor: palette.accent
+    ])
     orbitLaunchButton.layer?.backgroundColor = palette.accentSoft.cgColor
     orbitLaunchButton.layer?.borderColor = palette.accentBorder.cgColor
 
+    updatePaneAccessibilityAndButtons()
     updateSidebar()
     renderInspector()
   }
@@ -591,11 +846,12 @@ final class ClipboardWorkspaceWindow: NSObject,
     multiSelectedIDs.removeAll()
     selectionAnchorID = nil
     let isSettings = dest == .settings
-    splitView.isHidden = isSettings
+    contentArea.isHidden = isSettings
     settingsView.isHidden = !isSettings
     searchField.isHidden = isSettings
     sortPopup.isHidden = isSettings
     viewSegment.isHidden = isSettings
+    toggleInspectorBtn.isHidden = isSettings
     headingLabel.stringValue = dest.title
     if isSettings {
       subHeadingLabel.stringValue = "自定义 Lumen 原生体验"
@@ -604,14 +860,18 @@ final class ClipboardWorkspaceWindow: NSObject,
       store.refreshServers()
       settingsView.reload()
     } else {
-      rebuildFilteredState()
+      rebuildFilteredState(preserveScrollAndSearchFocus: false)
     }
     updateSidebar()
   }
 
-  private func rebuildFilteredState() {
+  private func rebuildFilteredState(preserveScrollAndSearchFocus: Bool) {
     updateSidebar()
     guard activeNav != .settings else { return }
+
+    // Preserve search field selection & history scroll position on live updates (§16.4, §17.3, A44, A53)
+    let savedListOrigin = listScroll.contentView.bounds.origin
+    let savedGalleryOrigin = galleryScroll.contentView.bounds.origin
 
     let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     var list = store.items.filter { item in
@@ -619,7 +879,7 @@ final class ClipboardWorkspaceWindow: NSObject,
       case .all: return true
       case .pinned: return item.pinned
       case .recent: return item.isToday || item.isYesterday
-      case .category(let cat): return item.displayCategory == cat
+      case .category(let cat): return cat == .all || item.logicalCategory == cat
       case .settings: return false
       }
     }
@@ -628,6 +888,7 @@ final class ClipboardWorkspaceWindow: NSObject,
         item.displayTitle.lowercased().contains(q)
           || item.effectiveText.lowercased().contains(q)
           || item.sourceLabel.lowercased().contains(q)
+          || item.contentIdentity.displayName.lowercased().contains(q)
           || item.files.contains(where: { $0.lowercased().contains(q) })
       }
     }
@@ -649,7 +910,7 @@ final class ClipboardWorkspaceWindow: NSObject,
       selectedID = list.first?.id
     }
 
-    // Group rows for list view
+    // Time groups for list view
     listRows = []
     if sortOrder == .title {
       if !list.isEmpty {
@@ -674,20 +935,40 @@ final class ClipboardWorkspaceWindow: NSObject,
     emptyLabel.isHidden = !list.isEmpty
     emptyLabel.stringValue = q.isEmpty ? "暂无剪贴板记录" : "没有匹配“\(searchQuery)”的记录"
 
-    reloadHistoryPresentation()
+    reloadHistoryPresentation(preserveScroll: false)
+    if preserveScrollAndSearchFocus {
+      if isListMode {
+        let maxY = max(0, (listScroll.documentView?.frame.height ?? 0) - listScroll.contentView.bounds.height)
+        listScroll.contentView.scroll(to: NSPoint(x: savedListOrigin.x, y: min(savedListOrigin.y, maxY)))
+        listScroll.reflectScrolledClipView(listScroll.contentView)
+      } else {
+        let maxY = max(0, (galleryScroll.documentView?.frame.height ?? 0) - galleryScroll.contentView.bounds.height)
+        galleryScroll.contentView.scroll(to: NSPoint(x: savedGalleryOrigin.x, y: min(savedGalleryOrigin.y, maxY)))
+        galleryScroll.reflectScrolledClipView(galleryScroll.contentView)
+      }
+    }
     renderInspector()
-    updateFooter()
   }
 
-  private func reloadHistoryPresentation() {
+  private func reloadHistoryPresentation(preserveScroll: Bool) {
+    let savedListOrigin = listScroll.contentView.bounds.origin
+    let savedGalleryOrigin = galleryScroll.contentView.bounds.origin
+
     listScroll.isHidden = !isListMode
     galleryScroll.isHidden = isListMode
     if isListMode {
       listTable.reloadData()
+      if preserveScroll {
+        listScroll.contentView.scroll(to: savedListOrigin)
+        listScroll.reflectScrolledClipView(listScroll.contentView)
+      }
     } else {
       galleryCollection.reloadData()
+      if preserveScroll {
+        galleryScroll.contentView.scroll(to: savedGalleryOrigin)
+        galleryScroll.reflectScrolledClipView(galleryScroll.contentView)
+      }
     }
-    updateFooter()
   }
 
   private func renderInspector() {
@@ -711,13 +992,6 @@ final class ClipboardWorkspaceWindow: NSObject,
     let palette = LumenPalette.current(store.preferences)
     let active = filteredItems.first(where: { $0.id == id })
     inspectorView.render(single: active, batch: [], palette: palette)
-  }
-
-  private func updateFooter() {
-    let total = store.items.count
-    let pinned = store.items.filter(\.pinned).count
-    let multi = multiSelectedIDs.count > 1 ? " · 已选 \(multiSelectedIDs.count) 条" : ""
-    footerLeft.stringValue = "\(total) 条记录 · \(pinned) 条固定\(multi)"
   }
 
   // MARK: Selection Logic (Single + Cmd Toggle + Shift Range)
@@ -747,7 +1021,7 @@ final class ClipboardWorkspaceWindow: NSObject,
     } else {
       selectedID = id
     }
-    reloadHistoryPresentation()
+    reloadHistoryPresentation(preserveScroll: true)
     renderInspector()
     if scrollVisible {
       scrollSelectionIntoView()
@@ -777,8 +1051,11 @@ final class ClipboardWorkspaceWindow: NSObject,
   private func copyItem(_ item: LumenClipboardItem) {
     store.copyToOSClipboard(id: item.id) { [weak self] result in
       switch result {
-      case .success: self?.toastView.show(message: "已复制到剪贴板")
-      case .failure(let err): self?.toastView.show(message: "复制失败：\(err.localizedDescription)")
+      case .success:
+        self?.inspectorView.showCopySucceededFeedback()
+        self?.toastView.show(message: "已复制到剪贴板")
+      case .failure(let err):
+        self?.toastView.show(message: "复制失败：\(err.localizedDescription)")
       }
     }
   }
@@ -832,6 +1109,7 @@ final class ClipboardWorkspaceWindow: NSObject,
       switch result {
       case .success(let restored):
         self?.selectedID = restored.id
+        self?.scrollSelectionIntoView()
         self?.toastView.show(message: "已恢复记录", showUndo: self?.store.canUndoDelete == true)
       case .failure(let err):
         self?.toastView.show(message: err.localizedDescription)
@@ -862,20 +1140,7 @@ final class ClipboardWorkspaceWindow: NSObject,
     }
   }
 
-  @objc private func toggleSidebar() {
-    sidebarHidden.toggle()
-    sidebarWidthConstraint?.constant = sidebarHidden ? 0 : 204
-    leftToolsLeadingConstraint?.constant = sidebarHidden ? 78 : 14
-    sidebarView.isHidden = sidebarHidden
-    sidebarDivider.isHidden = sidebarHidden
-  }
-
-  @objc private func toggleInspector() {
-    inspectorHidden.toggle()
-    inspectorView.isHidden = inspectorHidden
-  }
-
-  @objc private func toggleThemeClicked() {
+  private func toggleThemeClicked() {
     store.updatePreferences { prefs in
       prefs.theme = prefs.theme == .light ? .dark : .light
     }
@@ -885,8 +1150,8 @@ final class ClipboardWorkspaceWindow: NSObject,
     onOpenOrbit?()
   }
 
-  @objc private func openNewClipSheet() {
-    newClipSheet.present(over: window, palette: LumenPalette.current(store.preferences)) { [weak self] text in
+  private func openNewClipSheet() {
+    newClipSheet.present(over: window, initialText: "", title: "新建剪贴板记录", palette: LumenPalette.current(store.preferences)) { [weak self] text in
       self?.store.createTextItem(text: text) { result in
         switch result {
         case .success(let created):
@@ -900,18 +1165,31 @@ final class ClipboardWorkspaceWindow: NSObject,
     }
   }
 
-  @objc private func openLocalPreview() {
-    LumenPreviewWindow.shared.openLocalFilePicker()
+  private func openEditClipSheet(for item: LumenClipboardItem) {
+    newClipSheet.present(over: window, initialText: item.effectiveText, title: "编辑记录", palette: LumenPalette.current(store.preferences)) { [weak self] updatedText in
+      self?.store.updateTextItem(id: item.id, newText: updatedText) { result in
+        switch result {
+        case .success(let saved):
+          self?.selectedID = saved.id
+          self?.toastView.show(message: "已更新记录")
+        case .failure(let err):
+          self?.toastView.show(message: "更新失败：\(err.localizedDescription)")
+        }
+      }
+    }
   }
 
   @objc private func sortChanged() {
     sortOrder = SortOrder(rawValue: sortPopup.indexOfSelectedItem) ?? .newest
-    rebuildFilteredState()
+    rebuildFilteredState(preserveScrollAndSearchFocus: false)
+    scrollSelectionIntoView()
   }
 
   @objc private func viewModeChanged() {
     isListMode = viewSegment.selectedSegment == 0
-    reloadHistoryPresentation()
+    reloadHistoryPresentation(preserveScroll: false)
+    // Preserve selected record & bring it into view on List <-> Gallery switch (§17.3, A53)
+    scrollSelectionIntoView()
   }
 
   @objc private func listRowClicked() {
@@ -946,8 +1224,15 @@ final class ClipboardWorkspaceWindow: NSObject,
   // MARK: Keyboard Navigation
 
   private func handleWindowKey(_ event: NSEvent) -> Bool {
-    guard activeNav != .settings else { return false }
     let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+
+    // ⌘⌥V opens Orbit from Library (standalone AI Home.app)
+    if mods == [.command, .option], event.keyCode == 9 {
+      onOpenOrbit?()
+      return true
+    }
+
+    guard activeNav != .settings else { return false }
     let isEditingSearch = ((window.firstResponder as? NSTextView)?.delegate as? NSSearchField) === searchField
 
     if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "f" {
@@ -967,7 +1252,7 @@ final class ClipboardWorkspaceWindow: NSObject,
     }
     if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "a" {
       multiSelectedIDs = Set(filteredItems.map(\.id))
-      reloadHistoryPresentation()
+      reloadHistoryPresentation(preserveScroll: true)
       renderInspector()
       return true
     }
@@ -1004,7 +1289,7 @@ final class ClipboardWorkspaceWindow: NSObject,
         openPreview(items: filteredItems, initialID: item.id)
       }
       return true
-    case 36: // Enter -> Copy
+    case 36, 76: // Enter -> Copy
       if let item = filteredItems.first(where: { $0.id == selectedID }) {
         copyItem(item)
         return true
@@ -1020,7 +1305,7 @@ final class ClipboardWorkspaceWindow: NSObject,
     case 53: // Esc -> clear multi-select
       if !multiSelectedIDs.isEmpty {
         multiSelectedIDs.removeAll()
-        reloadHistoryPresentation()
+        reloadHistoryPresentation(preserveScroll: true)
         renderInspector()
         return true
       }
@@ -1043,7 +1328,7 @@ final class ClipboardWorkspaceWindow: NSObject,
     guard let field = obj.object as? NSSearchField, field === searchField else { return }
     searchQuery = field.stringValue
     multiSelectedIDs.removeAll()
-    rebuildFilteredState()
+    rebuildFilteredState(preserveScrollAndSearchFocus: true)
   }
 
   // MARK: NSTableViewDataSource / Delegate
@@ -1051,10 +1336,10 @@ final class ClipboardWorkspaceWindow: NSObject,
   func numberOfRows(in tableView: NSTableView) -> Int { listRows.count }
 
   func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-    guard row < listRows.count else { return 58 }
+    guard row < listRows.count else { return 60 }
     switch listRows[row] {
     case .sectionHeader: return 28
-    case .item: return 58
+    case .item: return 60
     }
   }
 
@@ -1071,11 +1356,11 @@ final class ClipboardWorkspaceWindow: NSObject,
     case .sectionHeader(let title, let count):
       let box = NSView()
       let left = NSTextField(labelWithString: title)
-      left.font = .systemFont(ofSize: 10.5, weight: .semibold)
+      left.font = .systemFont(ofSize: 11, weight: .semibold)
       left.textColor = palette.muted
       left.translatesAutoresizingMaskIntoConstraints = false
       let right = NSTextField(labelWithString: "\(count) 条")
-      right.font = .systemFont(ofSize: 10)
+      right.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
       right.textColor = palette.muted
       right.translatesAutoresizingMaskIntoConstraints = false
       box.addSubview(left)
@@ -1122,6 +1407,17 @@ final class ClipboardWorkspaceWindow: NSObject,
   }
 
   // MARK: NSWindowDelegate
+
+  func windowDidResize(_ notification: Notification) {
+    // Keep preferredInspectorWidth safely clamped if window narrows below history minimum
+    guard !inspectorCollapsed, inspectorAnim == nil else { return }
+    let available = max(LumenV15Tokens.inspectorMinWidth, contentArea.bounds.width - 320)
+    let clamped = min(preferredInspectorWidth, available)
+    if let current = inspectorWidthConstraint?.constant, abs(current - clamped) > 0.5 {
+      inspectorWidthConstraint?.constant = clamped
+      inspectorInnerWidthConstraint?.constant = clamped
+    }
+  }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     window.orderOut(nil)

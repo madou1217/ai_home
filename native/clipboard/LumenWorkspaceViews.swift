@@ -9,12 +9,12 @@ final class LumenFlippedView: NSView {
   override var isFlipped: Bool { true }
 }
 
-/// Sidebar navigation destinations matching Lumen V7.
+/// Sidebar navigation destinations matching Lumen V15 (10 logical categories).
 enum LumenNavDestination: Hashable {
   case all
   case recent
   case pinned
-  case category(LumenDisplayCategory)
+  case category(LumenLogicalCategory)
   case settings
 
   var title: String {
@@ -28,7 +28,310 @@ enum LumenNavDestination: Hashable {
   }
 }
 
-// MARK: - Sidebar View
+// MARK: - Unified Interactive Vector Action Button (32×32 Hit Target, Neutral-to-Danger Hover, §13.1)
+
+final class LumenIconActionButton: NSView {
+  var onClick: (() -> Void)?
+
+  private let glyphView = NSImageView()
+  private var trackingArea: NSTrackingArea?
+  private var glyph: LumenActionGlyph
+  private var glyphSize: CGFloat
+  private var normalTint: NSColor = .secondaryLabelColor
+  private var hoverTint: NSColor = .labelColor
+  private var hoverBg: NSColor = NSColor.labelColor.withAlphaComponent(0.08)
+  private var activeBg: NSColor = .clear
+  private var isDanger = false
+  private var isHovered = false
+  private var isPressed = false
+  var isEnabled = true {
+    didSet { updateAppearance(animated: false) }
+  }
+  var isToggledOn = false {
+    didSet { updateAppearance(animated: false) }
+  }
+
+  init(glyph: LumenActionGlyph, glyphSize: CGFloat = 18, tip: String, isDanger: Bool = false) {
+    self.glyph = glyph
+    self.glyphSize = glyphSize
+    self.isDanger = isDanger
+    super.init(frame: .zero)
+    wantsLayer = true
+    layer?.cornerRadius = 9
+    layer?.cornerCurve = .continuous
+
+    glyphView.imageScaling = .scaleProportionallyDown
+    glyphView.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(glyphView)
+    NSLayoutConstraint.activate([
+      glyphView.centerXAnchor.constraint(equalTo: centerXAnchor),
+      glyphView.centerYAnchor.constraint(equalTo: centerYAnchor),
+      glyphView.widthAnchor.constraint(equalToConstant: glyphSize),
+      glyphView.heightAnchor.constraint(equalToConstant: glyphSize)
+    ])
+
+    toolTip = tip
+    setAccessibilityRole(.button)
+    setAccessibilityLabel(tip)
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  func configure(glyph nextGlyph: LumenActionGlyph? = nil, tip: String? = nil, palette: LumenPalette, toggledOn: Bool = false, enabled: Bool = true) {
+    if let nextGlyph { glyph = nextGlyph }
+    if let tip {
+      toolTip = tip
+      setAccessibilityLabel(tip)
+    }
+    isToggledOn = toggledOn
+    isEnabled = enabled
+    normalTint = toggledOn ? palette.accent : palette.muted
+    hoverTint = isDanger ? palette.danger : (toggledOn ? palette.accent : palette.ink)
+    hoverBg = isDanger
+      ? palette.danger.withAlphaComponent(palette.isDark ? 0.18 : 0.10)
+      : (palette.isDark ? NSColor.white.withAlphaComponent(0.09) : NSColor(srgbRed: 0.56, green: 0.67, blue: 0.85, alpha: 0.16))
+    activeBg = toggledOn ? palette.accentSoft : .clear
+    updateAppearance(animated: false)
+  }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let existing = trackingArea { removeTrackingArea(existing) }
+    let area = NSTrackingArea(
+      rect: bounds,
+      options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+      owner: self,
+      userInfo: nil
+    )
+    addTrackingArea(area)
+    trackingArea = area
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    guard isEnabled else { return }
+    isHovered = true
+    updateAppearance(animated: true)
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    isHovered = false
+    isPressed = false
+    updateAppearance(animated: true)
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    guard isEnabled else { return }
+    isPressed = true
+    updateAppearance(animated: true)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    guard isEnabled else { return }
+    let wasPressed = isPressed
+    isPressed = false
+    let local = convert(event.locationInWindow, from: nil)
+    updateAppearance(animated: true)
+    if wasPressed && bounds.contains(local) {
+      onClick?()
+    }
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    guard isEnabled else { return false }
+    onClick?()
+    return true
+  }
+
+  private func updateAppearance(animated: Bool) {
+    let color: NSColor
+    if !isEnabled {
+      color = normalTint.withAlphaComponent(0.35)
+    } else if isHovered {
+      color = hoverTint
+    } else {
+      color = normalTint
+    }
+    glyphView.image = LumenVectorGlyphs.actionImage(glyph, size: glyphSize, color: color)
+
+    let bg: NSColor = (!isEnabled) ? .clear : (isHovered ? hoverBg : activeBg)
+    CATransaction.begin()
+    CATransaction.setDisableActions(!(animated && LumenMotion.isEnabled))
+    CATransaction.setAnimationDuration(0.16)
+    layer?.backgroundColor = bg.cgColor
+    CATransaction.commit()
+
+    if let l = layer {
+      let cx = bounds.midX
+      let cy = bounds.midY
+      let sc: CGFloat = isPressed ? 0.91 : 1.0
+      var t = CATransform3DIdentity
+      if sc != 1.0 {
+        t = CATransform3DTranslate(t, cx, cy, 0)
+        t = CATransform3DScale(t, sc, sc, 1)
+        t = CATransform3DTranslate(t, -cx, -cy, 0)
+      }
+      if animated && LumenMotion.isEnabled {
+        let cur = l.presentation()?.transform ?? l.transform
+        let anim = CABasicAnimation(keyPath: "transform")
+        anim.fromValue = NSValue(caTransform3D: cur)
+        anim.toValue = NSValue(caTransform3D: t)
+        anim.duration = 0.18
+        anim.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.78, 0.24, 1)
+        l.transform = t
+        l.add(anim, forKey: "btnPress")
+      } else {
+        l.removeAnimation(forKey: "btnPress")
+        l.transform = t
+      }
+    }
+  }
+}
+
+// MARK: - Lag-Free Draggable Inspector Splitter (§17.3, A53)
+
+final class LumenPaneSplitterView: NSView {
+  var onDragDelta: ((CGFloat) -> Void)?
+  var onDragStateChanged: ((Bool) -> Void)?
+  var onKeyboardStep: ((CGFloat) -> Void)?
+
+  private let hairline = NSView()
+  private var trackingArea: NSTrackingArea?
+  private var lastWindowX: CGFloat?
+  private var isHovered = false
+  private var isDragging = false
+  private var cursorPushed = false
+  private var palette: LumenPalette = .light
+
+  override var acceptsFirstResponder: Bool { true }
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+
+    hairline.wantsLayer = true
+    hairline.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(hairline)
+    NSLayoutConstraint.activate([
+      hairline.centerXAnchor.constraint(equalTo: centerXAnchor),
+      hairline.topAnchor.constraint(equalTo: topAnchor),
+      hairline.bottomAnchor.constraint(equalTo: bottomAnchor),
+      hairline.widthAnchor.constraint(equalToConstant: 1)
+    ])
+
+    setAccessibilityRole(.splitter)
+    setAccessibilityLabel("调整预览面板宽度")
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  func applyTheme(_ next: LumenPalette) {
+    palette = next
+    updateHairlineColor()
+  }
+
+  private func updateHairlineColor() {
+    if isDragging || isHovered {
+      hairline.layer?.backgroundColor = palette.accent.withAlphaComponent(0.65).cgColor
+    } else {
+      hairline.layer?.backgroundColor = palette.border.cgColor
+    }
+  }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let existing = trackingArea { removeTrackingArea(existing) }
+    let area = NSTrackingArea(
+      rect: bounds,
+      options: [.activeAlways, .mouseEnteredAndExited, .cursorUpdate, .inVisibleRect],
+      owner: self,
+      userInfo: nil
+    )
+    addTrackingArea(area)
+    trackingArea = area
+  }
+
+  private func pushResizeCursor() {
+    guard !cursorPushed else { return }
+    cursorPushed = true
+    NSCursor.resizeLeftRight.push()
+  }
+
+  private func popResizeCursor() {
+    guard cursorPushed else { return }
+    cursorPushed = false
+    NSCursor.pop()
+  }
+
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    super.viewWillMove(toWindow: newWindow)
+    if newWindow == nil {
+      isHovered = false
+      isDragging = false
+      popResizeCursor()
+    }
+  }
+
+  override func cursorUpdate(with event: NSEvent) {
+    NSCursor.resizeLeftRight.set()
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    isHovered = true
+    pushResizeCursor()
+    updateHairlineColor()
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    isHovered = false
+    if !isDragging {
+      popResizeCursor()
+    }
+    updateHairlineColor()
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    isDragging = true
+    lastWindowX = event.locationInWindow.x
+    pushResizeCursor()
+    onDragStateChanged?(true)
+    updateHairlineColor()
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard isDragging, let prevX = lastWindowX else { return }
+    let currentX = event.locationInWindow.x
+    let dx = currentX - prevX
+    lastWindowX = currentX
+    if abs(dx) > 0.1 {
+      onDragDelta?(dx)
+    }
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    if isDragging {
+      isDragging = false
+      lastWindowX = nil
+      onDragStateChanged?(false)
+      if !isHovered {
+        popResizeCursor()
+      }
+      updateHairlineColor()
+    }
+  }
+
+  override func keyDown(with event: NSEvent) {
+    switch event.keyCode {
+    case 123: // Left widens inspector
+      onKeyboardStep?(20)
+    case 124: // Right narrows inspector
+      onKeyboardStep?(-20)
+    default:
+      super.keyDown(with: event)
+    }
+  }
+}
+
+// MARK: - V15 Sidebar View (Ten Categories, Zero Prototype Status Block — §17.3, A54)
 
 final class LumenSidebarView: NSView {
   private let gradientLayer = CAGradientLayer()
@@ -39,11 +342,8 @@ final class LumenSidebarView: NSView {
   private let navStack = NSStackView()
   private let bottomDivider = NSView()
   private let settingsButton = NSButton()
-  private let statusDot = NSView()
-  private let statusTitle = NSTextField(labelWithString: "本地资料库")
-  private let statusSub = NSTextField(labelWithString: "等待连接")
 
-  private var buttonsByDest: [LumenNavDestination: (NSButton, NSTextField?)] = [:]
+  private var buttonsByDest: [LumenNavDestination: (button: NSButton, countLabel: NSTextField?, iconView: NSView)] = [:]
   private var activeDestination: LumenNavDestination = .all
   var onSelectDestination: ((LumenNavDestination) -> Void)?
 
@@ -87,7 +387,7 @@ final class LumenSidebarView: NSView {
 
     navStack.orientation = .vertical
     navStack.alignment = .leading
-    navStack.spacing = 3
+    navStack.spacing = 2
     navStack.translatesAutoresizingMaskIntoConstraints = false
 
     let docView = LumenFlippedView()
@@ -102,61 +402,45 @@ final class LumenSidebarView: NSView {
     scrollView.translatesAutoresizingMaskIntoConstraints = false
 
     addSectionHeader("资料库")
-    addNavRow(.all, symbol: "square.stack.3d.up", showCount: true)
-    addNavRow(.recent, symbol: "clock", showCount: false)
-    addNavRow(.pinned, symbol: "pin", showCount: true)
+    addActionNavRow(.all, actionGlyph: .all, showCount: true)
+    addActionNavRow(.pinned, actionGlyph: .pin, showCount: true)
+    addActionNavRow(.recent, actionGlyph: .clock, showCount: false)
 
     let spacer = NSView()
     spacer.translatesAutoresizingMaskIntoConstraints = false
     spacer.heightAnchor.constraint(equalToConstant: 12).isActive = true
     navStack.addArrangedSubview(spacer)
 
-    addSectionHeader("智能分类")
-    for category in LumenDisplayCategory.allCases {
-      addNavRow(.category(category), symbol: category.symbolName, showCount: true)
+    // Ten-category navigation: "所有记录" covers `.all`, followed by all 9 logical categories in fixed order (§3.2, §18.2)
+    addSectionHeader("内容类型")
+    for category in LumenLogicalCategory.filterableCategories {
+      addCategoryNavRow(category)
     }
 
     bottomDivider.wantsLayer = true
     bottomDivider.translatesAutoresizingMaskIntoConstraints = false
 
-    configureNavButton(settingsButton, dest: .settings, title: "偏好设置", symbol: "gearshape", countLabel: nil)
-    buttonsByDest[.settings] = (settingsButton, nil)
+    let settingsIcon = NSImageView()
+    settingsIcon.imageScaling = .scaleProportionallyDown
+    settingsIcon.translatesAutoresizingMaskIntoConstraints = false
+    configureNavButton(settingsButton, dest: .settings, title: "偏好设置", iconView: settingsIcon, countLabel: nil)
+    buttonsByDest[.settings] = (settingsButton, nil, settingsIcon)
 
-    statusDot.wantsLayer = true
-    statusDot.layer?.cornerRadius = 3.5
-    statusDot.translatesAutoresizingMaskIntoConstraints = false
-    statusTitle.font = .systemFont(ofSize: 11, weight: .semibold)
-    statusTitle.translatesAutoresizingMaskIntoConstraints = false
-    statusSub.font = .systemFont(ofSize: 10)
-    statusSub.lineBreakMode = .byTruncatingTail
-    statusSub.translatesAutoresizingMaskIntoConstraints = false
-
-    let statusText = NSStackView(views: [statusTitle, statusSub])
-    statusText.orientation = .vertical
-    statusText.alignment = .leading
-    statusText.spacing = 1
-    statusText.translatesAutoresizingMaskIntoConstraints = false
-
-    let statusRow = NSStackView(views: [statusDot, statusText])
-    statusRow.orientation = .horizontal
-    statusRow.alignment = .centerY
-    statusRow.spacing = 8
-    statusRow.translatesAutoresizingMaskIntoConstraints = false
-
+    // §17.3 / A54: No prototype "本地资料库 / xxx 条记录" footer status block.
+    // Only the divider and 偏好设置 remain at the bottom of the sidebar.
     addSubview(brandRow)
     addSubview(scrollView)
     addSubview(bottomDivider)
     addSubview(settingsButton)
-    addSubview(statusRow)
 
     NSLayoutConstraint.activate([
       brandMark.widthAnchor.constraint(equalToConstant: 32),
       brandMark.heightAnchor.constraint(equalToConstant: 32),
-      brandRow.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+      brandRow.topAnchor.constraint(equalTo: topAnchor, constant: 14),
       brandRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
       brandRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
 
-      scrollView.topAnchor.constraint(equalTo: brandRow.bottomAnchor, constant: 16),
+      scrollView.topAnchor.constraint(equalTo: brandRow.bottomAnchor, constant: 14),
       scrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
       scrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
       scrollView.bottomAnchor.constraint(equalTo: bottomDivider.topAnchor, constant: -8),
@@ -174,20 +458,14 @@ final class LumenSidebarView: NSView {
 
       settingsButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
       settingsButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-      settingsButton.bottomAnchor.constraint(equalTo: statusRow.topAnchor, constant: -8),
-      settingsButton.heightAnchor.constraint(equalToConstant: 34),
-
-      statusDot.widthAnchor.constraint(equalToConstant: 7),
-      statusDot.heightAnchor.constraint(equalToConstant: 7),
-      statusRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-      statusRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-      statusRow.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
+      settingsButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+      settingsButton.heightAnchor.constraint(equalToConstant: 34)
     ])
   }
 
   private func addSectionHeader(_ text: String) {
     let label = NSTextField(labelWithString: text)
-    label.font = .systemFont(ofSize: 10, weight: .semibold)
+    label.font = .systemFont(ofSize: 11, weight: .medium)
     label.textColor = LumenPalette.current().muted
     label.translatesAutoresizingMaskIntoConstraints = false
     let wrap = NSView()
@@ -202,30 +480,44 @@ final class LumenSidebarView: NSView {
     wrap.widthAnchor.constraint(equalTo: navStack.widthAnchor).isActive = true
   }
 
-  private func addNavRow(_ dest: LumenNavDestination, symbol: String, showCount: Bool) {
+  private func addActionNavRow(_ dest: LumenNavDestination, actionGlyph: LumenActionGlyph, showCount: Bool) {
     let btn = NSButton()
+    let icon = NSImageView()
+    icon.image = LumenVectorGlyphs.actionImage(actionGlyph, size: 16)
+    icon.imageScaling = .scaleProportionallyDown
+    icon.translatesAutoresizingMaskIntoConstraints = false
     let countLbl: NSTextField? = showCount ? NSTextField(labelWithString: "0") : nil
-    configureNavButton(btn, dest: dest, title: dest.title, symbol: symbol, countLabel: countLbl)
-    buttonsByDest[dest] = (btn, countLbl)
+    configureNavButton(btn, dest: dest, title: dest.title, iconView: icon, countLabel: countLbl)
+    buttonsByDest[dest] = (btn, countLbl, icon)
     navStack.addArrangedSubview(btn)
     btn.widthAnchor.constraint(equalTo: navStack.widthAnchor).isActive = true
-    btn.heightAnchor.constraint(equalToConstant: 33).isActive = true
+    btn.heightAnchor.constraint(equalToConstant: 32).isActive = true
   }
 
-  private func configureNavButton(_ btn: NSButton, dest: LumenNavDestination, title: String, symbol: String, countLabel: NSTextField?) {
+  private func addCategoryNavRow(_ category: LumenLogicalCategory) {
+    let dest = LumenNavDestination.category(category)
+    let btn = NSButton()
+    let glyphView = LumenIdentityGlyphView(size: 17)
+    glyphView.translatesAutoresizingMaskIntoConstraints = false
+    let countLbl = NSTextField(labelWithString: "0")
+    configureNavButton(btn, dest: dest, title: category.label, iconView: glyphView, countLabel: countLbl)
+    buttonsByDest[dest] = (btn, countLbl, glyphView)
+    navStack.addArrangedSubview(btn)
+    btn.widthAnchor.constraint(equalTo: navStack.widthAnchor).isActive = true
+    btn.heightAnchor.constraint(equalToConstant: 31).isActive = true
+  }
+
+  private func configureNavButton(_ btn: NSButton, dest: LumenNavDestination, title: String, iconView: NSView, countLabel: NSTextField?) {
     btn.title = ""
     btn.isBordered = false
     btn.wantsLayer = true
-    btn.layer?.cornerRadius = 8
+    btn.layer?.cornerRadius = 9
     btn.layer?.cornerCurve = .continuous
     btn.target = self
     btn.action = #selector(navButtonClicked(_:))
     btn.tag = tagForDestination(dest)
+    btn.setAccessibilityLabel(title)
     btn.translatesAutoresizingMaskIntoConstraints = false
-
-    let icon = NSImageView(image: LumenIcons.symbol(symbol, size: 14, weight: .medium))
-    icon.tag = 101
-    icon.translatesAutoresizingMaskIntoConstraints = false
 
     let label = NSTextField(labelWithString: title)
     label.tag = 102
@@ -233,21 +525,22 @@ final class LumenSidebarView: NSView {
     label.lineBreakMode = .byTruncatingTail
     label.translatesAutoresizingMaskIntoConstraints = false
 
-    btn.addSubview(icon)
+    btn.addSubview(iconView)
     btn.addSubview(label)
 
     var constraints: [NSLayoutConstraint] = [
-      icon.leadingAnchor.constraint(equalTo: btn.leadingAnchor, constant: 10),
-      icon.centerYAnchor.constraint(equalTo: btn.centerYAnchor),
-      icon.widthAnchor.constraint(equalToConstant: 18),
-      icon.heightAnchor.constraint(equalToConstant: 18),
-      label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
+      iconView.leadingAnchor.constraint(equalTo: btn.leadingAnchor, constant: 10),
+      iconView.centerYAnchor.constraint(equalTo: btn.centerYAnchor),
+      iconView.widthAnchor.constraint(equalToConstant: 17),
+      iconView.heightAnchor.constraint(equalToConstant: 17),
+      label.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 9),
       label.centerYAnchor.constraint(equalTo: btn.centerYAnchor)
     ]
 
     if let countLabel {
-      countLabel.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
+      countLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
       countLabel.alignment = .right
+      countLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
       countLabel.translatesAutoresizingMaskIntoConstraints = false
       btn.addSubview(countLabel)
       constraints.append(contentsOf: [
@@ -267,7 +560,7 @@ final class LumenSidebarView: NSView {
     case .recent: return 2
     case .pinned: return 3
     case .settings: return 4
-    case .category(let cat): return 100 + (LumenDisplayCategory.allCases.firstIndex(of: cat) ?? 0)
+    case .category(let cat): return 100 + (LumenLogicalCategory.allCases.firstIndex(of: cat) ?? 0)
     }
   }
 
@@ -279,8 +572,8 @@ final class LumenSidebarView: NSView {
     case 4: return .settings
     default:
       let idx = tag - 100
-      if idx >= 0, idx < LumenDisplayCategory.allCases.count {
-        return .category(LumenDisplayCategory.allCases[idx])
+      if idx >= 0, idx < LumenLogicalCategory.allCases.count {
+        return .category(LumenLogicalCategory.allCases[idx])
       }
       return .all
     }
@@ -297,30 +590,37 @@ final class LumenSidebarView: NSView {
     brandTitle.textColor = palette.ink
     brandSub.textColor = palette.muted
     bottomDivider.layer?.backgroundColor = palette.border.cgColor
-    statusTitle.textColor = palette.ink
-    statusSub.textColor = palette.muted
 
-    let capturing = status?.capture.running == true
-    statusDot.layer?.backgroundColor = (connected ? (capturing ? palette.success : palette.warning) : palette.muted).cgColor
-    statusTitle.stringValue = connected ? (capturing ? "本机实时采集" : "本地资料库") : "未连接服务"
-    statusSub.stringValue = "\(items.count) 条记录 · \(items.filter(\.pinned).count) 固定"
-
-    var counts: [LumenDisplayCategory: Int] = [:]
+    var counts: [LumenLogicalCategory: Int] = [:]
     for item in items {
-      counts[item.displayCategory, default: 0] += 1
+      counts[item.logicalCategory, default: 0] += 1
     }
 
-    for (dest, pair) in buttonsByDest {
-      let (btn, countLbl) = pair
+    for (dest, tuple) in buttonsByDest {
+      let (btn, countLbl, iconView) = tuple
       let isSelected = dest == activeDestination
-      // Express active selection with full rounded pill + crisp 1px border (no thick left bar).
+
+      // Active state via subtle rounded pill + 1px border (no thick left bar)
       btn.layer?.backgroundColor = (isSelected ? palette.accentSoft : NSColor.clear).cgColor
       btn.layer?.borderWidth = isSelected ? 1 : 0
       btn.layer?.borderColor = (isSelected ? palette.accentBorder : NSColor.clear).cgColor
 
-      if let icon = btn.viewWithTag(101) as? NSImageView {
-        icon.contentTintColor = isSelected ? palette.accent : palette.muted
+      switch dest {
+      case .category(let cat):
+        if let glyph = iconView as? LumenIdentityGlyphView {
+          let id = LumenContentIdentityRegistry.shared.identity(forCategory: cat)
+          glyph.configure(identity: id, isDark: palette.isDark, size: 17, overrideColor: isSelected ? palette.accent : nil)
+        }
+      case .all:
+        (iconView as? NSImageView)?.image = LumenVectorGlyphs.actionImage(.all, size: 16, color: isSelected ? palette.accent : palette.muted)
+      case .pinned:
+        (iconView as? NSImageView)?.image = LumenVectorGlyphs.actionImage(isSelected ? .pinFilled : .pin, size: 16, color: isSelected ? palette.accent : palette.muted)
+      case .recent:
+        (iconView as? NSImageView)?.image = LumenVectorGlyphs.actionImage(.clock, size: 16, color: isSelected ? palette.accent : palette.muted)
+      case .settings:
+        (iconView as? NSImageView)?.image = LumenVectorGlyphs.actionImage(.settings, size: 16, color: isSelected ? palette.accent : palette.muted)
       }
+
       if let label = btn.viewWithTag(102) as? NSTextField {
         label.textColor = isSelected ? palette.accent : palette.ink
         label.font = .systemFont(ofSize: 12.5, weight: isSelected ? .semibold : .regular)
@@ -338,51 +638,90 @@ final class LumenSidebarView: NSView {
   }
 }
 
-// MARK: - History List Row View (No Left Accent Bar)
+// MARK: - V15 History List Row View (ContentIdentityRegistry Glyphs + Source Column, No Left Bar)
 
 final class LumenHistoryRowView: NSView {
   private let thumbBox = NSView()
   private let thumbImage = NSImageView()
+  private let thumbGlyph = LumenIdentityGlyphView(size: 25)
+  private let cornerBadge = NSView()
+  private let cornerGlyph = LumenIdentityGlyphView(size: 12)
   private let titleLabel = NSTextField(labelWithString: "")
   private let excerptLabel = NSTextField(labelWithString: "")
+  private let sourceIconView = NSImageView()
+  private let sourceFallback = NSView()
+  private let sourceLetter = NSTextField(labelWithString: "")
+  private let sourceLabel = NSTextField(labelWithString: "")
   private let timeLabel = NSTextField(labelWithString: "")
   private let pinIcon = NSImageView()
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
     wantsLayer = true
-    layer?.cornerRadius = 9
+    layer?.cornerRadius = 10
     layer?.cornerCurve = .continuous
 
     thumbBox.wantsLayer = true
-    thumbBox.layer?.cornerRadius = 8
+    thumbBox.layer?.cornerRadius = 10
+    thumbBox.layer?.cornerCurve = .continuous
     thumbBox.layer?.masksToBounds = true
+    thumbBox.layer?.borderWidth = 1
     thumbBox.translatesAutoresizingMaskIntoConstraints = false
 
     thumbImage.imageScaling = .scaleProportionallyUpOrDown
     thumbImage.translatesAutoresizingMaskIntoConstraints = false
-    thumbBox.addSubview(thumbImage)
+    thumbGlyph.translatesAutoresizingMaskIntoConstraints = false
 
+    cornerBadge.wantsLayer = true
+    cornerBadge.layer?.cornerRadius = 4
+    cornerBadge.layer?.shadowColor = NSColor(srgbRed: 0.1, green: 0.17, blue: 0.29, alpha: 1).cgColor
+    cornerBadge.layer?.shadowOpacity = 0.22
+    cornerBadge.layer?.shadowRadius = 2
+    cornerBadge.layer?.shadowOffset = NSSize(width: 0, height: -1)
+    cornerBadge.isHidden = true
+    cornerBadge.translatesAutoresizingMaskIntoConstraints = false
+    cornerGlyph.translatesAutoresizingMaskIntoConstraints = false
+    cornerBadge.addSubview(cornerGlyph)
+
+    thumbBox.addSubview(thumbImage)
+    thumbBox.addSubview(thumbGlyph)
+    thumbBox.addSubview(cornerBadge)
+
+    // §18.3 typography: List title 13pt / 600, subtitle 11pt / 400, source 11pt, time 11pt tabular
     titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
     titleLabel.lineBreakMode = .byTruncatingTail
     titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    excerptLabel.font = .systemFont(ofSize: 11.5)
+    excerptLabel.font = .systemFont(ofSize: 11, weight: .regular)
     excerptLabel.lineBreakMode = .byTruncatingTail
     excerptLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    timeLabel.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
+    sourceIconView.imageScaling = .scaleProportionallyDown
+    sourceIconView.translatesAutoresizingMaskIntoConstraints = false
+
+    sourceFallback.wantsLayer = true
+    sourceFallback.layer?.cornerRadius = 4
+    sourceFallback.translatesAutoresizingMaskIntoConstraints = false
+    sourceLetter.font = .systemFont(ofSize: 8.5, weight: .bold)
+    sourceLetter.textColor = .white
+    sourceLetter.alignment = .center
+    sourceLetter.translatesAutoresizingMaskIntoConstraints = false
+    sourceFallback.addSubview(sourceLetter)
+
+    sourceLabel.font = .systemFont(ofSize: 11, weight: .regular)
+    sourceLabel.lineBreakMode = .byTruncatingTail
+    sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+
+    timeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     timeLabel.alignment = .right
+    timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
     timeLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    pinIcon.image = LumenIcons.symbol("pin.fill", size: 11)
     pinIcon.translatesAutoresizingMaskIntoConstraints = false
 
-    addSubview(thumbBox)
-    addSubview(titleLabel)
-    addSubview(excerptLabel)
-    addSubview(timeLabel)
-    addSubview(pinIcon)
+    for sub in [thumbBox, titleLabel, excerptLabel, sourceIconView, sourceFallback, sourceLabel, timeLabel, pinIcon] {
+      addSubview(sub)
+    }
 
     NSLayoutConstraint.activate([
       thumbBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
@@ -390,22 +729,52 @@ final class LumenHistoryRowView: NSView {
       thumbBox.widthAnchor.constraint(equalToConstant: 40),
       thumbBox.heightAnchor.constraint(equalToConstant: 40),
 
-      thumbImage.centerXAnchor.constraint(equalTo: thumbBox.centerXAnchor),
-      thumbImage.centerYAnchor.constraint(equalTo: thumbBox.centerYAnchor),
-      thumbImage.widthAnchor.constraint(lessThanOrEqualTo: thumbBox.widthAnchor),
-      thumbImage.heightAnchor.constraint(lessThanOrEqualTo: thumbBox.heightAnchor),
+      thumbImage.topAnchor.constraint(equalTo: thumbBox.topAnchor),
+      thumbImage.leadingAnchor.constraint(equalTo: thumbBox.leadingAnchor),
+      thumbImage.trailingAnchor.constraint(equalTo: thumbBox.trailingAnchor),
+      thumbImage.bottomAnchor.constraint(equalTo: thumbBox.bottomAnchor),
+
+      thumbGlyph.centerXAnchor.constraint(equalTo: thumbBox.centerXAnchor),
+      thumbGlyph.centerYAnchor.constraint(equalTo: thumbBox.centerYAnchor),
+      thumbGlyph.widthAnchor.constraint(equalToConstant: 25),
+      thumbGlyph.heightAnchor.constraint(equalToConstant: 25),
+
+      cornerBadge.trailingAnchor.constraint(equalTo: thumbBox.trailingAnchor, constant: -2),
+      cornerBadge.bottomAnchor.constraint(equalTo: thumbBox.bottomAnchor, constant: -2),
+      cornerBadge.widthAnchor.constraint(equalToConstant: 15),
+      cornerBadge.heightAnchor.constraint(equalToConstant: 15),
+      cornerGlyph.centerXAnchor.constraint(equalTo: cornerBadge.centerXAnchor),
+      cornerGlyph.centerYAnchor.constraint(equalTo: cornerBadge.centerYAnchor),
+      cornerGlyph.widthAnchor.constraint(equalToConstant: 12),
+      cornerGlyph.heightAnchor.constraint(equalToConstant: 12),
 
       titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10),
       titleLabel.leadingAnchor.constraint(equalTo: thumbBox.trailingAnchor, constant: 10),
-      titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -10),
+      titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: sourceFallback.leadingAnchor, constant: -10),
 
       excerptLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
       excerptLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-      excerptLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -10),
+      excerptLabel.trailingAnchor.constraint(lessThanOrEqualTo: sourceFallback.leadingAnchor, constant: -10),
+
+      sourceIconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+      sourceIconView.widthAnchor.constraint(equalToConstant: 15),
+      sourceIconView.heightAnchor.constraint(equalToConstant: 15),
+      sourceIconView.leadingAnchor.constraint(equalTo: sourceFallback.leadingAnchor),
+
+      sourceFallback.centerYAnchor.constraint(equalTo: centerYAnchor),
+      sourceFallback.widthAnchor.constraint(equalToConstant: 15),
+      sourceFallback.heightAnchor.constraint(equalToConstant: 15),
+      sourceFallback.trailingAnchor.constraint(equalTo: sourceLabel.leadingAnchor, constant: -5),
+      sourceLetter.centerXAnchor.constraint(equalTo: sourceFallback.centerXAnchor),
+      sourceLetter.centerYAnchor.constraint(equalTo: sourceFallback.centerYAnchor),
+
+      sourceLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+      sourceLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 66),
+      sourceLabel.trailingAnchor.constraint(equalTo: timeLabel.leadingAnchor, constant: -10),
 
       timeLabel.topAnchor.constraint(equalTo: topAnchor, constant: 11),
       timeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-      timeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 56),
+      timeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 58),
 
       pinIcon.topAnchor.constraint(equalTo: timeLabel.bottomAnchor, constant: 5),
       pinIcon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
@@ -417,59 +786,103 @@ final class LumenHistoryRowView: NSView {
   required init?(coder: NSCoder) { nil }
 
   func configure(item: LumenClipboardItem, selected: Bool, palette: LumenPalette) {
-    let cat = item.displayCategory
+    let identity = item.contentIdentity
+    let tint = identity.tintColor(isDark: palette.isDark)
+
     layer?.backgroundColor = (selected ? palette.accentSoft : NSColor.clear).cgColor
     layer?.borderWidth = selected ? 1 : 0
     layer?.borderColor = (selected ? palette.accentBorder : NSColor.clear).cgColor
 
     titleLabel.stringValue = item.displayTitle
+    titleLabel.toolTip = item.displayTitle
     titleLabel.textColor = palette.ink
+
     excerptLabel.textColor = palette.muted
-    if cat == .image || cat == .file {
-      excerptLabel.stringValue = "\(cat.label) · \(item.sourceLabel) · \(item.formattedSize)"
+    excerptLabel.stringValue = rowSubtitle(for: item, identity: identity)
+
+    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+      sourceIconView.image = appIcon
+      sourceIconView.isHidden = false
+      sourceFallback.isHidden = true
     } else {
-      let compact = item.effectiveText.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-      // Single-line records would otherwise repeat the title verbatim.
-      excerptLabel.stringValue = compact == item.displayTitle ? "" : compact
+      sourceIconView.isHidden = true
+      sourceFallback.isHidden = false
+      sourceFallback.layer?.backgroundColor = palette.sourceBadgeColor(for: item.sourceLabel).cgColor
+      sourceLetter.stringValue = String(item.sourceLabel.prefix(1)).uppercased()
     }
+    sourceLabel.stringValue = item.sourceLabel
+    sourceLabel.toolTip = item.sourceLabel
+    sourceLabel.textColor = palette.muted
+
     timeLabel.stringValue = item.relativeTime
     timeLabel.textColor = palette.muted
     pinIcon.isHidden = !item.pinned
-    pinIcon.contentTintColor = palette.accent
+    pinIcon.image = LumenVectorGlyphs.actionImage(.pinFilled, size: 12, color: palette.accent)
 
-    if cat == .color, let swatch = LumenClassifier.parseHexColor(item.effectiveText) {
+    thumbBox.layer?.borderColor = palette.border.withAlphaComponent(0.65).cgColor
+    cornerBadge.layer?.backgroundColor = (palette.isDark
+      ? NSColor(srgbRed: 0.14, green: 0.18, blue: 0.25, alpha: 0.92)
+      : NSColor(srgbRed: 0.96, green: 0.97, blue: 0.98, alpha: 0.94)).cgColor
+
+    if identity.family == .color, let swatch = LumenColorMath.parseAnyColor(item.effectiveText) {
       thumbBox.layer?.backgroundColor = swatch.cgColor
-      thumbImage.image = nil
-    } else if cat == .image, let img = item.decodedThumbnailImage() {
+      thumbImage.isHidden = true
+      thumbGlyph.isHidden = true
+      cornerBadge.isHidden = false
+      cornerGlyph.configure(identity: identity, isDark: palette.isDark, size: 12)
+    } else if identity.family == .image, let img = item.decodedThumbnailImage() {
       thumbBox.layer?.backgroundColor = palette.surfaceElevated.cgColor
       thumbImage.image = img
-      thumbImage.contentTintColor = nil
-    } else if item.kind == "file", let path = item.primaryFilePath, FileManager.default.fileExists(atPath: path) {
-      thumbBox.layer?.backgroundColor = palette.surfaceElevated.cgColor
-      thumbImage.image = NSWorkspace.shared.icon(forFile: path)
-      thumbImage.contentTintColor = nil
+      thumbImage.isHidden = false
+      thumbGlyph.isHidden = true
+      cornerBadge.isHidden = false
+      cornerGlyph.configure(identity: identity, isDark: palette.isDark, size: 12)
     } else {
-      let tint = palette.categoryTint(cat)
-      thumbBox.layer?.backgroundColor = tint.withAlphaComponent(0.16).cgColor
-      thumbImage.image = LumenIcons.symbol(cat.symbolName, size: 17, weight: .medium)
-      thumbImage.contentTintColor = tint
+      thumbBox.layer?.backgroundColor = tint.withAlphaComponent(palette.isDark ? 0.14 : 0.09).cgColor
+      thumbImage.isHidden = true
+      thumbGlyph.isHidden = false
+      cornerBadge.isHidden = true
+      thumbGlyph.configure(identity: identity, isDark: palette.isDark, size: 25)
+    }
+  }
+
+  /// Non-repeating subtitle metadata per §18.3 (`v14RowMeta`).
+  private func rowSubtitle(for item: LumenClipboardItem, identity: LumenContentIdentity) -> String {
+    switch identity.family {
+    case .code:
+      let lines = max(1, item.effectiveText.split(separator: "\n", omittingEmptySubsequences: false).count)
+      return "\(identity.displayName) · \(lines) 行"
+    case .link:
+      let raw = item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines)
+      return URL(string: raw)?.host ?? raw
+    case .color:
+      return item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    case .text:
+      if item.kind == "file" {
+        return ["文本文件", item.formattedSize].filter { !$0.isEmpty }.joined(separator: " · ")
+      }
+      let compact = item.effectiveText.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+      return compact == item.displayTitle ? "文本 · \(item.effectiveText.count) 字符" : compact
+    default:
+      let parts = [identity.displayName, item.formattedSize].filter { !$0.isEmpty }
+      return parts.joined(separator: " · ")
     }
   }
 }
 
-// MARK: - History Gallery Card (NSCollectionViewItem)
+// MARK: - V15 History Gallery Card (NSCollectionViewItem using ContentIdentityRegistry)
 
 final class LumenGalleryCardItem: NSCollectionViewItem {
   static let reuseID = NSUserInterfaceItemIdentifier("LumenGalleryCardItem")
 
   private let cardView = NSView()
+  private let typeGlyph = LumenIdentityGlyphView(size: 16)
+  private let typeLabel = NSTextField(labelWithString: "")
+  private let timeLabel = NSTextField(labelWithString: "")
+  private let bodyHost = NSView()
+  private let sourceIconView = NSImageView()
   private let sourceDot = NSView()
   private let sourceLabel = NSTextField(labelWithString: "")
-  private let timeLabel = NSTextField(labelWithString: "")
-  private let titleLabel = NSTextField(labelWithString: "")
-  private let bodyHost = NSView()
-  private let footIcon = NSImageView()
-  private let footLabel = NSTextField(labelWithString: "")
   private let pinIcon = NSImageView()
 
   var onSingleClick: ((NSEvent) -> Void)?
@@ -485,40 +898,41 @@ final class LumenGalleryCardItem: NSCollectionViewItem {
     self.view = container
 
     cardView.wantsLayer = true
-    cardView.layer?.cornerRadius = 12
+    cardView.layer?.cornerRadius = 14
     cardView.layer?.cornerCurve = .continuous
     cardView.layer?.masksToBounds = true
     cardView.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(cardView)
 
-    sourceDot.wantsLayer = true
-    sourceDot.layer?.cornerRadius = 5
-    sourceDot.translatesAutoresizingMaskIntoConstraints = false
+    typeGlyph.translatesAutoresizingMaskIntoConstraints = false
 
-    sourceLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
-    sourceLabel.lineBreakMode = .byTruncatingTail
-    sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+    typeLabel.font = .systemFont(ofSize: 11, weight: .medium)
+    typeLabel.lineBreakMode = .byTruncatingTail
+    typeLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    timeLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+    timeLabel.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
     timeLabel.alignment = .right
+    timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
     timeLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    titleLabel.font = .systemFont(ofSize: 12.5, weight: .semibold)
-    titleLabel.lineBreakMode = .byTruncatingTail
-    titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
     bodyHost.wantsLayer = true
-    bodyHost.layer?.cornerRadius = 8
     bodyHost.layer?.masksToBounds = true
     bodyHost.translatesAutoresizingMaskIntoConstraints = false
 
-    footIcon.translatesAutoresizingMaskIntoConstraints = false
-    footLabel.font = .systemFont(ofSize: 10)
-    footLabel.translatesAutoresizingMaskIntoConstraints = false
-    pinIcon.image = LumenIcons.symbol("pin.fill", size: 11)
+    sourceIconView.imageScaling = .scaleProportionallyDown
+    sourceIconView.translatesAutoresizingMaskIntoConstraints = false
+
+    sourceDot.wantsLayer = true
+    sourceDot.layer?.cornerRadius = 4
+    sourceDot.translatesAutoresizingMaskIntoConstraints = false
+
+    sourceLabel.font = .systemFont(ofSize: 11, weight: .regular)
+    sourceLabel.lineBreakMode = .byTruncatingTail
+    sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+
     pinIcon.translatesAutoresizingMaskIntoConstraints = false
 
-    for sub in [sourceDot, sourceLabel, timeLabel, titleLabel, bodyHost, footIcon, footLabel, pinIcon] {
+    for sub in [typeGlyph, typeLabel, timeLabel, bodyHost, sourceIconView, sourceDot, sourceLabel, pinIcon] {
       cardView.addSubview(sub)
     }
 
@@ -528,120 +942,204 @@ final class LumenGalleryCardItem: NSCollectionViewItem {
       cardView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
       cardView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2),
 
-      sourceDot.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
+      typeGlyph.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
+      typeGlyph.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 10),
+      typeGlyph.widthAnchor.constraint(equalToConstant: 16),
+      typeGlyph.heightAnchor.constraint(equalToConstant: 16),
+
+      typeLabel.leadingAnchor.constraint(equalTo: typeGlyph.trailingAnchor, constant: 6),
+      typeLabel.centerYAnchor.constraint(equalTo: typeGlyph.centerYAnchor),
+      typeLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -6),
+
+      timeLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -10),
+      timeLabel.centerYAnchor.constraint(equalTo: typeGlyph.centerYAnchor),
+
+      bodyHost.topAnchor.constraint(equalTo: typeGlyph.bottomAnchor, constant: 8),
+      bodyHost.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 10),
+      bodyHost.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -10),
+      bodyHost.bottomAnchor.constraint(equalTo: sourceLabel.topAnchor, constant: -8),
+
+      sourceIconView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 10),
+      sourceIconView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -9),
+      sourceIconView.widthAnchor.constraint(equalToConstant: 14),
+      sourceIconView.heightAnchor.constraint(equalToConstant: 14),
+
       sourceDot.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 10),
+      sourceDot.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -9),
       sourceDot.widthAnchor.constraint(equalToConstant: 14),
       sourceDot.heightAnchor.constraint(equalToConstant: 14),
 
       sourceLabel.leadingAnchor.constraint(equalTo: sourceDot.trailingAnchor, constant: 6),
       sourceLabel.centerYAnchor.constraint(equalTo: sourceDot.centerYAnchor),
-      sourceLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -6),
-
-      timeLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -10),
-      timeLabel.centerYAnchor.constraint(equalTo: sourceDot.centerYAnchor),
-
-      titleLabel.topAnchor.constraint(equalTo: sourceDot.bottomAnchor, constant: 8),
-      titleLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 10),
-      titleLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -10),
-
-      bodyHost.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
-      bodyHost.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 10),
-      bodyHost.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -10),
-      bodyHost.bottomAnchor.constraint(equalTo: footLabel.topAnchor, constant: -8),
-
-      footIcon.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 10),
-      footIcon.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -9),
-      footIcon.widthAnchor.constraint(equalToConstant: 12),
-      footIcon.heightAnchor.constraint(equalToConstant: 12),
-
-      footLabel.leadingAnchor.constraint(equalTo: footIcon.trailingAnchor, constant: 5),
-      footLabel.centerYAnchor.constraint(equalTo: footIcon.centerYAnchor),
+      sourceLabel.trailingAnchor.constraint(lessThanOrEqualTo: pinIcon.leadingAnchor, constant: -6),
 
       pinIcon.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -10),
-      pinIcon.centerYAnchor.constraint(equalTo: footIcon.centerYAnchor),
+      pinIcon.centerYAnchor.constraint(equalTo: sourceDot.centerYAnchor),
       pinIcon.widthAnchor.constraint(equalToConstant: 12),
       pinIcon.heightAnchor.constraint(equalToConstant: 12)
     ])
   }
 
   func configure(item: LumenClipboardItem, selected: Bool, palette: LumenPalette) {
-    let cat = item.displayCategory
+    let identity = item.contentIdentity
     cardView.layer?.backgroundColor = palette.surface.cgColor
-    cardView.layer?.borderWidth = selected ? 2 : 1
+    cardView.layer?.borderWidth = selected ? 1.5 : 1
     cardView.layer?.borderColor = (selected ? palette.accent : palette.border).cgColor
 
-    sourceDot.layer?.backgroundColor = palette.sourceBadgeColor(for: item.sourceLabel).cgColor
-    sourceLabel.stringValue = item.sourceLabel
-    sourceLabel.textColor = palette.muted
+    typeGlyph.configure(identity: identity, isDark: palette.isDark, size: 16)
+    typeLabel.stringValue = identity.displayName
+    typeLabel.textColor = palette.muted
     timeLabel.stringValue = item.relativeTime
     timeLabel.textColor = palette.muted
-    titleLabel.stringValue = item.displayTitle
-    titleLabel.textColor = palette.ink
-    footIcon.image = LumenIcons.symbol(cat.symbolName, size: 11)
-    footIcon.contentTintColor = palette.muted
-    footLabel.stringValue = cat.label
-    footLabel.textColor = palette.muted
+
+    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+      sourceIconView.image = appIcon
+      sourceIconView.isHidden = false
+      sourceDot.isHidden = true
+    } else {
+      sourceIconView.isHidden = true
+      sourceDot.isHidden = false
+      sourceDot.layer?.backgroundColor = palette.sourceBadgeColor(for: item.sourceLabel).cgColor
+    }
+    sourceLabel.stringValue = item.sourceLabel
+    sourceLabel.textColor = palette.muted
     pinIcon.isHidden = !item.pinned
-    pinIcon.contentTintColor = palette.accent
+    pinIcon.image = LumenVectorGlyphs.actionImage(.pinFilled, size: 12, color: palette.accent)
 
     bodyHost.subviews.forEach { $0.removeFromSuperview() }
     bodyHost.layer?.backgroundColor = NSColor.clear.cgColor
+    bodyHost.layer?.cornerRadius = 0
 
-    switch cat {
+    switch identity.family {
     case .color:
-      if let swatch = LumenClassifier.parseHexColor(item.effectiveText) {
-        bodyHost.layer?.backgroundColor = swatch.cgColor
-      }
+      let swatch = NSView()
+      swatch.wantsLayer = true
+      swatch.layer?.cornerRadius = 8
+      swatch.layer?.backgroundColor = (LumenColorMath.parseAnyColor(item.effectiveText) ?? palette.accent).cgColor
+      swatch.translatesAutoresizingMaskIntoConstraints = false
+      let hex = NSTextField(labelWithString: item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
+      hex.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
+      hex.textColor = .white
+      hex.translatesAutoresizingMaskIntoConstraints = false
+      swatch.addSubview(hex)
+      bodyHost.addSubview(swatch)
+      NSLayoutConstraint.activate([
+        swatch.topAnchor.constraint(equalTo: bodyHost.topAnchor),
+        swatch.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        swatch.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        swatch.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor),
+        hex.leadingAnchor.constraint(equalTo: swatch.leadingAnchor, constant: 9),
+        hex.bottomAnchor.constraint(equalTo: swatch.bottomAnchor, constant: -8)
+      ])
+
     case .image:
-      bodyHost.layer?.backgroundColor = palette.surfaceElevated.cgColor
-      let iv = NSImageView(image: item.decodedThumbnailImage() ?? LumenIcons.symbol("photo", size: 28))
-      iv.imageScaling = .scaleProportionallyUpOrDown
+      let box = NSView()
+      box.wantsLayer = true
+      box.layer?.cornerRadius = 8
+      box.layer?.masksToBounds = true
+      box.layer?.backgroundColor = palette.surfaceElevated.cgColor
+      box.translatesAutoresizingMaskIntoConstraints = false
+      let iv = NSImageView(image: item.decodedThumbnailImage() ?? LumenVectorGlyphs.identityImage(for: identity, size: 32, isDark: palette.isDark))
+      iv.imageScaling = item.decodedThumbnailImage() != nil ? .scaleProportionallyUpOrDown : .scaleNone
       iv.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(iv)
+      box.addSubview(iv)
+      let caption = NSTextField(labelWithString: item.displayTitle)
+      caption.font = .systemFont(ofSize: 12, weight: .semibold)
+      caption.textColor = palette.ink
+      caption.lineBreakMode = .byTruncatingTail
+      caption.translatesAutoresizingMaskIntoConstraints = false
+      bodyHost.addSubview(box)
+      bodyHost.addSubview(caption)
       NSLayoutConstraint.activate([
-        iv.topAnchor.constraint(equalTo: bodyHost.topAnchor),
-        iv.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
-        iv.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
-        iv.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor)
+        box.topAnchor.constraint(equalTo: bodyHost.topAnchor),
+        box.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        box.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        box.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -5),
+        iv.topAnchor.constraint(equalTo: box.topAnchor),
+        iv.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+        iv.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+        iv.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+        caption.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        caption.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        caption.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor)
       ])
+
     case .code:
-      bodyHost.layer?.backgroundColor = palette.codeBackground.cgColor
-      let lang = LumenClassifier.detectLanguage(fileName: item.primaryFilePath, content: item.effectiveText)
+      let title = NSTextField(labelWithString: item.displayTitle)
+      title.font = .systemFont(ofSize: 12, weight: .semibold)
+      title.textColor = palette.ink
+      title.lineBreakMode = .byTruncatingTail
+      title.translatesAutoresizingMaskIntoConstraints = false
+      let codeBox = NSView()
+      codeBox.wantsLayer = true
+      codeBox.layer?.cornerRadius = 8
+      codeBox.layer?.masksToBounds = true
+      codeBox.layer?.backgroundColor = palette.codeBackground.cgColor
+      codeBox.translatesAutoresizingMaskIntoConstraints = false
       let lbl = NSTextField(wrappingLabelWithString: "")
-      lbl.attributedStringValue = LumenSyntaxHighlighter.highlight(String(item.effectiveText.prefix(240)), language: lang, fontSize: 10, darkCanvas: true)
+      lbl.attributedStringValue = LumenSyntaxHighlighter.highlight(String(item.effectiveText.prefix(240)), language: identity.language ?? "unknown", fontSize: 10, darkCanvas: true)
       lbl.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(lbl)
+      codeBox.addSubview(lbl)
+      bodyHost.addSubview(title)
+      bodyHost.addSubview(codeBox)
       NSLayoutConstraint.activate([
-        lbl.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 6),
-        lbl.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor, constant: 7),
-        lbl.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor, constant: -7),
-        lbl.bottomAnchor.constraint(lessThanOrEqualTo: bodyHost.bottomAnchor, constant: -6)
+        title.topAnchor.constraint(equalTo: bodyHost.topAnchor),
+        title.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        title.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        codeBox.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
+        codeBox.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        codeBox.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        codeBox.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor),
+        lbl.topAnchor.constraint(equalTo: codeBox.topAnchor, constant: 6),
+        lbl.leadingAnchor.constraint(equalTo: codeBox.leadingAnchor, constant: 7),
+        lbl.trailingAnchor.constraint(equalTo: codeBox.trailingAnchor, constant: -7),
+        lbl.bottomAnchor.constraint(lessThanOrEqualTo: codeBox.bottomAnchor, constant: -6)
       ])
-    case .file:
-      bodyHost.layer?.backgroundColor = palette.surfaceElevated.cgColor
-      let icon = NSImageView(image: item.primaryFilePath.flatMap { FileManager.default.fileExists(atPath: $0) ? NSWorkspace.shared.icon(forFile: $0) : nil } ?? LumenIcons.symbol("doc.fill", size: 24))
-      icon.translatesAutoresizingMaskIntoConstraints = false
+
+    case .document, .audio, .video, .archive, .collection, .file:
+      let tile = NSView()
+      tile.wantsLayer = true
+      tile.layer?.cornerRadius = 8
+      tile.layer?.backgroundColor = identity.tintColor(isDark: palette.isDark).withAlphaComponent(palette.isDark ? 0.14 : 0.09).cgColor
+      tile.translatesAutoresizingMaskIntoConstraints = false
+      let glyph = LumenIdentityGlyphView(size: 36)
+      glyph.configure(identity: identity, isDark: palette.isDark, size: 36)
+      glyph.translatesAutoresizingMaskIntoConstraints = false
       let meta = NSTextField(labelWithString: item.formattedSize)
-      meta.font = .systemFont(ofSize: 11)
+      meta.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
       meta.textColor = palette.muted
-      meta.translatesAutoresizingMaskIntoConstraints = false
-      let st = NSStackView(views: [icon, meta])
+      let st = NSStackView(views: [glyph, meta])
       st.orientation = .vertical
       st.alignment = .centerX
       st.spacing = 4
       st.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(st)
+      tile.addSubview(st)
+      let caption = NSTextField(labelWithString: item.displayTitle)
+      caption.font = .systemFont(ofSize: 12, weight: .semibold)
+      caption.textColor = palette.ink
+      caption.lineBreakMode = .byTruncatingTail
+      caption.translatesAutoresizingMaskIntoConstraints = false
+      bodyHost.addSubview(tile)
+      bodyHost.addSubview(caption)
       NSLayoutConstraint.activate([
-        icon.widthAnchor.constraint(equalToConstant: 34),
-        icon.heightAnchor.constraint(equalToConstant: 34),
-        st.centerXAnchor.constraint(equalTo: bodyHost.centerXAnchor),
-        st.centerYAnchor.constraint(equalTo: bodyHost.centerYAnchor)
+        tile.topAnchor.constraint(equalTo: bodyHost.topAnchor),
+        tile.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        tile.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        tile.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -5),
+        glyph.widthAnchor.constraint(equalToConstant: 36),
+        glyph.heightAnchor.constraint(equalToConstant: 36),
+        st.centerXAnchor.constraint(equalTo: tile.centerXAnchor),
+        st.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
+        caption.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        caption.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        caption.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor)
       ])
+
     default:
-      let excerpt = NSTextField(wrappingLabelWithString: String(item.effectiveText.prefix(180)))
-      excerpt.font = .systemFont(ofSize: 11.5)
-      excerpt.textColor = palette.muted
-      excerpt.maximumNumberOfLines = 4
+      let excerpt = NSTextField(wrappingLabelWithString: String(item.effectiveText.prefix(200)))
+      excerpt.font = .systemFont(ofSize: 12.5)
+      excerpt.textColor = palette.ink.withAlphaComponent(0.88)
+      excerpt.maximumNumberOfLines = 5
       excerpt.lineBreakMode = .byTruncatingTail
       excerpt.translatesAutoresizingMaskIntoConstraints = false
       bodyHost.addSubview(excerpt)
@@ -668,12 +1166,13 @@ private final class LumenCardClickView: NSView {
   }
 }
 
-// MARK: - Inspector View (Single & Batch Multi-Select)
+// MARK: - V15 Inspector View (48 DIP Toolbar, 32×32 Hit Targets, 88×34 Copy Button, Zero Redundancy)
 
 final class LumenInspectorView: NSView {
   var onCopySingle: ((LumenClipboardItem) -> Void)?
   var onPreviewSingle: ((LumenClipboardItem) -> Void)?
   var onPinSingle: ((LumenClipboardItem) -> Void)?
+  var onEditSingle: ((LumenClipboardItem) -> Void)?
   var onDeleteSingle: ((LumenClipboardItem) -> Void)?
   var onBatchPreview: (([LumenClipboardItem]) -> Void)?
   var onBatchPin: (([LumenClipboardItem]) -> Void)?
@@ -682,6 +1181,9 @@ final class LumenInspectorView: NSView {
 
   private var currentSingle: LumenClipboardItem?
   private var currentBatch: [LumenClipboardItem] = []
+  private weak var activeCopyButton: NSButton?
+  private var copyResetWork: DispatchWorkItem?
+  private var lastPalette: LumenPalette = .light
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
@@ -690,9 +1192,16 @@ final class LumenInspectorView: NSView {
 
   required init?(coder: NSCoder) { nil }
 
+  deinit {
+    copyResetWork?.cancel()
+  }
+
   func render(single: LumenClipboardItem?, batch: [LumenClipboardItem], palette: LumenPalette) {
     currentSingle = single
     currentBatch = batch
+    lastPalette = palette
+    copyResetWork?.cancel()
+    activeCopyButton = nil
     subviews.forEach { $0.removeFromSuperview() }
     layer?.backgroundColor = palette.windowBackground.cgColor
 
@@ -701,7 +1210,7 @@ final class LumenInspectorView: NSView {
       return
     }
     guard let item = single else {
-      let empty = NSTextField(labelWithString: "选择一条记录查看预览与详情")
+      let empty = NSTextField(labelWithString: "选择一条记录查看详情")
       empty.font = .systemFont(ofSize: 13)
       empty.textColor = palette.muted
       empty.translatesAutoresizingMaskIntoConstraints = false
@@ -715,6 +1224,43 @@ final class LumenInspectorView: NSView {
     buildSingleView(item: item, palette: palette)
   }
 
+  /// Displays transient check + "已复制" feedback for 1.1s ONLY after a verified copy (§13.1, §13.3).
+  func showCopySucceededFeedback() {
+    guard let btn = activeCopyButton else { return }
+    copyResetWork?.cancel()
+    btn.image = LumenVectorGlyphs.actionImage(.check, size: 16, color: .white)
+    btn.attributedTitle = NSAttributedString(string: " 已复制", attributes: [
+      .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+      .foregroundColor: NSColor.white
+    ])
+    if LumenMotion.isEnabled, let layer = btn.layer {
+      let cx = btn.bounds.midX
+      let cy = btn.bounds.midY
+      func scaled(_ s: CGFloat) -> NSValue {
+        var t = CATransform3DIdentity
+        t = CATransform3DTranslate(t, cx, cy, 0)
+        t = CATransform3DScale(t, s, s, 1)
+        t = CATransform3DTranslate(t, -cx, -cy, 0)
+        return NSValue(caTransform3D: t)
+      }
+      let anim = CAKeyframeAnimation(keyPath: "transform")
+      anim.values = [scaled(0.93), scaled(1.035), NSValue(caTransform3D: CATransform3DIdentity)]
+      anim.keyTimes = [0, 0.55, 1]
+      anim.duration = 0.26
+      layer.add(anim, forKey: "copyConfirm")
+    }
+    let work = DispatchWorkItem { [weak self, weak btn] in
+      guard let self, let btn, btn === self.activeCopyButton else { return }
+      btn.image = LumenVectorGlyphs.actionImage(.copy, size: 16, color: .white)
+      btn.attributedTitle = NSAttributedString(string: " 复制", attributes: [
+        .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+        .foregroundColor: NSColor.white
+      ])
+    }
+    copyResetWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: work)
+  }
+
   private func buildBatchView(items: [LumenClipboardItem], palette: LumenPalette) {
     let topBar = NSView()
     topBar.translatesAutoresizingMaskIntoConstraints = false
@@ -722,25 +1268,29 @@ final class LumenInspectorView: NSView {
     title.font = .systemFont(ofSize: 12.5, weight: .semibold)
     title.textColor = palette.ink
     title.translatesAutoresizingMaskIntoConstraints = false
-    let cancelBtn = makeActionIconButton("xmark", tip: "取消多选", action: #selector(clearBatchClicked), tint: palette.muted)
+
+    let cancelBtn = LumenIconActionButton(glyph: .orbitRemoveX, glyphSize: 16, tip: "取消多选")
+    cancelBtn.configure(palette: palette)
+    cancelBtn.onClick = { [weak self] in self?.onClearSelection?() }
+    cancelBtn.translatesAutoresizingMaskIntoConstraints = false
+
     topBar.addSubview(title)
     topBar.addSubview(cancelBtn)
 
-    let icon = NSImageView(image: LumenIcons.symbol("square.stack.3d.up.fill", size: 44, weight: .light))
-    icon.contentTintColor = palette.accent
+    let icon = NSImageView(image: LumenVectorGlyphs.actionImage(.all, size: 42, color: palette.accent))
     icon.translatesAutoresizingMaskIntoConstraints = false
 
-    let countTitle = NSTextField(labelWithString: "\(items.count) 条记录")
-    countTitle.font = .systemFont(ofSize: 22, weight: .semibold)
+    let countTitle = NSTextField(labelWithString: "已选择 \(items.count) 条记录")
+    countTitle.font = .systemFont(ofSize: 20, weight: .semibold)
     countTitle.textColor = palette.ink
 
-    let sub = NSTextField(labelWithString: "对所选记录执行批量预览、固定或清理")
+    let sub = NSTextField(labelWithString: "批量预览、固定或清理当前所选历史记录")
     sub.font = .systemFont(ofSize: 12)
     sub.textColor = palette.muted
 
-    let previewBtn = makePrimaryButton("批量预览 · \(items.count) 项", symbol: "arrow.up.left.and.arrow.down.right", action: #selector(batchPreviewClicked), palette: palette)
-    let pinBtn = makeSecondaryButton("批量固定", symbol: "pin", action: #selector(batchPinClicked), palette: palette, danger: false)
-    let delBtn = makeSecondaryButton("批量移除", symbol: "trash", action: #selector(batchDeleteClicked), palette: palette, danger: true)
+    let previewBtn = makeSecondaryButton("批量预览 · \(items.count) 项", glyph: .expand, action: #selector(batchPreviewClicked), palette: palette, danger: false)
+    let pinBtn = makeSecondaryButton("批量固定", glyph: .pin, action: #selector(batchPinClicked), palette: palette, danger: false)
+    let delBtn = makeSecondaryButton("批量移除", glyph: .trash, action: #selector(batchDeleteClicked), palette: palette, danger: true)
 
     let rowButtons = NSStackView(views: [pinBtn, delBtn])
     rowButtons.orientation = .horizontal
@@ -760,11 +1310,13 @@ final class LumenInspectorView: NSView {
       topBar.topAnchor.constraint(equalTo: topAnchor),
       topBar.leadingAnchor.constraint(equalTo: leadingAnchor),
       topBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-      topBar.heightAnchor.constraint(equalToConstant: 44),
-      title.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
+      topBar.heightAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorToolbarHeight),
+      title.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 17),
       title.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
       cancelBtn.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -12),
       cancelBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+      cancelBtn.widthAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorActionHitSize),
+      cancelBtn.heightAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorActionHitSize),
 
       previewBtn.widthAnchor.constraint(equalToConstant: 210),
       centerStack.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -773,33 +1325,70 @@ final class LumenInspectorView: NSView {
   }
 
   private func buildSingleView(item: LumenClipboardItem, palette: LumenPalette) {
-    let previewKind = LumenPreviewItem.classify(item: item)
+    let identity = item.contentIdentity
 
-    // Top inspector toolbar
+    // Top Inspector Toolbar: 48 DIP high, 32×32 hit targets, 18 DIP glyphs, 5 DIP spacing (§13.1, §18.2)
     let topBar = NSView()
     topBar.translatesAutoresizingMaskIntoConstraints = false
-    let typeIcon = NSImageView(image: LumenIcons.symbol(item.displayCategory.symbolName, size: 13))
-    typeIcon.contentTintColor = palette.muted
-    typeIcon.translatesAutoresizingMaskIntoConstraints = false
-    let headerTitle = NSTextField(labelWithString: "\(previewKind.displayLabel)预览")
+    let topLine = NSView()
+    topLine.wantsLayer = true
+    topLine.layer?.backgroundColor = palette.border.cgColor
+    topLine.translatesAutoresizingMaskIntoConstraints = false
+
+    let typeGlyph = LumenIdentityGlyphView(size: 19)
+    typeGlyph.configure(identity: identity, isDark: palette.isDark, size: 19)
+    typeGlyph.translatesAutoresizingMaskIntoConstraints = false
+
+    // Display semantic identity name directly — no redundant "预览" suffix (§13.1, §18.2)
+    let headerTitle = NSTextField(labelWithString: identity.displayName)
     headerTitle.font = .systemFont(ofSize: 12.5, weight: .semibold)
     headerTitle.textColor = palette.ink
+    headerTitle.lineBreakMode = .byTruncatingTail
     headerTitle.translatesAutoresizingMaskIntoConstraints = false
 
-    let expandBtn = makeActionIconButton("arrow.up.left.and.arrow.down.right", tip: "完整预览 (Space)", action: #selector(previewSingleClicked), tint: palette.muted)
-    let pinBtn = makeActionIconButton(item.pinned ? "pin.fill" : "pin", tip: item.pinned ? "取消固定" : "固定", action: #selector(pinSingleClicked), tint: item.pinned ? palette.accent : palette.muted)
-    let delBtn = makeActionIconButton("trash", tip: "移除记录 (Delete)", action: #selector(deleteSingleClicked), tint: palette.danger)
+    // Order left to right (§13.1): Preview, Pin, Edit, Delete
+    let expandBtn = LumenIconActionButton(glyph: .expand, glyphSize: LumenV15Tokens.inspectorActionGlyphSize, tip: "完整预览 (Space)")
+    expandBtn.configure(palette: palette)
+    expandBtn.onClick = { [weak self] in
+      if let current = self?.currentSingle { self?.onPreviewSingle?(current) }
+    }
 
-    let rightTools = NSStackView(views: [expandBtn, pinBtn, delBtn])
+    let pinBtn = LumenIconActionButton(glyph: item.pinned ? .pinFilled : .pin, glyphSize: LumenV15Tokens.inspectorActionGlyphSize, tip: item.pinned ? "取消固定" : "固定")
+    pinBtn.configure(palette: palette, toggledOn: item.pinned)
+    pinBtn.onClick = { [weak self] in
+      if let current = self?.currentSingle { self?.onPinSingle?(current) }
+    }
+
+    let isTextEditable = (item.kind == "text" || item.kind == "link")
+    let editBtn = LumenIconActionButton(glyph: .edit, glyphSize: LumenV15Tokens.inspectorActionGlyphSize, tip: isTextEditable ? "编辑文本" : "非文本记录不可直接编辑")
+    editBtn.configure(palette: palette, enabled: isTextEditable)
+    editBtn.onClick = { [weak self] in
+      if let current = self?.currentSingle, isTextEditable { self?.onEditSingle?(current) }
+    }
+
+    let delBtn = LumenIconActionButton(glyph: .trash, glyphSize: LumenV15Tokens.inspectorActionGlyphSize, tip: "移除记录 (Delete)", isDanger: true)
+    delBtn.configure(palette: palette)
+    delBtn.onClick = { [weak self] in
+      if let current = self?.currentSingle { self?.onDeleteSingle?(current) }
+    }
+
+    for btn in [expandBtn, pinBtn, editBtn, delBtn] {
+      btn.translatesAutoresizingMaskIntoConstraints = false
+      btn.widthAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorActionHitSize).isActive = true
+      btn.heightAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorActionHitSize).isActive = true
+    }
+
+    let rightTools = NSStackView(views: [expandBtn, pinBtn, editBtn, delBtn])
     rightTools.orientation = .horizontal
-    rightTools.spacing = 4
+    rightTools.spacing = LumenV15Tokens.inspectorActionSpacing
     rightTools.translatesAutoresizingMaskIntoConstraints = false
 
-    topBar.addSubview(typeIcon)
+    topBar.addSubview(typeGlyph)
     topBar.addSubview(headerTitle)
     topBar.addSubview(rightTools)
+    topBar.addSubview(topLine)
 
-    // Scrollable middle (hero + caption + metadata)
+    // Scrollable middle: Hero + Caption + Source/Time + Non-Redundant Metadata
     let scroll = NSScrollView()
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
@@ -810,30 +1399,28 @@ final class LumenInspectorView: NSView {
     let docView = LumenFlippedView()
     docView.translatesAutoresizingMaskIntoConstraints = false
 
-    let hero = makeHeroPreview(item: item, kind: previewKind, palette: palette)
+    let hero = makeHeroPreview(item: item, identity: identity, palette: palette)
+
     let captionTitle = NSTextField(wrappingLabelWithString: item.displayTitle)
-    captionTitle.font = .systemFont(ofSize: 18, weight: .semibold)
+    captionTitle.font = .systemFont(ofSize: 20, weight: .semibold)
     captionTitle.textColor = palette.ink
     captionTitle.isSelectable = true
 
-    let captionSub = NSTextField(labelWithString: "\(item.sourceLabel) · \(item.relativeTime)")
-    captionSub.font = .systemFont(ofSize: 11.5)
-    captionSub.textColor = palette.muted
+    let sourceRow = makeSourceTimeRow(item: item, palette: palette)
+    let metaRow = makeNonRedundantMetaRow(item: item, identity: identity, palette: palette)
 
-    let metaGrid = makeMetaGrid(item: item, kind: previewKind, palette: palette)
-
-    let middleStack = NSStackView(views: [hero, captionTitle, captionSub, metaGrid])
+    let middleStack = NSStackView(views: [hero, captionTitle, sourceRow, metaRow])
     middleStack.orientation = .vertical
     middleStack.alignment = .leading
-    middleStack.spacing = 8
-    middleStack.setCustomSpacing(14, after: hero)
-    middleStack.setCustomSpacing(14, after: captionSub)
+    middleStack.spacing = 7
+    middleStack.setCustomSpacing(16, after: hero)
+    middleStack.setCustomSpacing(12, after: sourceRow)
     middleStack.translatesAutoresizingMaskIntoConstraints = false
 
     docView.addSubview(middleStack)
     scroll.documentView = docView
 
-    // Bottom action bar
+    // Bottom action bar (§13.1, A32): Right-aligned Enter hint + 88×34 content-width Copy button ONLY.
     let bottomBar = NSView()
     bottomBar.wantsLayer = true
     bottomBar.translatesAutoresizingMaskIntoConstraints = false
@@ -842,12 +1429,22 @@ final class LumenInspectorView: NSView {
     bottomLine.layer?.backgroundColor = palette.border.cgColor
     bottomLine.translatesAutoresizingMaskIntoConstraints = false
 
-    let copyBtn = makePrimaryButton("复制内容 ↵", symbol: "doc.on.doc", action: #selector(copySingleClicked), palette: palette)
-    let peekBtn = makeSecondaryButton("快速预览", symbol: "eye", action: #selector(previewSingleClicked), palette: palette, danger: false)
+    let enterHint = NSTextField(labelWithString: "Enter")
+    enterHint.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+    enterHint.textColor = palette.muted
+    enterHint.alignment = .center
+    enterHint.wantsLayer = true
+    enterHint.layer?.cornerRadius = 5
+    enterHint.layer?.borderWidth = 1
+    enterHint.layer?.borderColor = palette.border.cgColor
+    enterHint.translatesAutoresizingMaskIntoConstraints = false
+
+    let copyBtn = makeCompactCopyButton(palette: palette)
+    activeCopyButton = copyBtn
 
     bottomBar.addSubview(bottomLine)
+    bottomBar.addSubview(enterHint)
     bottomBar.addSubview(copyBtn)
-    bottomBar.addSubview(peekBtn)
 
     addSubview(topBar)
     addSubview(scroll)
@@ -857,13 +1454,20 @@ final class LumenInspectorView: NSView {
       topBar.topAnchor.constraint(equalTo: topAnchor),
       topBar.leadingAnchor.constraint(equalTo: leadingAnchor),
       topBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-      topBar.heightAnchor.constraint(equalToConstant: 44),
-      typeIcon.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
-      typeIcon.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-      headerTitle.leadingAnchor.constraint(equalTo: typeIcon.trailingAnchor, constant: 6),
+      topBar.heightAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorToolbarHeight),
+      typeGlyph.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 17),
+      typeGlyph.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+      typeGlyph.widthAnchor.constraint(equalToConstant: 19),
+      typeGlyph.heightAnchor.constraint(equalToConstant: 19),
+      headerTitle.leadingAnchor.constraint(equalTo: typeGlyph.trailingAnchor, constant: 7),
       headerTitle.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+      headerTitle.trailingAnchor.constraint(lessThanOrEqualTo: rightTools.leadingAnchor, constant: -8),
       rightTools.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -12),
       rightTools.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+      topLine.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
+      topLine.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
+      topLine.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
+      topLine.heightAnchor.constraint(equalToConstant: 1),
 
       scroll.topAnchor.constraint(equalTo: topBar.bottomAnchor),
       scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -871,34 +1475,110 @@ final class LumenInspectorView: NSView {
       scroll.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
 
       docView.widthAnchor.constraint(equalTo: scroll.widthAnchor),
-      middleStack.topAnchor.constraint(equalTo: docView.topAnchor, constant: 4),
-      middleStack.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 16),
-      middleStack.trailingAnchor.constraint(equalTo: docView.trailingAnchor, constant: -16),
+      middleStack.topAnchor.constraint(equalTo: docView.topAnchor, constant: 14),
+      middleStack.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 18),
+      middleStack.trailingAnchor.constraint(equalTo: docView.trailingAnchor, constant: -18),
       middleStack.bottomAnchor.constraint(equalTo: docView.bottomAnchor, constant: -16),
 
       hero.widthAnchor.constraint(equalTo: middleStack.widthAnchor),
-      hero.heightAnchor.constraint(greaterThanOrEqualToConstant: 200),
-      metaGrid.widthAnchor.constraint(equalTo: middleStack.widthAnchor),
+      hero.heightAnchor.constraint(greaterThanOrEqualToConstant: 196),
+      metaRow.widthAnchor.constraint(equalTo: middleStack.widthAnchor),
 
       bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor),
       bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor),
       bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor),
-      bottomBar.heightAnchor.constraint(equalToConstant: 60),
+      bottomBar.heightAnchor.constraint(equalToConstant: 56),
       bottomLine.topAnchor.constraint(equalTo: bottomBar.topAnchor),
       bottomLine.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
       bottomLine.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
       bottomLine.heightAnchor.constraint(equalToConstant: 1),
 
-      copyBtn.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 16),
+      copyBtn.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -18),
       copyBtn.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-      peekBtn.leadingAnchor.constraint(equalTo: copyBtn.trailingAnchor, constant: 8),
-      peekBtn.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -16),
-      peekBtn.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-      peekBtn.widthAnchor.constraint(equalToConstant: 108)
+      copyBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: LumenV15Tokens.inspectorCopyMinWidth),
+      copyBtn.widthAnchor.constraint(lessThanOrEqualToConstant: LumenV15Tokens.inspectorCopyMaxWidth),
+      copyBtn.heightAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorCopyHeight),
+
+      enterHint.trailingAnchor.constraint(equalTo: copyBtn.leadingAnchor, constant: -10),
+      enterHint.centerYAnchor.constraint(equalTo: copyBtn.centerYAnchor),
+      enterHint.widthAnchor.constraint(equalToConstant: 44),
+      enterHint.heightAnchor.constraint(equalToConstant: 22)
     ])
   }
 
-  private func makeHeroPreview(item: LumenClipboardItem, kind: LumenPreviewKind, palette: LumenPalette) -> NSView {
+  private func makeSourceTimeRow(item: LumenClipboardItem, palette: LumenPalette) -> NSView {
+    let row = NSStackView()
+    row.orientation = .horizontal
+    row.alignment = .centerY
+    row.spacing = 6
+
+    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+      let iv = NSImageView(image: appIcon)
+      iv.imageScaling = .scaleProportionallyDown
+      iv.translatesAutoresizingMaskIntoConstraints = false
+      iv.widthAnchor.constraint(equalToConstant: 16).isActive = true
+      iv.heightAnchor.constraint(equalToConstant: 16).isActive = true
+      row.addArrangedSubview(iv)
+    } else {
+      let dot = NSView()
+      dot.wantsLayer = true
+      dot.layer?.cornerRadius = 4
+      dot.layer?.backgroundColor = palette.sourceBadgeColor(for: item.sourceLabel).cgColor
+      dot.translatesAutoresizingMaskIntoConstraints = false
+      dot.widthAnchor.constraint(equalToConstant: 15).isActive = true
+      dot.heightAnchor.constraint(equalToConstant: 15).isActive = true
+      row.addArrangedSubview(dot)
+    }
+
+    let label = NSTextField(labelWithString: "\(item.sourceLabel) · \(item.relativeTime)")
+    label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+    label.textColor = palette.muted
+    row.addArrangedSubview(label)
+    return row
+  }
+
+  /// Non-redundant metadata strip (§13.1, A32): NEVER repeats Content Type, Pin status, or Source.
+  private func makeNonRedundantMetaRow(item: LumenClipboardItem, identity: LumenContentIdentity, palette: LumenPalette) -> NSView {
+    var entries: [(String, String)] = []
+    entries.append(("大小", item.formattedSize))
+    if identity.family == .code {
+      let lines = max(1, item.effectiveText.split(separator: "\n", omittingEmptySubsequences: false).count)
+      entries.append(("行数", "\(lines) 行"))
+    } else if identity.family == .text {
+      entries.append(("字符", "\(item.effectiveText.count)"))
+    } else if identity.family == .image && item.width > 0 && item.height > 0 {
+      entries.append(("尺寸", "\(item.width) × \(item.height)"))
+    }
+    if !item.materialized {
+      entries.append(("状态", "远端按需拉取"))
+    }
+    if item.seenCount > 1 {
+      entries.append(("次数", "\(item.seenCount) 次"))
+    }
+
+    let row = NSStackView()
+    row.orientation = .horizontal
+    row.alignment = .centerY
+    row.spacing = 18
+    row.translatesAutoresizingMaskIntoConstraints = false
+
+    for (k, v) in entries {
+      let kl = NSTextField(labelWithString: k)
+      kl.font = .systemFont(ofSize: 11, weight: .regular)
+      kl.textColor = palette.muted
+      let vl = NSTextField(labelWithString: v)
+      vl.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+      vl.textColor = palette.ink
+      let pair = NSStackView(views: [kl, vl])
+      pair.orientation = .horizontal
+      pair.alignment = .firstBaseline
+      pair.spacing = 6
+      row.addArrangedSubview(pair)
+    }
+    return row
+  }
+
+  private func makeHeroPreview(item: LumenClipboardItem, identity: LumenContentIdentity, palette: LumenPalette) -> NSView {
     let box = LumenCardClickView()
     box.wantsLayer = true
     box.layer?.cornerRadius = 13
@@ -913,32 +1593,44 @@ final class LumenInspectorView: NSView {
       if let current = self?.currentSingle { self?.onPreviewSingle?(current) }
     }
 
-    switch kind {
+    switch identity.family {
     case .color:
+      let parsed = LumenColorMath.parseAnyColor(item.effectiveText) ?? palette.accent
       let swatch = NSView()
       swatch.wantsLayer = true
       swatch.layer?.cornerRadius = 10
-      swatch.layer?.backgroundColor = (LumenClassifier.parseHexColor(item.effectiveText) ?? palette.accent).cgColor
+      swatch.layer?.backgroundColor = parsed.cgColor
       swatch.translatesAutoresizingMaskIntoConstraints = false
-      let hex = NSTextField(labelWithString: item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
+      let hex = NSTextField(labelWithString: LumenColorMath.hexString(from: parsed))
       hex.font = .monospacedSystemFont(ofSize: 20, weight: .semibold)
       hex.textColor = .white
       hex.translatesAutoresizingMaskIntoConstraints = false
+      let subVals = NSTextField(labelWithString: "\(LumenColorMath.rgbString(from: parsed))  ·  \(LumenColorMath.hslString(from: parsed))")
+      subVals.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+      subVals.textColor = NSColor.white.withAlphaComponent(0.86)
+      subVals.translatesAutoresizingMaskIntoConstraints = false
       swatch.addSubview(hex)
+      swatch.addSubview(subVals)
       box.addSubview(swatch)
       NSLayoutConstraint.activate([
-        swatch.topAnchor.constraint(equalTo: box.topAnchor, constant: 16),
-        swatch.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 16),
-        swatch.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -16),
-        swatch.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -16),
+        swatch.topAnchor.constraint(equalTo: box.topAnchor, constant: 14),
+        swatch.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 14),
+        swatch.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -14),
+        swatch.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -14),
         swatch.heightAnchor.constraint(equalToConstant: 170),
-        hex.leadingAnchor.constraint(equalTo: swatch.leadingAnchor, constant: 16),
-        hex.bottomAnchor.constraint(equalTo: swatch.bottomAnchor, constant: -14)
+        hex.leadingAnchor.constraint(equalTo: swatch.leadingAnchor, constant: 14),
+        hex.bottomAnchor.constraint(equalTo: subVals.topAnchor, constant: -3),
+        subVals.leadingAnchor.constraint(equalTo: swatch.leadingAnchor, constant: 14),
+        subVals.trailingAnchor.constraint(lessThanOrEqualTo: swatch.trailingAnchor, constant: -14),
+        subVals.bottomAnchor.constraint(equalTo: swatch.bottomAnchor, constant: -12)
       ])
+
     case .image:
       let iv = NSImageView()
       iv.imageScaling = .scaleProportionallyUpOrDown
-      iv.image = LumenPreviewCache.shared.image(for: "clip:\(item.id)") ?? item.decodedThumbnailImage() ?? LumenIcons.symbol("photo", size: 40)
+      iv.image = LumenPreviewCache.shared.image(for: "clip:\(item.id)")
+        ?? item.decodedThumbnailImage()
+        ?? LumenVectorGlyphs.identityImage(for: identity, size: 48, isDark: palette.isDark)
       iv.translatesAutoresizingMaskIntoConstraints = false
       box.addSubview(iv)
       NSLayoutConstraint.activate([
@@ -948,14 +1640,76 @@ final class LumenInspectorView: NSView {
         iv.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -14),
         iv.heightAnchor.constraint(equalToConstant: 196)
       ])
-    case .pdf:
+
+    case .code:
+      // §18.3 Inspector Code: top-left aligned, 12.5pt, lineHeight 1.75, aligned line numbers, scrollable
+      box.layer?.backgroundColor = palette.codeBackground.cgColor
+      let codeScroll = NSScrollView()
+      codeScroll.hasVerticalScroller = true
+      codeScroll.hasHorizontalScroller = true
+      codeScroll.autohidesScrollers = true
+      codeScroll.drawsBackground = false
+      codeScroll.borderType = .noBorder
+      codeScroll.translatesAutoresizingMaskIntoConstraints = false
+
+      let codeDoc = LumenFlippedView()
+      codeDoc.translatesAutoresizingMaskIntoConstraints = false
+
+      let lines = item.effectiveText.split(separator: "\n", omittingEmptySubsequences: false).prefix(48)
+      let gutterText = (1...max(1, lines.count)).map { String($0) }.joined(separator: "\n")
+      let gutterParagraph = NSMutableParagraphStyle()
+      gutterParagraph.lineHeightMultiple = 1.65
+      gutterParagraph.alignment = .right
+      let gutterLabel = NSTextField(wrappingLabelWithString: "")
+      gutterLabel.attributedStringValue = NSAttributedString(string: gutterText, attributes: [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
+        .foregroundColor: palette.codeGutterText.withAlphaComponent(0.72),
+        .paragraphStyle: gutterParagraph
+      ])
+      gutterLabel.translatesAutoresizingMaskIntoConstraints = false
+
+      let codeLabel = NSTextField(wrappingLabelWithString: "")
+      codeLabel.attributedStringValue = LumenSyntaxHighlighter.highlight(
+        lines.joined(separator: "\n"),
+        language: identity.language ?? "unknown",
+        fontSize: 12.5,
+        darkCanvas: true,
+        lineHeightMultiple: 1.65
+      )
+      codeLabel.translatesAutoresizingMaskIntoConstraints = false
+
+      codeDoc.addSubview(gutterLabel)
+      codeDoc.addSubview(codeLabel)
+      codeScroll.documentView = codeDoc
+      box.addSubview(codeScroll)
+
+      NSLayoutConstraint.activate([
+        codeScroll.topAnchor.constraint(equalTo: box.topAnchor, constant: 12),
+        codeScroll.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
+        codeScroll.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -12),
+        codeScroll.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -12),
+        codeScroll.heightAnchor.constraint(equalToConstant: 210),
+
+        codeDoc.widthAnchor.constraint(greaterThanOrEqualTo: codeScroll.widthAnchor),
+        gutterLabel.topAnchor.constraint(equalTo: codeDoc.topAnchor, constant: 2),
+        gutterLabel.leadingAnchor.constraint(equalTo: codeDoc.leadingAnchor, constant: 2),
+        gutterLabel.widthAnchor.constraint(equalToConstant: 28),
+        gutterLabel.bottomAnchor.constraint(lessThanOrEqualTo: codeDoc.bottomAnchor, constant: -4),
+
+        codeLabel.topAnchor.constraint(equalTo: codeDoc.topAnchor, constant: 2),
+        codeLabel.leadingAnchor.constraint(equalTo: gutterLabel.trailingAnchor, constant: 12),
+        codeLabel.trailingAnchor.constraint(equalTo: codeDoc.trailingAnchor, constant: -6),
+        codeLabel.bottomAnchor.constraint(equalTo: codeDoc.bottomAnchor, constant: -4)
+      ])
+
+    case .document where identity.subtype == "pdf":
       let iv = NSImageView()
       iv.imageScaling = .scaleProportionallyUpOrDown
       if let path = item.primaryFilePath, let doc = PDFDocument(url: URL(fileURLWithPath: path)), let page = doc.page(at: 0) {
         iv.image = page.thumbnail(of: NSSize(width: 280, height: 360), for: .cropBox)
       } else {
-        iv.image = LumenIcons.symbol("doc.richtext", size: 48)
-        iv.contentTintColor = palette.accent
+        iv.image = LumenVectorGlyphs.identityImage(for: identity, size: 52, isDark: palette.isDark)
+        iv.imageScaling = .scaleNone
       }
       iv.translatesAutoresizingMaskIntoConstraints = false
       box.addSubview(iv)
@@ -966,156 +1720,96 @@ final class LumenInspectorView: NSView {
         iv.heightAnchor.constraint(equalToConstant: 196),
         iv.widthAnchor.constraint(lessThanOrEqualTo: box.widthAnchor, constant: -28)
       ])
+
     case .audio, .video:
       let cover = LumenAlbumCoverView()
       cover.seedIndex = abs(item.id.hashValue) % 3
-      cover.badgeText = kind == .audio ? "AUDIO" : "VIDEO"
+      cover.badgeText = identity.family == .audio ? "AUDIO" : "VIDEO"
       cover.translatesAutoresizingMaskIntoConstraints = false
       box.addSubview(cover)
       NSLayoutConstraint.activate([
         cover.centerXAnchor.constraint(equalTo: box.centerXAnchor),
-        cover.topAnchor.constraint(equalTo: box.topAnchor, constant: 20),
-        cover.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -20),
+        cover.topAnchor.constraint(equalTo: box.topAnchor, constant: 18),
+        cover.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -18),
         cover.widthAnchor.constraint(equalToConstant: 164),
         cover.heightAnchor.constraint(equalToConstant: 164)
       ])
-    case .code(let lang):
-      box.layer?.backgroundColor = palette.codeBackground.cgColor
-      let lbl = NSTextField(wrappingLabelWithString: "")
-      lbl.attributedStringValue = LumenSyntaxHighlighter.highlight(String(item.effectiveText.prefix(700)), language: lang, fontSize: 11.5, darkCanvas: true)
-      lbl.translatesAutoresizingMaskIntoConstraints = false
-      box.addSubview(lbl)
-      NSLayoutConstraint.activate([
-        lbl.topAnchor.constraint(equalTo: box.topAnchor, constant: 16),
-        lbl.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 16),
-        lbl.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -16),
-        lbl.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -16)
-      ])
-    case .collection, .file, .office:
-      let icon = NSImageView(image: item.primaryFilePath.flatMap { FileManager.default.fileExists(atPath: $0) ? NSWorkspace.shared.icon(forFile: $0) : nil } ?? LumenIcons.symbol("doc.fill", size: 42))
-      icon.contentTintColor = palette.accent
-      icon.translatesAutoresizingMaskIntoConstraints = false
+
+    case .document, .archive, .collection, .file:
+      let glyph = LumenIdentityGlyphView(size: 52)
+      glyph.configure(identity: identity, isDark: palette.isDark, size: 52)
+      glyph.translatesAutoresizingMaskIntoConstraints = false
       let name = NSTextField(wrappingLabelWithString: item.displayTitle)
-      name.font = .systemFont(ofSize: 15, weight: .semibold)
+      name.font = .systemFont(ofSize: 14.5, weight: .semibold)
       name.textColor = palette.ink
       name.alignment = .center
-      let hint = NSTextField(labelWithString: "\(kind.displayLabel) · \(item.formattedSize) · 点击完整预览")
+      let hint = NSTextField(labelWithString: "\(item.formattedSize) · 单击展开预览")
       hint.font = .systemFont(ofSize: 11)
       hint.textColor = palette.muted
-      let st = NSStackView(views: [icon, name, hint])
+      let st = NSStackView(views: [glyph, name, hint])
       st.orientation = .vertical
       st.alignment = .centerX
       st.spacing = 8
       st.translatesAutoresizingMaskIntoConstraints = false
       box.addSubview(st)
       NSLayoutConstraint.activate([
-        icon.widthAnchor.constraint(equalToConstant: 56),
-        icon.heightAnchor.constraint(equalToConstant: 56),
+        glyph.widthAnchor.constraint(equalToConstant: 52),
+        glyph.heightAnchor.constraint(equalToConstant: 52),
         st.centerXAnchor.constraint(equalTo: box.centerXAnchor),
         st.centerYAnchor.constraint(equalTo: box.centerYAnchor),
         st.leadingAnchor.constraint(greaterThanOrEqualTo: box.leadingAnchor, constant: 18),
         st.trailingAnchor.constraint(lessThanOrEqualTo: box.trailingAnchor, constant: -18)
       ])
+
     default:
-      let lbl = NSTextField(wrappingLabelWithString: String(item.effectiveText.prefix(500)))
-      lbl.font = .systemFont(ofSize: 14.5)
-      lbl.textColor = palette.ink
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.lineHeightMultiple = 1.5
+      let lbl = NSTextField(wrappingLabelWithString: "")
+      lbl.attributedStringValue = NSAttributedString(string: String(item.effectiveText.prefix(700)), attributes: [
+        .font: NSFont.systemFont(ofSize: 13.5, weight: .regular),
+        .foregroundColor: palette.ink,
+        .paragraphStyle: paragraph
+      ])
       lbl.translatesAutoresizingMaskIntoConstraints = false
       box.addSubview(lbl)
       NSLayoutConstraint.activate([
-        lbl.topAnchor.constraint(equalTo: box.topAnchor, constant: 18),
-        lbl.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 18),
-        lbl.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -18),
-        lbl.bottomAnchor.constraint(lessThanOrEqualTo: box.bottomAnchor, constant: -18)
+        lbl.topAnchor.constraint(equalTo: box.topAnchor, constant: 16),
+        lbl.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 16),
+        lbl.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -16),
+        lbl.bottomAnchor.constraint(lessThanOrEqualTo: box.bottomAnchor, constant: -16)
       ])
     }
     return box
   }
 
-  private func makeMetaGrid(item: LumenClipboardItem, kind: LumenPreviewKind, palette: LumenPalette) -> NSView {
-    let entries: [(String, String)] = [
-      ("内容类型", kind.displayLabel),
-      ("大小", item.formattedSize),
-      ("来源", item.sourceLabel),
-      ("收藏状态", item.pinned ? "已固定" : "未固定"),
-      ("落盘状态", item.materialized ? "已就绪" : "远端按需拉取"),
-      ("出现次数", "\(max(1, item.seenCount)) 次")
-    ]
-    let grid = NSStackView()
-    grid.orientation = .vertical
-    grid.spacing = 10
-    grid.translatesAutoresizingMaskIntoConstraints = false
-
-    for rowStart in stride(from: 0, to: entries.count, by: 2) {
-      let row = NSStackView()
-      row.orientation = .horizontal
-      row.distribution = .fillEqually
-      row.spacing = 12
-      for offset in 0..<2 where rowStart + offset < entries.count {
-        let (k, v) = entries[rowStart + offset]
-        let kl = NSTextField(labelWithString: k)
-        kl.font = .systemFont(ofSize: 10.5)
-        kl.textColor = palette.muted
-        let vl = NSTextField(labelWithString: v)
-        vl.font = .systemFont(ofSize: 12, weight: .medium)
-        vl.textColor = palette.ink
-        vl.lineBreakMode = .byTruncatingTail
-        let cell = NSStackView(views: [kl, vl])
-        cell.orientation = .vertical
-        cell.alignment = .leading
-        cell.spacing = 2
-        row.addArrangedSubview(cell)
-      }
-      grid.addArrangedSubview(row)
-      row.widthAnchor.constraint(equalTo: grid.widthAnchor).isActive = true
-    }
-    return grid
-  }
-
-  private func makeActionIconButton(_ symbol: String, tip: String, action: Selector, tint: NSColor) -> NSButton {
-    let btn = NSButton()
-    btn.isBordered = false
-    btn.wantsLayer = true
-    btn.image = LumenIcons.symbol(symbol, size: 14, weight: .medium, description: tip)
-    btn.contentTintColor = tint
-    btn.toolTip = tip
-    btn.target = self
-    btn.action = action
-    btn.layer?.cornerRadius = 7
-    btn.translatesAutoresizingMaskIntoConstraints = false
-    btn.widthAnchor.constraint(equalToConstant: 28).isActive = true
-    btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
-    return btn
-  }
-
-  private func makePrimaryButton(_ title: String, symbol: String, action: Selector, palette: LumenPalette) -> NSButton {
-    let btn = NSButton(title: " \(title)", target: self, action: action)
-    btn.image = LumenIcons.symbol(symbol, size: 13, weight: .semibold)
+  private func makeCompactCopyButton(palette: LumenPalette) -> NSButton {
+    let btn = NSButton(title: " 复制", target: self, action: #selector(copySingleClicked))
+    btn.image = LumenVectorGlyphs.actionImage(.copy, size: 16, color: .white)
     btn.imagePosition = .imageLeading
     btn.isBordered = false
     btn.wantsLayer = true
-    btn.font = .systemFont(ofSize: 12.5, weight: .semibold)
-    btn.contentTintColor = .white
-    btn.attributedTitle = NSAttributedString(string: " \(title)", attributes: [
-      .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold),
+    btn.toolTip = "复制到剪贴板 (Enter)"
+    btn.setAccessibilityLabel("复制到剪贴板")
+    btn.attributedTitle = NSAttributedString(string: " 复制", attributes: [
+      .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
       .foregroundColor: NSColor.white
     ])
     btn.layer?.cornerRadius = 9
     btn.layer?.cornerCurve = .continuous
-    btn.layer?.backgroundColor = palette.accent.cgColor
+    btn.layer?.backgroundColor = NSColor(srgbRed: 0.349, green: 0.427, blue: 0.761, alpha: 1.0).cgColor
+    btn.layer?.borderWidth = 1
+    btn.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
     btn.translatesAutoresizingMaskIntoConstraints = false
-    btn.heightAnchor.constraint(equalToConstant: 36).isActive = true
     return btn
   }
 
-  private func makeSecondaryButton(_ title: String, symbol: String, action: Selector, palette: LumenPalette, danger: Bool) -> NSButton {
+  private func makeSecondaryButton(_ title: String, glyph: LumenActionGlyph, action: Selector, palette: LumenPalette, danger: Bool) -> NSButton {
     let btn = NSButton(title: " \(title)", target: self, action: action)
-    btn.image = LumenIcons.symbol(symbol, size: 13, weight: .medium)
+    let color = danger ? palette.danger : palette.ink
+    btn.image = LumenVectorGlyphs.actionImage(glyph, size: 15, color: color)
     btn.imagePosition = .imageLeading
     btn.isBordered = false
     btn.wantsLayer = true
-    let color = danger ? palette.danger : palette.ink
-    btn.contentTintColor = color
     btn.attributedTitle = NSAttributedString(string: " \(title)", attributes: [
       .font: NSFont.systemFont(ofSize: 12, weight: .medium),
       .foregroundColor: color
@@ -1126,18 +1820,14 @@ final class LumenInspectorView: NSView {
     btn.layer?.borderWidth = 1
     btn.layer?.borderColor = (danger ? palette.danger.withAlphaComponent(0.35) : palette.border).cgColor
     btn.translatesAutoresizingMaskIntoConstraints = false
-    btn.heightAnchor.constraint(equalToConstant: 36).isActive = true
+    btn.heightAnchor.constraint(equalToConstant: 34).isActive = true
     return btn
   }
 
   @objc private func copySingleClicked() { if let item = currentSingle { onCopySingle?(item) } }
-  @objc private func previewSingleClicked() { if let item = currentSingle { onPreviewSingle?(item) } }
-  @objc private func pinSingleClicked() { if let item = currentSingle { onPinSingle?(item) } }
-  @objc private func deleteSingleClicked() { if let item = currentSingle { onDeleteSingle?(item) } }
   @objc private func batchPreviewClicked() { onBatchPreview?(currentBatch) }
   @objc private func batchPinClicked() { onBatchPin?(currentBatch) }
   @objc private func batchDeleteClicked() { onBatchDelete?(currentBatch) }
-  @objc private func clearBatchClicked() { onClearSelection?() }
 }
 
 // MARK: - Native Settings View (Orbit / Appearance / Sync & Data)
@@ -1245,7 +1935,7 @@ final class LumenSettingsView: NSView {
     hero.widthAnchor.constraint(equalTo: bodyStack.widthAnchor).isActive = true
     hero.heightAnchor.constraint(equalToConstant: 132).isActive = true
 
-    addHeading("快捷浮层", subtitle: "原生 NSPanel 贴边轨道，支持中断式 Core Animation 过渡与卡片移除动效。", palette: palette)
+    addHeading("快捷浮层", subtitle: "原生 NSPanel 贴边连续轨道，支持 Optical Dots 3.0 与棉柔光学粒子动效。", palette: palette)
 
     let posPopup = NSPopUpButton()
     posPopup.addItems(withTitles: ["底部连续轨道", "左侧边栏轨道", "右侧边栏轨道"])
@@ -1261,9 +1951,9 @@ final class LumenSettingsView: NSView {
 
     let group = makeSettingsGroup(rows: [
       ("贴边位置", "同步写入服务端配置 quickOrbitPosition，并在菜单栏保持一致。", posPopup),
-      ("本机剪贴板自动采集", "开启后后台记录复制的文本、图片与文件引用。", captureSwitch),
-      ("高光粒子", "Orbit 轨道背景浮光粒子与卡片移除释放光点。", particlesSwitch),
-      ("动态光感", "焦点卡片微光边界与随指针移动的高光镜面反射。", glowSwitch),
+      ("本机剪贴板自动采集", "开启后后台及 Orbit 激活期间实时记录复制内容。", captureSwitch),
+      ("棉柔光学粒子", "卡片移除时的纹理驱动解构粒子与新记录聚合效果。", particlesSwitch),
+      ("动态光感", "焦点卡片微光边界、随指针高光与光点唤醒光泽。", glowSwitch),
       ("流畅动效", "关闭后即时切换；始终尊重系统“减弱动态效果”。", motionSwitch)
     ], palette: palette)
     bodyStack.addArrangedSubview(group)
@@ -1679,10 +2369,11 @@ final class LumenToastBannerView: NSView {
   }
 }
 
-// MARK: - Native New Text Clip Sheet
+// MARK: - Native New / Edit Text Clip Sheet
 
 final class LumenNewClipSheet: NSObject {
   private let sheet: NSWindow
+  private let heading = NSTextField(labelWithString: "输入文本、代码或链接")
   private let textView = NSTextView()
   private var onSave: ((String) -> Void)?
 
@@ -1700,7 +2391,6 @@ final class LumenNewClipSheet: NSObject {
 
   private func buildUI() {
     let root = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 290))
-    let heading = NSTextField(labelWithString: "输入文本、代码或链接")
     heading.font = .systemFont(ofSize: 14, weight: .semibold)
     heading.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1747,10 +2437,12 @@ final class LumenNewClipSheet: NSObject {
     sheet.contentView = root
   }
 
-  func present(over parent: NSWindow, palette: LumenPalette, completion: @escaping (String) -> Void) {
+  func present(over parent: NSWindow, initialText: String = "", title: String = "新建剪贴板记录", palette: LumenPalette, completion: @escaping (String) -> Void) {
     onSave = completion
+    sheet.title = title
+    heading.stringValue = initialText.isEmpty ? "输入文本、代码或链接" : "编辑记录内容"
     sheet.appearance = palette.nsAppearance
-    textView.string = ""
+    textView.string = initialText
     parent.beginSheet(sheet, completionHandler: nil)
     sheet.makeFirstResponder(textView)
   }

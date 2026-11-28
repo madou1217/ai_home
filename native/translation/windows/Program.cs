@@ -1,6 +1,10 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+// The Windows SDK target framework does not emit System.IO / System.Net.Http
+// implicit usings, so state them explicitly.
+using System.IO;
+using System.Net.Http;
 using System.Drawing.Text;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;

@@ -105,6 +105,7 @@ func collectGlobalRowsMode(
 	visibleAll, _ := resolveSessionScope(rows, runtime, allProjectsRequested(allProjects...))
 	appendRecentNativeSessionRows(ctx, runtime, &rows, visibleAll)
 	applyNativeTurnStates(store.AIHomeDir, rows)
+	annotateLatestMessages(ctx, runtime, store.AIHomeDir, rows)
 	rows = filterDismissedSessionRows(rows, readSSDismissed(store.AIHomeDir, now))
 	ensureUniqueSessionTitles(rows)
 	sortSessionRowsForDisplay(rows)
@@ -329,15 +330,16 @@ func writeGlobalSessionGroups(
 	for _, group := range groups {
 		_, _ = fmt.Fprintf(output, "\n  项目：%s\n", group.Project)
 		writer := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(writer, "  状态\tprovider\t账号\t会话名称\t会话ID\t最近活动")
+		_, _ = fmt.Fprintln(writer, "  状态\tprovider\t账号\t会话名称\t最新消息\t会话ID\t最近活动")
 		for _, row := range group.Rows {
 			_, _ = fmt.Fprintf(
 				writer,
-				"  %s\t%s\t%s\t%s\t%s\t%s\n",
+				"  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				globalSessionStatus(row),
 				row.Provider,
 				globalSessionAccount(row, labels),
 				globalSessionTitle(row),
+				truncateDisplay(pickerLatestMessage(row), 60),
 				globalSessionID(row),
 				globalSessionActivityLabel(row),
 			)

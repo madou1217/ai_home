@@ -176,7 +176,7 @@ func usableSessionTitle(value string) string {
 // compactSessionTitle 把标题压成一行并限制显示长度。会话标题来自用户首条
 // 消息时常常是一大段粘贴内容；直接放进选择器会把整屏撑乱。
 func compactSessionTitle(value string) string {
-	text := strings.TrimSpace(value)
+	text := strings.TrimSpace(sanitizeTerminalText(value))
 	if index := strings.IndexAny(text, "\r\n"); index >= 0 {
 		text = strings.TrimSpace(text[:index])
 	}
@@ -252,6 +252,21 @@ func sessionTitleSuffix(row persistent.SessionRow, duplicateIndex int) string {
 		return name
 	}
 	return strconv.Itoa(duplicateIndex)
+}
+
+// sanitizeTerminalText 去掉用户消息里的控制字符，避免 transcript 内容
+// 把 ANSI/光标控制序列注入到列表里。
+func sanitizeTerminalText(value string) string {
+	return strings.Map(func(char rune) rune {
+		switch char {
+		case '\t', '\n', '\r':
+			return ' '
+		}
+		if char < 0x20 || char == 0x7f {
+			return -1
+		}
+		return char
+	}, value)
 }
 
 func shortSessionID(id string) string {

@@ -155,6 +155,7 @@ type pickerColumnLayout struct {
 	provider int
 	account  int
 	title    int
+	latest   int
 	id       int
 	updated  int
 }
@@ -167,10 +168,19 @@ func resolvePickerLayout(width int) pickerColumnLayout {
 		width = 240
 	}
 	layout := pickerColumnLayout{status: 4, provider: 11, account: 12, id: 8, updated: 5}
-	// 先保标题；窗口越窄越先丢辅助列。极窄时只留状态+标题，
-	// 不能像以前那样硬撑 48 列把整行折成两行。
+	if width >= 84 {
+		layout.latest = 24
+	}
+	if width >= 96 {
+		layout.latest = 28
+	}
+	if width >= 118 {
+		layout.latest = 34
+	}
+	// 先保标题；窗口越窄越先丢辅助列。最新消息比 ID/更新时间更重要，
+	// 所以 80~95 列优先保留最新消息，先牺牲 ID 和更新时间。
 	for {
-		fixed := 2 + layout.status + layout.provider + layout.account + layout.id + layout.updated + 5*2
+		fixed := 2 + layout.status + layout.provider + layout.account + layout.latest + layout.id + layout.updated + 6*2
 		layout.title = width - fixed
 		if layout.title >= 18 {
 			break
@@ -181,6 +191,10 @@ func resolvePickerLayout(width int) pickerColumnLayout {
 		}
 		if layout.id > 0 {
 			layout.id = 0
+			continue
+		}
+		if layout.latest > 0 {
+			layout.latest = 0
 			continue
 		}
 		if layout.account > 0 {
@@ -252,6 +266,7 @@ func buildPickerFrame(state *pickerState, labels map[string]string, width int) (
 			lines = append(lines, "  provider: "+row.Provider)
 			lines = append(lines, "  账号: "+globalSessionAccount(*row, labels))
 			lines = append(lines, "  状态: "+globalSessionStatus(*row))
+			lines = append(lines, "  最新消息: "+pickerLatestMessage(*row))
 			lines = append(lines, "  路径: "+row.Path)
 			lines = append(lines, fmt.Sprintf("  运行时: socket=%s pane=%s", row.Socket, globalSessionID(*row)))
 			native := strings.TrimSpace(row.NativeID)
@@ -276,6 +291,9 @@ func formatPickerTableHeader(layout pickerColumnLayout, width int) string {
 		line += " " + padDisplay("账号", layout.account)
 	}
 	line += " " + padDisplay("会话名称", layout.title)
+	if layout.latest > 0 {
+		line += "  " + padDisplay("最新消息", layout.latest)
+	}
 	if layout.id > 0 {
 		line += "  " + padDisplay("会话ID", layout.id)
 	}
@@ -338,6 +356,9 @@ func formatPickerRow(
 		line += " " + account
 	}
 	line += " " + title
+	if layout.latest > 0 {
+		line += "  " + padDisplay(truncateDisplay(pickerLatestMessage(row), layout.latest), layout.latest)
+	}
 	if layout.id > 0 {
 		line += "  " + padDisplay(truncateDisplay(shortSessionID(row.NativeID), layout.id), layout.id)
 	}
@@ -345,6 +366,18 @@ func formatPickerRow(
 		line += "  " + padDisplay(truncateDisplay(pickerActivityLabel(row), layout.updated), layout.updated)
 	}
 	return truncateDisplayPreservingANSI(line, width)
+}
+
+func pickerLatestMessage(row persistent.SessionRow) string {
+	text := strings.TrimSpace(row.LastMessage)
+	if text == "" {
+		return "-"
+	}
+	role := strings.TrimSpace(row.LastMessageRole)
+	if role != "" {
+		return role + " · " + text
+	}
+	return text
 }
 
 func pickerActivityLabel(row persistent.SessionRow) string {

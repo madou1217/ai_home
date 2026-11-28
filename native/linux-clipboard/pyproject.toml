@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aih-lumen-linux"
+version = "7.0.0"
+description = "Paste Lumen V7 — Native Linux GTK4/Adwaita Clipboard Client"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+aih-lumen = "lumen_linux.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

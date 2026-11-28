@@ -208,15 +208,22 @@ export function useSessionOfficeData(): SessionOfficeDataState {
 
   const [previewCache, setPreviewCache] = useState<Map<string, SessionPreviewCacheEntry>>(() => new Map());
   const [nativeSessions, setNativeSessions] = useState<TerminalDirectorySession[]>([]);
+  const nativeEmptyStrikesRef = useRef(0);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
         const result = await nativeSessionsAPI.list();
-        if (active && result?.ok && Array.isArray(result.sessions)) {
-          setNativeSessions(result.sessions);
+        if (!active || !result?.ok || !Array.isArray(result.sessions)) return;
+        if (result.sessions.length === 0) {
+          nativeEmptyStrikesRef.current += 1;
+          // A single empty snapshot must not unmount the office (and reset the camera).
+          if (nativeEmptyStrikesRef.current < 3) return;
+        } else {
+          nativeEmptyStrikesRef.current = 0;
         }
+        setNativeSessions(result.sessions);
       } catch {
         // Native discovery is best-effort; the terminal directory remains authoritative.
       }

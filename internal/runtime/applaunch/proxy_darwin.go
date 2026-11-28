@@ -22,7 +22,26 @@ func openAppSandboxed(app launcher.App, mode ProxyMode, proxyURL string, options
 	name := strings.TrimSuffix(filepath.Base(bundle), ".app")
 	executable := filepath.Join(bundle, "Contents", "MacOS", name)
 	if _, err := os.Stat(executable); err != nil {
-		return errors.New("找不到应用可执行文件: " + executable)
+		// Some bundles use a different executable name (VS Code: "Code").
+		entries, readErr := os.ReadDir(filepath.Join(bundle, "Contents", "MacOS"))
+		if readErr != nil {
+			return errors.New("找不到应用可执行文件: " + executable)
+		}
+		executable = ""
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			info, infoErr := entry.Info()
+			if infoErr != nil || info.Mode().Perm()&0o111 == 0 {
+				continue
+			}
+			executable = filepath.Join(bundle, "Contents", "MacOS", entry.Name())
+			break
+		}
+		if executable == "" {
+			return errors.New("找不到应用可执行文件: " + bundle)
+		}
 	}
 	args := []string{}
 	if mode == ProxyModeChromium || isElectronBundle(bundle) {

@@ -8,7 +8,7 @@ import (
 func launchEnvironment(platform string) []string {
 	keys := []string{"HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "__CF_USER_TEXT_ENCODING"}
 	if platform == "win32" {
-		keys = []string{"USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "LANG", "LC_ALL", "SystemRoot", "WINDIR", "ComSpec"}
+		keys = []string{"USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "LANG", "LC_ALL", "SystemRoot", "WINDIR", "ComSpec", "AIH_HOME_DIR"}
 	}
 	var result []string
 	for _, key := range keys {

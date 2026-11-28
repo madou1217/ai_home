@@ -100,16 +100,33 @@ func (state *pickerState) visibleRows() []persistent.SessionRow {
 		return nil
 	}
 	ids := make(map[string]bool, len(state.rows))
+	byID := make(map[string]persistent.SessionRow, len(state.rows))
 	for _, row := range state.rows {
 		if id := strings.TrimSpace(row.NativeID); id != "" {
 			ids[id] = true
+			byID[id] = row
 		}
+	}
+	// 多层 subagent 统一挂到最上层主会话，避免中间层被折叠后孙会话消失。
+	rootParent := func(parent string) string {
+		for depth := 0; depth < 8; depth++ {
+			row, found := byID[parent]
+			if !found || !row.Subagent {
+				return parent
+			}
+			next := strings.TrimSpace(row.ParentID)
+			if next == "" || next == parent {
+				return parent
+			}
+			parent = next
+		}
+		return parent
 	}
 	children := make(map[string][]persistent.SessionRow)
 	main := make([]persistent.SessionRow, 0, len(state.rows))
 	for _, row := range state.rows {
 		if row.Subagent {
-			parent := strings.TrimSpace(row.ParentID)
+			parent := rootParent(strings.TrimSpace(row.ParentID))
 			if parent != "" && ids[parent] {
 				children[parent] = append(children[parent], row)
 			}

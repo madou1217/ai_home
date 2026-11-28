@@ -44,7 +44,7 @@
 - [x] 平台构造函数：Windows strict → WinDivert P0；其他平台 strict 明确返回 unsupported
 - [ ] 实例身份与进程树抽象完全落到 Orchestrator（当前由 guard 自己跟踪 root PID）
 - [ ] Guard 审计模型：非 loopback socket、出口 IP、DNS 状态、错误（当前只有 blocked/PIDs）
-- [ ] 失败语义：Guard 准备失败时拒绝启动，或用户显式选择 non-strict（接口已有，Orchestrator 未接）
+- [x] 失败语义：严格模式下 Guard 不可用时 App Desk 在启动前返回 409，不静默降级（API/WebUI 已接）
 
 **完成标准**：接口与数据模型落地，能用一个假 Guard 跑通 preflight→launch→stop 的状态机。
 
@@ -89,7 +89,7 @@
 - [ ] test signing：`bcdedit /set testsigning on` + 重启（Secure Boot 已关闭）；当前 `sc start` 返回 **577**，属预期
 - [ ] 驱动加载后的真机验收：目标进程外联被阻断、loopback 代理可用、非目标进程不受影响、卸载清理
 - [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
-- [ ] Windows Store/UWP 风险：Claude 是 `shell:AppsFolder\AnthropicPBC.Claude_...!Claude`，Codex/ChatGPT 也是 AppsFolder；同包多实例/多 OAuth 可能受厂商单实例限制，需真机验证
+- [x] Windows Store/UWP 事实确认：Claude/Codex 均为 AppsFolder/AppContainer；命令行代理参数不可注入、同包多实例受限。Chrome/Edge（独立 profile）可严格启动；UWP 双实例需透明重定向
 
 ### 2.2 P1：per-instance 透明 TCP 代理（WinDivert NAT）
 
@@ -111,7 +111,7 @@
 - [ ] 用户态控制服务 IOCTL / 生命周期（当前由 aih-netguard 进程直接持有设备）
 - [ ] EV 签名 / attestation / test signing 方案（测试证书已就绪，testsigning 待重启）
 - [ ] EDR/杀软兼容测试
-- [ ] 决策 WinDivert vs WFP 作为长期默认（当前自动：驱动可用→WFP，否则 WinDivert）
+- [x] 当前默认决策：WFP 驱动可用时优先，否则 WinDivert；WFP 加载验收后再最终定稿
 
 ### 2.4 Windows GUI 验收
 

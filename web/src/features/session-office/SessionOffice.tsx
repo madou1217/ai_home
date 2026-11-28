@@ -233,7 +233,7 @@ export default function SessionOffice({ defaultSessionKey }: SessionOfficeProps)
         <div className="session-list-title-block">
           <span className="session-list-eyebrow">AIH // LIVE SESSIONS</span>
           <h1>项目办公室</h1>
-          <p>全部 `aih ss` 会话，按卡片实时展示运行状态与最新内容。</p>
+          <p>全部 `aih ss` 会话，按卡片实时展示运行状态与最新内容：原生会话为实时对话/工具流，tmux 会话为终端画面。</p>
         </div>
 
         <div className="session-list-metrics" aria-label="会话统计">

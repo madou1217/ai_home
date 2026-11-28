@@ -133,7 +133,10 @@ type Status struct {
 	Strategy string `json:"strategy,omitempty"`
 }
 
-func normalize(options Options) (Options, error) {
+// normalizeBase 归一化 status/stop/restart 也需要的字段，但不要求
+// ServerBinary 存在：这些动作按 label/pid 操作，二进制解析失败不应让
+// 诊断入口跟着失效。
+func normalizeBase(options Options) (Options, error) {
 	if strings.TrimSpace(options.Label) == "" {
 		options.Label = DefaultLabel
 	}
@@ -150,13 +153,12 @@ func normalize(options Options) (Options, error) {
 	}
 	options.Home = filepath.Clean(home)
 	options.HostHome = filepath.Clean(hostHome)
-	server, err := filepath.Abs(strings.TrimSpace(options.ServerBinary))
-	if err != nil || strings.TrimSpace(options.ServerBinary) == "" {
-		return options, errors.New("autostart_server_binary_required")
-	}
-	options.ServerBinary = filepath.Clean(server)
-	if info, err := os.Stat(options.ServerBinary); err != nil || info.IsDir() {
-		return options, fmt.Errorf("autostart_server_binary_unavailable: %s", options.ServerBinary)
+	if server := strings.TrimSpace(options.ServerBinary); server != "" {
+		abs, err := filepath.Abs(server)
+		if err != nil {
+			return options, err
+		}
+		options.ServerBinary = filepath.Clean(abs)
 	}
 	if strings.TrimSpace(options.WebDir) != "" {
 		webDir, err := filepath.Abs(options.WebDir)
@@ -174,10 +176,26 @@ func normalize(options Options) (Options, error) {
 	if strings.TrimSpace(options.Description) == "" {
 		options.Description = "AI Home local server"
 	}
-	if strings.TrimSpace(options.WorkingDir) == "" {
+	if strings.TrimSpace(options.WorkingDir) == "" && options.ServerBinary != "" {
 		options.WorkingDir = filepath.Dir(options.ServerBinary)
-	} else if abs, err := filepath.Abs(options.WorkingDir); err == nil {
-		options.WorkingDir = filepath.Clean(abs)
+	} else if strings.TrimSpace(options.WorkingDir) != "" {
+		if abs, err := filepath.Abs(options.WorkingDir); err == nil {
+			options.WorkingDir = filepath.Clean(abs)
+		}
+	}
+	return options, nil
+}
+
+func normalize(options Options) (Options, error) {
+	options, err := normalizeBase(options)
+	if err != nil {
+		return options, err
+	}
+	if strings.TrimSpace(options.ServerBinary) == "" {
+		return options, errors.New("autostart_server_binary_required")
+	}
+	if info, err := os.Stat(options.ServerBinary); err != nil || info.IsDir() {
+		return options, fmt.Errorf("autostart_server_binary_unavailable: %s", options.ServerBinary)
 	}
 	return options, nil
 }
@@ -295,7 +313,7 @@ func Stop(ctx context.Context, options Options) error {
 // StopWithMode 停止受管服务。force=true 在注销作业后立刻 SIGKILL 残留进程，
 // 不等服务端收尾（默认 stop 的语义）；force=false 让进程按自己的收尾预算退出。
 func StopWithMode(ctx context.Context, options Options, force bool) error {
-	options, err := normalize(options)
+	options, err := normalizeBase(options)
 	if err != nil {
 		return err
 	}
@@ -336,7 +354,7 @@ func StopWithMode(ctx context.Context, options Options, force bool) error {
 }
 
 func Uninstall(ctx context.Context, options Options) error {
-	options, err := normalize(options)
+	options, err := normalizeBase(options)
 	if err != nil {
 		return err
 	}
@@ -353,7 +371,7 @@ func Uninstall(ctx context.Context, options Options) error {
 }
 
 func StatusFor(ctx context.Context, options Options) (Status, error) {
-	options, err := normalize(options)
+	options, err := normalizeBase(options)
 	if err != nil {
 		return Status{}, err
 	}
@@ -582,7 +600,7 @@ func installLaunchd(ctx context.Context, options Options, force bool) (Status, e
 // 回 503，客户端无法区分“在重启”和“服务坏了”（2026-11-21 实测回归）。
 // 进程自身的关闭路径仍按它自己的预算收尾，但重启动作不再等待它。
 func Restart(ctx context.Context, options Options) (Status, error) {
-	options, err := normalize(options)
+	options, err := normalizeBase(options)
 	if err != nil {
 		return Status{}, err
 	}

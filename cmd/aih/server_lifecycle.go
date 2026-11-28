@@ -81,11 +81,25 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 			return true, cliExitCode{code: 1}
 		}
 	}
-	options, err := resolveAutostartOptions(runtime)
+	options, err := resolveAutostartOptionsLoose(runtime)
 	if err != nil {
 		return true, err
 	}
 	port := resolveServerPort(ctx, options.Home, runtime)
+	// status/stop 只需要 label 和 pid；start/restart 在真正需要拉起新进程时
+	// 才要求 server 二进制。start 命中已运行实例时不应因为解析不到二进制而失败。
+	if action == "start" || action == "restart" {
+		if action == "start" && serverReady(ctx, port) {
+			_, _ = fmt.Fprintln(runtime.stdout, "[aih] server is already running")
+			return true, nil
+		}
+		if strings.TrimSpace(options.ServerBinary) == "" {
+			options, err = resolveAutostartOptions(runtime)
+			if err != nil {
+				return true, err
+			}
+		}
+	}
 	switch action {
 	case "start":
 		if serverReady(ctx, port) {

@@ -35,12 +35,12 @@ func runServerAutostart(ctx context.Context, arguments []string, runtime command
 		// Node: any unknown autostart subcommand (including --help) is status.
 		action = "status"
 	}
-	options, err := resolveAutostartOptions(runtime)
-	if err != nil {
-		return true, err
-	}
 	switch action {
 	case "install":
+		options, err := resolveAutostartOptions(runtime)
+		if err != nil {
+			return true, err
+		}
 		status, err := autostart.Install(ctx, options)
 		if err != nil {
 			return true, err
@@ -48,11 +48,19 @@ func runServerAutostart(ctx context.Context, arguments []string, runtime command
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server autostart installed")
 		writeAutostartStatus(runtime, status)
 	case "uninstall":
+		options, err := resolveAutostartOptionsLoose(runtime)
+		if err != nil {
+			return true, err
+		}
 		if err := autostart.Uninstall(ctx, options); err != nil {
 			return true, err
 		}
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server autostart uninstalled")
 	case "status":
+		options, err := resolveAutostartOptionsLoose(runtime)
+		if err != nil {
+			return true, err
+		}
 		status, err := autostart.StatusFor(ctx, options)
 		if err != nil {
 			return true, err
@@ -83,6 +91,16 @@ func autostartType() string {
 }
 
 func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) {
+	return resolveAutostartOptionsWithBinary(runtime, true)
+}
+
+// resolveAutostartOptionsLoose 允许 ServerBinary 缺失；status/stop 只需要
+// label、home 和 pid，不应因为找不到 server 二进制而无法诊断。
+func resolveAutostartOptionsLoose(runtime commandRuntime) (autostart.Options, error) {
+	return resolveAutostartOptionsWithBinary(runtime, false)
+}
+
+func resolveAutostartOptionsWithBinary(runtime commandRuntime, requireBinary bool) (autostart.Options, error) {
 	userHome, err := runtime.userHomeDir()
 	if err != nil {
 		return autostart.Options{}, err
@@ -105,6 +123,7 @@ func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) 
 		strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_SERVER_BINARY")),
 		receiptExecutable,
 		packagedBinary,
+		runtimeServerBinary(home),
 		siblingBinary,
 	)
 	if serverBinary == "" {
@@ -116,7 +135,7 @@ func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) 
 		serverBinaryStamped(packagedBinary) && !serverBinaryStamped(siblingBinary) {
 		serverBinary = packagedBinary
 	}
-	if serverBinary == "" {
+	if serverBinary == "" && requireBinary {
 		return autostart.Options{}, errors.New("autostart_server_binary_not_found")
 	}
 	webDir := ""
@@ -151,6 +170,30 @@ func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) 
 		ServerBinary: serverBinary,
 		WebDir:       webDir,
 	}, nil
+}
+
+// runtimeServerBinary 返回当前运行实例实际加载的 server 路径，作为
+// autostart 解析的兜底：安装器没有 distribution receipt、CLI 旁边也没有
+// sibling 时，status/restart 仍能拿到正在跑的 canonical 二进制。
+func runtimeServerBinary(home string) string {
+	raw, err := os.ReadFile(filepath.Join(home, "run", "go-server-runtime.json"))
+	if err != nil || len(raw) > 64*1024 {
+		return ""
+	}
+	var decoded struct {
+		Executable string `json:"executable"`
+	}
+	if json.Unmarshal(raw, &decoded) != nil {
+		return ""
+	}
+	value := strings.TrimSpace(decoded.Executable)
+	if value == "" {
+		return ""
+	}
+	if info, statErr := os.Stat(value); statErr != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return value
 }
 
 func readInstallReceipt(home string) (string, string) {

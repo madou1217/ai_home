@@ -2596,7 +2596,7 @@ final class LumenFolderRendererView: LumenPreviewRendererView,
     metaLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
     let dateLabel = NSTextField(labelWithString: LumenFolderDateFormatter.format(child.modifiedAt))
-    dateLabel.font = .monospacedDigitSystemFont(ofSize: 10.5)
+    dateLabel.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
     dateLabel.textColor = palette.muted
     dateLabel.alignment = .right
     dateLabel.translatesAutoresizingMaskIntoConstraints = false

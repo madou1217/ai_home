@@ -155,7 +155,17 @@ func backendFor(binary string) (string, error) {
 			return "", fmt.Errorf("%w: 找不到 WinDivert.dll（应与 aih-netguard.exe 同目录）", ErrUnavailable)
 		}
 		return "windivert", nil
-	case "linux", "darwin":
+	case "linux":
+		if os.Getenv("AIH_NETGUARD_ALLOW_UNSUPPORTED") == "1" {
+			return "test", nil
+		}
+		// The Linux guard needs passwordless sudo for the cgroup/nftables
+		// setup; probe it before launching the app.
+		if err := exec.Command("sudo", "-n", "true").Run(); err != nil {
+			return "", fmt.Errorf("%w: Linux 严格模式需要免密 sudo（cgroup/nftables）", ErrUnavailable)
+		}
+		return "cgroup", nil
+	case "darwin":
 		if os.Getenv("AIH_NETGUARD_ALLOW_UNSUPPORTED") == "1" {
 			return "test", nil
 		}

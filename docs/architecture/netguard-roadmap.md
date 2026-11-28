@@ -65,6 +65,8 @@
 - [x] UDP owner table 命中（真机：目标 UDP 53 请求超时，`blocked=4` 中含 UDP；修复点：UDP 必须调用 `GetExtendedUdpTable`，不能复用 TCP 表函数）
 - [x] IPv4 UDP 归因/阻断（真机：目标进程直接 `UdpClient.Send` 到 223.5.5.5:53 无响应；非目标 UDP 正常）
 - [x] 子进程继承验收（真机：根 `cmd.exe` 被保护，其 `powershell` 子进程 TCP/UDP 均被阻断，loopback 正常）
+- [x] 多根进程树：同一 guard 进程可保护多个实例树（`--root-pid a,b`）。WinDivert 同一过滤器开多个句柄会重复注入，因此每台机器必须由一个 guard 统一持有句柄（WFP 全局 PID 集合同理）
+- [x] PID 复用防护：记录每个 PID 的创建时间，watcher 每 250ms 清理已退出/被复用的 PID。真机事故：测试脚本对过期 PID 执行 `taskkill /T` 且 guard 保护了被复用的 PID，导致 sshd 短暂不可达；修复后显式 PID 也会启动 watcher 清理
 - [x] 代理 loopback 放行验证（真机：受保护进程连接 127.0.0.1:18080 成功）
 - [x] 代理断开 fail closed 验收（guard 阻断外部，进程只能走 loopback；入口断开时请求失败，未直连）
 - [ ] IPv6 外部流量归因/阻断（代码已实现 AF_INET6 TCP/UDP owner table 与 IPv6 扩展头解析；该真机无全局 IPv6 地址，未验收）
@@ -113,6 +115,7 @@
 
 ### 2.4 Windows GUI 验收
 
+- [x] 双 Chrome 真机（同一 guard 保护两棵进程树）：A 配 `--proxy-server=http://127.0.0.1:18081`，页面正文为百度真实内容；B `--no-proxy-server`，正文为空、标题退化为 `baidu.com`；proxy 日志只出现 A 的 `CONNECT www.baidu.com:443`；`blocked=70`
 - [ ] Claude/Codex/Gemini/AGY 桌面 App 各启动两个实例（不同账号/JP+SG）
 - [ ] App 内所有 TCP 请求走各自代理
 - [ ] 代理断开全部失败，不直连
@@ -229,7 +232,7 @@
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
 | 严格进程级网络控制（跨平台） | 中 | 22% | 🚧 Phase 1/2/3 |
-| Windows per-instance GUI（JP/SG） | WinDivert IPv4 TCP+UDP 子进程真机通过；WFP 待加载 | 22% | 🚧 Phase 2 |
+| Windows per-instance GUI（JP/SG） | WinDivert IPv4 TCP+UDP、双 Chrome 代理/直连真机通过；WFP 待加载 | 30% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+三 CLI 启动已验证 | 40% | 🚧 Phase 3 |
 | macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
@@ -238,7 +241,7 @@
 | 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈26%** | 🚧 |
+| **总目标** | — | **≈28%** | 🚧 |
 
 ---
 
@@ -265,4 +268,4 @@
 - 已完成：Phase 0；Phase 1 契约代码；WinDivert IPv4 TCP+UDP/子进程阻断；WFP 驱动构建链/驱动骨架/用户态控制；macOS CLI sandbox；Linux cgroup 阻断
 - 未开始：Phase 2.2 P1 透明 TCP、Phase 3.2 vendor GUI、Phase 5–9
 - 最近更新：2026-11-28
-- 证据：Windows 受保护子进程 TCP/UDP 外联 `TIMEOUT`、loopback `OK`、非目标 `NON_TARGET_TCP True`、`blocked=4`；`aih-netguard.sys` 9,728 B、签名 `Valid`、`sc start` = 577（testsigning 未开）；macOS 代理 204、`--noproxy '*'` 拒绝、双实例 AU/SG；Linux cgroup 目标 timeout、loopback 200、其他 301
+- 证据：Windows 受保护子进程 TCP/UDP 外联 `TIMEOUT`、loopback `OK`、非目标 `NON_TARGET_TCP True`、`blocked=4`；双 Chrome：代理实例正文为百度真实内容、直连实例正文为空且代理日志无其请求、`blocked=70`；`aih-netguard.sys` 9,728 B、签名 `Valid`、`sc start` = 577（testsigning 未开）；macOS 代理 204、`--noproxy '*'` 拒绝、双实例 AU/SG；Linux cgroup 目标 timeout、loopback 200、其他 301

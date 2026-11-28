@@ -38,8 +38,8 @@ type WFPGuard struct {
 	options Options
 
 	mu      sync.Mutex
-	pids    map[int]struct{}
-	rootPID int
+	pids    map[int]uint64
+	roots   map[int]uint64
 	watcher context.CancelFunc
 	active  bool
 	status  GuardStatus
@@ -72,7 +72,8 @@ func NewWFPGuard(options Options) (Guard, error) {
 	}
 	guard := &WFPGuard{
 		options: options,
-		pids:    make(map[int]struct{}),
+		pids:    make(map[int]uint64),
+		roots:   make(map[int]uint64),
 		status: GuardStatus{
 			Mode:    ModeStrict,
 			Backend: "wfp",
@@ -233,17 +234,17 @@ func (guard *WFPGuard) SetProcessTree(ctx context.Context, rootPID int, pids []i
 	}
 	guard.mu.Lock()
 	if rootPID > 0 {
-		guard.rootPID = rootPID
+		created, _ := processCreateTime(rootPID)
+		guard.roots[rootPID] = created
+		guard.pids[rootPID] = created
 	}
 	for _, pid := range pids {
 		if pid > 0 {
-			guard.pids[pid] = struct{}{}
+			created, _ := processCreateTime(pid)
+			guard.pids[pid] = created
 		}
 	}
-	if guard.rootPID > 0 {
-		guard.pids[guard.rootPID] = struct{}{}
-	}
-	startWatcher := guard.watcher == nil && guard.rootPID > 0 && ctx != nil
+	startWatcher := guard.watcher == nil && (len(guard.roots) > 0 || len(guard.pids) > 0) && ctx != nil
 	var watcherCtx context.Context
 	var cancel context.CancelFunc
 	if startWatcher {
@@ -280,21 +281,34 @@ func (guard *WFPGuard) trackProcessTree(ctx context.Context) {
 
 func (guard *WFPGuard) refreshDescendants() {
 	guard.mu.Lock()
-	root := guard.rootPID
+	changed := guard.pruneLocked()
+	roots := make([]int, 0, len(guard.roots))
+	for root := range guard.roots {
+		roots = append(roots, root)
+	}
 	active := guard.active
 	guard.mu.Unlock()
-	if root <= 0 || !active {
+	if len(roots) == 0 || !active {
+		if changed {
+			guard.applyUnion()
+		}
 		return
 	}
-	children := descendantPIDs(root)
+	var children []int
+	for _, root := range roots {
+		children = append(children, descendantPIDs(root)...)
+	}
 	if len(children) == 0 {
+		if changed {
+			guard.applyUnion()
+		}
 		return
 	}
-	changed := false
 	guard.mu.Lock()
 	for _, pid := range children {
 		if _, exists := guard.pids[pid]; !exists {
-			guard.pids[pid] = struct{}{}
+			created, _ := processCreateTime(pid)
+			guard.pids[pid] = created
 			changed = true
 		}
 	}
@@ -303,6 +317,30 @@ func (guard *WFPGuard) refreshDescendants() {
 	if !changed {
 		return
 	}
+	guard.applyUnion()
+}
+
+// pruneLocked drops PIDs whose process exited or whose PID was reused. The
+// caller holds guard.mu.
+func (guard *WFPGuard) pruneLocked() bool {
+	changed := false
+	for pid, created := range guard.roots {
+		if !processStillMatches(pid, created) {
+			delete(guard.roots, pid)
+			delete(guard.pids, pid)
+			changed = true
+		}
+	}
+	for pid, created := range guard.pids {
+		if !processStillMatches(pid, created) {
+			delete(guard.pids, pid)
+			changed = true
+		}
+	}
+	return changed
+}
+
+func (guard *WFPGuard) applyUnion() {
 	if controller := currentWFPController(); controller != nil {
 		if err := controller.applyUnion(); err != nil {
 			guard.mu.Lock()
@@ -323,6 +361,9 @@ func (guard *WFPGuard) Stop(context.Context) error {
 	}
 	guard.active = false
 	guard.status.Active = false
+	guard.pids = make(map[int]uint64)
+	guard.roots = make(map[int]uint64)
+	guard.status.ProtectedPIDs = 0
 	guard.mu.Unlock()
 	if controller := currentWFPController(); controller != nil {
 		controller.unregister(guard)

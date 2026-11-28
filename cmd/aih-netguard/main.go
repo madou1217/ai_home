@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -23,7 +24,7 @@ func main() {
 		os.Exit(runSandboxExec(os.Args[2:]))
 	}
 	var (
-		rootPID     = flag.Int("root-pid", 0, "实例根进程 PID；自动纳入其所有子进程")
+		rootPIDs    = flag.String("root-pid", "", "实例根进程 PID；可逗号分隔多个，每个进程树都会被保护")
 		pidsValue   = flag.String("pids", "", "逗号分隔的额外 PID")
 		proxyURL    = flag.String("proxy-url", "", "已解析的本机代理入口")
 		instanceID  = flag.String("instance-id", "", "实例 ID（审计用）")
@@ -55,9 +56,22 @@ func main() {
 		fail(err)
 	}
 	pids := parsePIDs(*pidsValue)
-	if err := guard.SetProcessTree(ctx, *rootPID, pids); err != nil {
+	roots := parsePIDs(*rootPIDs)
+	if len(roots) == 0 && len(pids) == 0 {
 		_ = guard.Stop(context.Background())
-		fail(err)
+		fail(errors.New("至少需要一个 --root-pid 或 --pids"))
+	}
+	if len(roots) == 0 {
+		if err := guard.SetProcessTree(ctx, 0, pids); err != nil {
+			_ = guard.Stop(context.Background())
+			fail(err)
+		}
+	}
+	for _, root := range roots {
+		if err := guard.SetProcessTree(ctx, root, pids); err != nil {
+			_ = guard.Stop(context.Background())
+			fail(err)
+		}
 	}
 	status := guard.Status()
 	if *printStatus {
@@ -88,7 +102,7 @@ func main() {
 		encoded, _ := json.MarshalIndent(status, "", "  ")
 		fmt.Fprintln(os.Stdout, string(encoded))
 	} else {
-		fmt.Fprintf(os.Stdout, "netguard stopped blocked=%d\n", status.Blocked)
+		fmt.Fprintf(os.Stdout, "netguard stopped pids=%d blocked=%d\n", status.ProtectedPIDs, status.Blocked)
 	}
 }
 

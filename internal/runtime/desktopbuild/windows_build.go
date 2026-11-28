@@ -8,22 +8,61 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strings"
 	"time"
 )
 
+type stagedWindowsSource struct {
+	relPath string
+	data    []byte
+}
+
 func buildWindows(ctx context.Context, opts Options, root string) (LaunchSpec, error) {
-	sourceDir := filepath.Join(opts.RepoRoot, "native", "translation", "windows")
-	names := []string{"AihTranslation.csproj", "Program.cs", "app.manifest"}
-	sourceBytes := make([][]byte, 0, len(names))
-	parts := [][]byte{[]byte("go-desktop-build-v1"), []byte(opts.Mode), []byte("win-" + opts.Arch), []byte(runtime.GOOS)}
-	for _, name := range names {
-		raw, err := os.ReadFile(filepath.Join(sourceDir, name))
+	translationDir := filepath.Join(opts.RepoRoot, "native", "translation", "windows")
+	clipboardDir := filepath.Join(opts.RepoRoot, "native", "clipboard", "windows")
+
+	translationNames := []string{"AihTranslation.csproj", "Program.cs", "app.manifest"}
+	staged := make([]stagedWindowsSource, 0, len(translationNames)+16)
+	parts := [][]byte{[]byte("go-desktop-build-v2"), []byte(opts.Mode), []byte("win-" + opts.Arch), []byte(runtime.GOOS)}
+
+	for _, name := range translationNames {
+		rel := filepath.Join("native", "translation", "windows", name)
+		raw, err := os.ReadFile(filepath.Join(translationDir, name))
 		if err != nil {
 			return LaunchSpec{}, fmt.Errorf("windows_helper_source_missing: %w", err)
 		}
-		sourceBytes = append(sourceBytes, raw)
-		parts = append(parts, raw)
+		staged = append(staged, stagedWindowsSource{relPath: rel, data: raw})
+		parts = append(parts, []byte(filepath.ToSlash(rel)), raw)
 	}
+
+	entries, err := os.ReadDir(clipboardDir)
+	if err != nil {
+		return LaunchSpec{}, fmt.Errorf("windows_helper_source_missing: %w", err)
+	}
+	clipboardNames := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(strings.ToLower(entry.Name()), ".cs") {
+			clipboardNames = append(clipboardNames, entry.Name())
+		}
+	}
+	sort.Strings(clipboardNames)
+	if len(clipboardNames) == 0 {
+		return LaunchSpec{}, fmt.Errorf("windows_helper_source_missing: no clipboard C# sources in %s", clipboardDir)
+	}
+	for _, name := range clipboardNames {
+		rel := filepath.Join("native", "clipboard", "windows", name)
+		raw, err := os.ReadFile(filepath.Join(clipboardDir, name))
+		if err != nil {
+			return LaunchSpec{}, fmt.Errorf("windows_helper_source_missing: %w", err)
+		}
+		staged = append(staged, stagedWindowsSource{relPath: rel, data: raw})
+		parts = append(parts, []byte(filepath.ToSlash(rel)), raw)
+	}
+
 	fingerprint := hashBytes(parts...)
 	parent := filepath.Join(root, "windows", opts.Mode)
 	if err := mkdirWithin(root, parent); err != nil {
@@ -41,14 +80,19 @@ func buildWindows(ctx context.Context, opts Options, root string) (LaunchSpec, e
 		return LaunchSpec{}, err
 	}
 	defer os.RemoveAll(work)
-	// Publish a source snapshot so .NET obj/restore writes never contaminate the checkout.
+	// Publish a source snapshot preserving relative layout (native/translation/windows + native/clipboard/windows)
+	// so .NET obj/restore writes never contaminate the checkout.
 	sources := filepath.Join(work, "source")
 	output := filepath.Join(work, "publish")
 	if err := os.Mkdir(sources, 0o700); err != nil {
 		return LaunchSpec{}, err
 	}
-	for index, name := range names {
-		if err := os.WriteFile(filepath.Join(sources, name), sourceBytes[index], 0o600); err != nil {
+	for _, item := range staged {
+		dest := filepath.Join(sources, item.relPath)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+			return LaunchSpec{}, err
+		}
+		if err := os.WriteFile(dest, item.data, 0o600); err != nil {
 			return LaunchSpec{}, err
 		}
 	}
@@ -69,7 +113,9 @@ func buildWindows(ctx context.Context, opts Options, root string) (LaunchSpec, e
 		}
 		env = setEnvironment(env, name, path)
 	}
-	_, err = runTool(ctx, 3*time.Minute, sources, env, "dotnet", "publish", filepath.Join(sources, names[0]), "--configuration", "Release", "--runtime", "win-"+opts.Arch, "--self-contained", "true", "-p:PublishSingleFile=true", "-p:EnableCompressionInSingleFile=true", "--output", output)
+	projectDir := filepath.Join(sources, "native", "translation", "windows")
+	projectFile := filepath.Join(projectDir, "AihTranslation.csproj")
+	_, err = runTool(ctx, 5*time.Minute, projectDir, env, "dotnet", "publish", projectFile, "--configuration", "Release", "--runtime", "win-"+opts.Arch, "--self-contained", "true", "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true", "-p:EnableCompressionInSingleFile=true", "--output", output)
 	if err != nil {
 		return LaunchSpec{}, fmt.Errorf("windows_helper_build_unavailable: %w", err)
 	}

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Net.Http.Headers;
@@ -6,6 +7,9 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows.Forms;
+using System.Windows.Forms.Integration;
+using AihLumenClipboard;
 
 namespace AihTranslation;
 
@@ -33,9 +37,19 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        if (Environment.GetCommandLineArgs().Contains("--protocol-only", StringComparer.OrdinalIgnoreCase))
+        var rawArgs = Environment.GetCommandLineArgs();
+        if (rawArgs.Contains("--protocol-only", StringComparer.OrdinalIgnoreCase))
         {
             TranslationProtocolOnly.Run();
+            return;
+        }
+        var cliArgs = rawArgs.Skip(1).ToArray();
+        if (cliArgs.Contains("--lumen", StringComparer.OrdinalIgnoreCase)
+            || cliArgs.Contains("--clipboard", StringComparer.OrdinalIgnoreCase)
+            || cliArgs.Contains("--orbit", StringComparer.OrdinalIgnoreCase)
+            || cliArgs.Contains("--preview", StringComparer.OrdinalIgnoreCase))
+        {
+            LumenStandaloneEntry.RunStandalone(cliArgs);
             return;
         }
         ApplicationConfiguration.Initialize();
@@ -49,7 +63,7 @@ internal static class Program
         }
         catch (IOException) { }
         catch (InvalidOperationException) { }
-        var fullApp = Environment.GetCommandLineArgs().Contains("--full-app", StringComparer.OrdinalIgnoreCase);
+        var fullApp = rawArgs.Contains("--full-app", StringComparer.OrdinalIgnoreCase);
         using var context = new TranslationApplicationContext(fullApp);
         _ = Task.Run(() => ReadInputAsync(context));
         Application.Run(context);
@@ -151,6 +165,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
 {
     private const int HotKeyId = 0x4149;
     private const int LauncherHotKeyId = 0x414A;
+    private const int ClipboardHotKeyId = 0x414B;
     private const string LauncherSingletonMutexName = "Local\\AIH-Launcher-Singleton-v1";
     private const int ERROR_ALREADY_EXISTS = 183;
     private const int ERROR_ACCESS_DENIED = 5;
@@ -160,8 +175,18 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     private readonly bool fullApp;
     private readonly TranslationWindow window;
     private readonly LauncherWindow launcherWindow;
+    private readonly ClipboardWorkspaceWindow lumenWorkspace;
+    private readonly QuickOrbitWindow lumenOrbit;
     private readonly HotKeyWindow hotKeyWindow;
     private readonly LowLevelLauncherHook launcherHook = new();
+    private readonly LowLevelLauncherHook clipboardHook = new();
+    private NotifyIcon? clipboardTrayIcon;
+    private Icon? clipboardTrayGraphic;
+    private ToolStripMenuItem? trayPosBottomItem;
+    private ToolStripMenuItem? trayPosLeftItem;
+    private ToolStripMenuItem? trayPosRightItem;
+    private ToolStripMenuItem? trayOrbitItem;
+    private bool lumenShutdownDone;
     private IntPtr launcherSingletonMutex = IntPtr.Zero;
     private bool launcherSingletonBlocked;
     private bool launcherSingletonRetryExhausted;
@@ -173,6 +198,11 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     private string launcherOrigin = string.Empty;
     private string launcherKey = string.Empty;
     private bool launcherEnabled;
+    private string clipboardShortcut = "Ctrl+Alt+V";
+    private string clipboardOrigin = string.Empty;
+    private string clipboardKey = string.Empty;
+    private bool clipboardEnabled;
+    private string quickOrbitPosition = "bottom";
     private int generation;
     private bool captureInProgress;
     private IDataObject? originalClipboard;
@@ -190,8 +220,16 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     public TranslationApplicationContext(bool fullApp)
     {
         this.fullApp = fullApp;
+        LumenWpfHost.EnsureInitialized(
+            winFormsHosted: true,
+            modelessKeyboardInterop: w => ElementHost.EnableModelessKeyboardInterop(w));
         window = new TranslationWindow();
         launcherWindow = new LauncherWindow();
+        lumenWorkspace = new ClipboardWorkspaceWindow();
+        lumenOrbit = new QuickOrbitWindow();
+        lumenWorkspace.OpenOrbitRequested += ToggleClipboardOrbit;
+        lumenOrbit.OpenWorkspaceRequested += ShowClipboardWorkspace;
+        lumenWorkspace.QuickOrbitPositionChanged += OnWorkspaceOrbitPositionChanged;
         // Helper mode keeps the window hidden, but protocol messages are
         // marshalled onto the WinForms UI thread through BeginInvoke. Create
         // the hidden form handle eagerly so that hello/configure events are
@@ -303,6 +341,11 @@ internal sealed class TranslationApplicationContext : ApplicationContext
                         });
                     }
                     break;
+                case "clipboard.open":
+                    ToggleClipboardOrbit();
+                    break;
+                case "clipboard-pasted":
+                    break;
             }
         }
         catch (Exception)
@@ -336,7 +379,9 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         window.SetTarget(target);
 
         var launcherDetail = ConfigureLauncher(root);
-        if (translationRegistered || !string.IsNullOrEmpty(launcherDetail))
+        var clipboardDetail = ConfigureClipboard(root);
+        var combinedDetail = string.Join("; ", new[] { launcherDetail, clipboardDetail }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (translationRegistered || !string.IsNullOrEmpty(combinedDetail))
         {
             Emit(new DesktopEvent
             {
@@ -347,7 +392,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
                 CaptureModes = new[] { "shortcut-clipboard" },
                 Permission = "clipboard-shortcut",
                 Shortcut = shortcut,
-                Detail = string.IsNullOrEmpty(launcherDetail) ? null : launcherDetail
+                Detail = string.IsNullOrEmpty(combinedDetail) ? null : combinedDetail
             });
         }
     }
@@ -575,6 +620,218 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         }
     }
 
+    private static string NormalizeOrbitPosition(string? raw)
+    {
+        var value = (raw ?? string.Empty).Trim().ToLowerInvariant();
+        return value is "left" or "right" ? value : "bottom";
+    }
+
+    private string? ConfigureClipboard(JsonElement root)
+    {
+        var hasClipboardFields = root.TryGetProperty("clipboardEnabled", out _)
+            || root.TryGetProperty("clipboardShortcut", out _)
+            || root.TryGetProperty("clipboardOrigin", out _)
+            || root.TryGetProperty("clipboardKey", out _)
+            || root.TryGetProperty("quickOrbitPosition", out _);
+        if (!hasClipboardFields) return null;
+
+        var nextShortcut = GetString(root, "clipboardShortcut");
+        if (!string.IsNullOrWhiteSpace(nextShortcut)) clipboardShortcut = nextShortcut.Trim();
+        var nextOrigin = GetString(root, "clipboardOrigin");
+        if (nextOrigin is not null) clipboardOrigin = nextOrigin.Trim();
+        var nextKey = GetString(root, "clipboardKey");
+        if (nextKey is not null) clipboardKey = nextKey.Trim();
+        var nextPos = GetString(root, "quickOrbitPosition");
+        if (!string.IsNullOrWhiteSpace(nextPos)) quickOrbitPosition = NormalizeOrbitPosition(nextPos);
+        if (root.TryGetProperty("clipboardEnabled", out var enabledProp) &&
+            (enabledProp.ValueKind == JsonValueKind.True || enabledProp.ValueKind == JsonValueKind.False))
+        {
+            clipboardEnabled = enabledProp.GetBoolean();
+        }
+
+        hotKeyWindow.Unregister(ClipboardHotKeyId);
+        clipboardHook.Uninstall();
+
+        lumenWorkspace.Configure(clipboardOrigin, clipboardKey, clipboardEnabled);
+        lumenOrbit.Configure(clipboardOrigin, clipboardKey, clipboardEnabled, quickOrbitPosition);
+        EnsureClipboardTrayIcon(clipboardEnabled);
+        UpdateTrayPositionChecks();
+
+        if (!clipboardEnabled)
+        {
+            return null;
+        }
+
+        if (!lumenOrbit.IsAvailable)
+        {
+            return null;
+        }
+
+        if (hotKeyWindow.TryRegister(ClipboardHotKeyId, clipboardShortcut, OnClipboardHotKey, out var regErr))
+        {
+            return null;
+        }
+
+        if (clipboardHook.TryInstall(window, clipboardShortcut, OnClipboardHotKey, out var hookErr))
+        {
+            return $"剪贴板 {clipboardShortcut} 注册热键失败（错误 {regErr}），已自动启用低级键盘钩子拦截";
+        }
+
+        return $"剪贴板快捷键 {clipboardShortcut} 不可用（RegisterHotKey={regErr}, Hook={hookErr}）";
+    }
+
+    private void OnClipboardHotKey()
+    {
+        ToggleClipboardOrbit();
+    }
+
+    private void ToggleClipboardOrbit()
+    {
+        if (lumenOrbit.IsAvailable)
+        {
+            lumenOrbit.Toggle();
+        }
+    }
+
+    private void ShowClipboardWorkspace()
+    {
+        lumenWorkspace.ShowWorkspace();
+    }
+
+    private void OnWorkspaceOrbitPositionChanged(string nextPos)
+    {
+        quickOrbitPosition = NormalizeOrbitPosition(nextPos);
+        lumenOrbit.Configure(clipboardOrigin, clipboardKey, clipboardEnabled, quickOrbitPosition);
+        UpdateTrayPositionChecks();
+    }
+
+    private void EnsureClipboardTrayIcon(bool visible)
+    {
+        if (!visible)
+        {
+            if (clipboardTrayIcon is not null)
+            {
+                clipboardTrayIcon.Visible = false;
+            }
+            return;
+        }
+
+        if (clipboardTrayIcon is null)
+        {
+            clipboardTrayGraphic = CreateLumenTrayIcon();
+            var menu = new ContextMenuStrip();
+
+            var openWorkspaceItem = new ToolStripMenuItem("打开剪贴板工作区");
+            openWorkspaceItem.Click += (_, _) => ShowClipboardWorkspace();
+            menu.Items.Add(openWorkspaceItem);
+
+            trayOrbitItem = new ToolStripMenuItem($"Quick Orbit ({clipboardShortcut})");
+            trayOrbitItem.Click += (_, _) => ToggleClipboardOrbit();
+            menu.Items.Add(trayOrbitItem);
+
+            var posMenu = new ToolStripMenuItem("Orbit 停靠位置");
+            trayPosBottomItem = new ToolStripMenuItem("底部（多屏连续）");
+            trayPosBottomItem.Click += (_, _) => ApplyTrayOrbitPosition("bottom");
+            trayPosLeftItem = new ToolStripMenuItem("左侧边缘");
+            trayPosLeftItem.Click += (_, _) => ApplyTrayOrbitPosition("left");
+            trayPosRightItem = new ToolStripMenuItem("右侧边缘");
+            trayPosRightItem.Click += (_, _) => ApplyTrayOrbitPosition("right");
+            posMenu.DropDownItems.AddRange(new ToolStripItem[] { trayPosBottomItem, trayPosLeftItem, trayPosRightItem });
+            menu.Items.Add(posMenu);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            var previewLocalItem = new ToolStripMenuItem("预览本地文件…");
+            previewLocalItem.Click += (_, _) => LumenPreviewWindow.Shared.OpenLocalFilePicker();
+            menu.Items.Add(previewLocalItem);
+
+            clipboardTrayIcon = new NotifyIcon
+            {
+                Text = "AIH Paste Lumen V7",
+                Icon = clipboardTrayGraphic,
+                ContextMenuStrip = menu,
+                Visible = true
+            };
+            clipboardTrayIcon.DoubleClick += (_, _) => ShowClipboardWorkspace();
+        }
+        else
+        {
+            if (trayOrbitItem is not null)
+            {
+                trayOrbitItem.Text = $"Quick Orbit ({clipboardShortcut})";
+            }
+            clipboardTrayIcon.Visible = true;
+        }
+    }
+
+    private void UpdateTrayPositionChecks()
+    {
+        if (trayPosBottomItem is not null) trayPosBottomItem.Checked = quickOrbitPosition == "bottom";
+        if (trayPosLeftItem is not null) trayPosLeftItem.Checked = quickOrbitPosition == "left";
+        if (trayPosRightItem is not null) trayPosRightItem.Checked = quickOrbitPosition == "right";
+    }
+
+    private void ApplyTrayOrbitPosition(string position)
+    {
+        var normalized = NormalizeOrbitPosition(position);
+        quickOrbitPosition = normalized;
+        lumenOrbit.Configure(clipboardOrigin, clipboardKey, clipboardEnabled, normalized);
+        UpdateTrayPositionChecks();
+        _ = LumenClipboardStore.Shared.PatchSettingsAsync(new Dictionary<string, object?>
+        {
+            ["quickOrbitPosition"] = normalized
+        });
+    }
+
+    private static Icon CreateLumenTrayIcon()
+    {
+        using var bmp = new Bitmap(16, 16);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Color.Transparent);
+            using var ringBrush = new SolidBrush(Color.FromArgb(255, 20, 122, 232));
+            g.FillEllipse(ringBrush, 1, 1, 14, 14);
+            using var innerBrush = new SolidBrush(Color.FromArgb(245, 250, 255));
+            g.FillEllipse(innerBrush, 4, 4, 8, 8);
+            using var coreBrush = new SolidBrush(Color.FromArgb(255, 14, 165, 233));
+            g.FillEllipse(coreBrush, 6, 6, 4, 4);
+        }
+        var hIcon = bmp.GetHicon();
+        try
+        {
+            using var temp = Icon.FromHandle(hIcon);
+            return (Icon)temp.Clone();
+        }
+        finally
+        {
+            DestroyIcon(hIcon);
+        }
+    }
+
+    private void ShutdownLumenSurfaces()
+    {
+        if (lumenShutdownDone) return;
+        lumenShutdownDone = true;
+        clipboardHook.Dispose();
+        if (clipboardTrayIcon is not null)
+        {
+            clipboardTrayIcon.Visible = false;
+            clipboardTrayIcon.Dispose();
+            clipboardTrayIcon = null;
+        }
+        if (clipboardTrayGraphic is not null)
+        {
+            clipboardTrayGraphic.Dispose();
+            clipboardTrayGraphic = null;
+        }
+        try { LumenPreviewWindow.Shared.Shutdown(); } catch { }
+        try { lumenOrbit.Shutdown(); } catch { }
+        try { lumenWorkspace.Shutdown(); } catch { }
+        try { LumenPreviewCache.Shared.ClearAll(); } catch { }
+        try { LumenClipboardStore.Shared.Dispose(); } catch { }
+    }
+
     private void OnHotKey()
     {
         if (captureInProgress) return;
@@ -735,6 +992,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     {
         FinishCapture();
         StopLauncherSingletonRetry();
+        ShutdownLumenSurfaces();
         launcherHook.Dispose();
         hotKeyWindow.Dispose();
         ReleaseLauncherSingleton();
@@ -749,6 +1007,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         {
             FinishCapture();
             StopLauncherSingletonRetry();
+            ShutdownLumenSurfaces();
             launcherHook.Dispose();
             hotKeyWindow.Dispose();
             ReleaseLauncherSingleton();
@@ -830,6 +1089,9 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr hObject);
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 }
 
 internal sealed class HotKeyWindow : NativeWindow, IDisposable
@@ -958,8 +1220,8 @@ internal sealed class LowLevelLauncherHook : IDisposable
     private const long KeyHeldTimeoutMs = 2000;
 
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
-    private static readonly LowLevelKeyboardProc StaticHookProc = HookCallback;
-    private static LowLevelLauncherHook? activeInstance;
+    private static readonly HashSet<LowLevelLauncherHook> ActiveInstances = new();
+    private readonly LowLevelKeyboardProc hookProc;
 
     private IntPtr hookHandle = IntPtr.Zero;
     private Control? marshallControl;
@@ -970,6 +1232,11 @@ internal sealed class LowLevelLauncherHook : IDisposable
     private long keyHeldSinceMs;
     private bool suppressNextAltUp;
     private long suppressAltUntilMs;
+
+    public LowLevelLauncherHook()
+    {
+        hookProc = HookCallback;
+    }
 
     public bool IsInstalled => hookHandle != IntPtr.Zero;
 
@@ -989,14 +1256,14 @@ internal sealed class LowLevelLauncherHook : IDisposable
         keyHeldSinceMs = 0;
         suppressNextAltUp = false;
         suppressAltUntilMs = 0;
-        activeInstance = this;
+        ActiveInstances.Add(this);
 
         var moduleHandle = GetModuleHandle(null);
-        hookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, StaticHookProc, moduleHandle, 0);
+        hookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, hookProc, moduleHandle, 0);
         if (hookHandle == IntPtr.Zero)
         {
             win32Error = Marshal.GetLastWin32Error();
-            activeInstance = null;
+            ActiveInstances.Remove(this);
             marshallControl = null;
             onTrigger = null;
             return false;
@@ -1011,10 +1278,7 @@ internal sealed class LowLevelLauncherHook : IDisposable
             UnhookWindowsHookEx(hookHandle);
             hookHandle = IntPtr.Zero;
         }
-        if (ReferenceEquals(activeInstance, this))
-        {
-            activeInstance = null;
-        }
+        ActiveInstances.Remove(this);
         marshallControl = null;
         onTrigger = null;
         keyHeld = false;
@@ -1029,19 +1293,18 @@ internal sealed class LowLevelLauncherHook : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        var inst = activeInstance;
-        if (nCode >= 0 && inst is not null && lParam != IntPtr.Zero)
+        if (nCode >= 0 && lParam != IntPtr.Zero)
         {
             var now = Environment.TickCount64;
-            if (inst.keyHeld && now - inst.keyHeldSinceMs >= KeyHeldTimeoutMs)
+            if (keyHeld && now - keyHeldSinceMs >= KeyHeldTimeoutMs)
             {
-                inst.keyHeld = false;
+                keyHeld = false;
             }
-            if (inst.suppressNextAltUp && now >= inst.suppressAltUntilMs)
+            if (suppressNextAltUp && now >= suppressAltUntilMs)
             {
-                inst.suppressNextAltUp = false;
+                suppressNextAltUp = false;
             }
 
             var msg = wParam.ToInt32();
@@ -1049,44 +1312,44 @@ internal sealed class LowLevelLauncherHook : IDisposable
             if (msg == WM_KEYUP || msg == WM_SYSKEYUP)
             {
                 // Unconditionally clear keyHeld on target key release regardless of modifiers.
-                if (kb.vkCode == inst.targetVk)
+                if (kb.vkCode == targetVk)
                 {
-                    inst.keyHeld = false;
+                    keyHeld = false;
                 }
-                else if (inst.suppressNextAltUp && (kb.vkCode == VK_LMENU || kb.vkCode == VK_RMENU || kb.vkCode == VK_MENU))
+                else if (suppressNextAltUp && (kb.vkCode == VK_LMENU || kb.vkCode == VK_RMENU || kb.vkCode == VK_MENU))
                 {
                     // Swallow the matching Alt release so the foreground app does not activate its menu bar.
-                    inst.suppressNextAltUp = false;
+                    suppressNextAltUp = false;
                     return (IntPtr)1;
                 }
             }
             else if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
             {
-                if (kb.vkCode == inst.targetVk && ReadCurrentModifiers(kb.flags) == inst.targetModifiers)
+                if (kb.vkCode == targetVk && ReadCurrentModifiers(kb.flags) == targetModifiers)
                 {
-                    if (!inst.keyHeld)
+                    if (!keyHeld)
                     {
-                        inst.keyHeld = true;
-                        inst.keyHeldSinceMs = now;
-                        if ((inst.targetModifiers & 0x0001) != 0)
+                        keyHeld = true;
+                        keyHeldSinceMs = now;
+                        if ((targetModifiers & 0x0001) != 0)
                         {
-                            inst.suppressNextAltUp = true;
-                            inst.suppressAltUntilMs = now + KeyHeldTimeoutMs;
+                            suppressNextAltUp = true;
+                            suppressAltUntilMs = now + KeyHeldTimeoutMs;
                         }
-                        var ctrl = inst.marshallControl;
-                        var action = inst.onTrigger;
+                        var ctrl = marshallControl;
+                        var action = onTrigger;
                         if (ctrl is not null && action is not null && !ctrl.IsDisposed && ctrl.IsHandleCreated)
                         {
                             try { ctrl.BeginInvoke(action); }
                             catch (InvalidOperationException) { }
                         }
                     }
-                    // Return 1 to swallow Alt+Space so the system window menu never opens.
+                    // Return 1 to swallow shortcut so the foreground app does not trigger a system menu.
                     return (IntPtr)1;
                 }
             }
         }
-        return CallNextHookEx(inst?.hookHandle ?? IntPtr.Zero, nCode, wParam, lParam);
+        return CallNextHookEx(hookHandle, nCode, wParam, lParam);
     }
 
     private static uint ReadCurrentModifiers(uint llFlags)

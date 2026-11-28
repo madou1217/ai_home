@@ -654,7 +654,214 @@ final class LumenOrbitRemoveButton: NSView {
   }
 }
 
-// MARK: - V15 Content-First Orbit Card (§18.2, §18.3, §19.1, A38, A48, A68, A69)
+// MARK: - V15 Content-First Orbit Card (§3.1, §18.2, §18.3, §19.1, A38, A48, A68, A69)
+
+/// Self-bounded 16 DIP rounded-rect glass card face for Orbit (§3.1, §19.1).
+/// Draws the translucent glass gradient, subtle specular sheen, inner highlight,
+/// and crisp 1px (1.5px selected) border directly in `draw(_:)` so:
+/// 1) Card bounds ALWAYS stay synchronized across Auto Layout passes.
+/// 2) `cacheDisplay(in:to:)` captures the real card surface for soft dissolution particles.
+/// 3) `layer?.shadowPath` tracks `bounds` cleanly without clipping the outer shadow.
+fileprivate final class LumenOrbitCardSurfaceView: NSView {
+  let cornerRadius: CGFloat = LumenV15Tokens.orbitCardCorner
+
+  private var topColor: NSColor = LumenPalette.light.orbitCardTop
+  private var bottomColor: NSColor = LumenPalette.light.orbitCardBottom
+  private var borderColor: NSColor = LumenPalette.light.orbitCardBorder
+  private var innerHighlightColor: NSColor = LumenPalette.light.orbitCardInnerHighlight
+  private var borderWidth: CGFloat = 1.0
+  private var sheenOpacity: CGFloat = 0.0
+  private var isDarkTheme: Bool = false
+
+  override var isFlipped: Bool { false }
+  override var isOpaque: Bool { false }
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layerContentsRedrawPolicy = .onSetNeedsDisplay
+    layer?.isOpaque = false
+    layer?.backgroundColor = NSColor.clear.cgColor
+    layer?.masksToBounds = false
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  func applyAppearance(
+    palette: LumenPalette,
+    state: LumenOrbitCardView.VisualState,
+    glowEnabled: Bool
+  ) {
+    isDarkTheme = palette.isDark
+    topColor = palette.orbitCardTop
+    bottomColor = palette.orbitCardBottom
+    innerHighlightColor = palette.orbitCardInnerHighlight
+
+    let isSelected = state == .selected
+    let isHovered = state == .hovered
+
+    borderWidth = isSelected ? 1.5 : 1.0
+    if isSelected {
+      borderColor = palette.orbitCardSelectedBorder
+    } else if isHovered {
+      borderColor = palette.orbitCardHoverBorder
+    } else {
+      borderColor = palette.orbitCardBorder
+    }
+
+    if glowEnabled {
+      if isSelected {
+        sheenOpacity = 0.65
+      } else if isHovered {
+        sheenOpacity = 0.45
+      } else {
+        sheenOpacity = 0.0
+      }
+    } else {
+      sheenOpacity = 0.0
+    }
+
+    if let surfaceLayer = layer {
+      if isSelected && glowEnabled {
+        surfaceLayer.shadowColor = palette.orbitCardSelectedGlow.cgColor
+        surfaceLayer.shadowOpacity = palette.isDark ? 0.58 : 0.46
+        surfaceLayer.shadowRadius = 16
+        surfaceLayer.shadowOffset = CGSize(width: 0, height: -6)
+      } else if isSelected {
+        surfaceLayer.shadowColor = palette.orbitCardShadowColor.cgColor
+        surfaceLayer.shadowOpacity = palette.isDark ? 0.46 : 0.28
+        surfaceLayer.shadowRadius = 14
+        surfaceLayer.shadowOffset = CGSize(width: 0, height: -6)
+      } else if isHovered {
+        surfaceLayer.shadowColor = palette.orbitCardShadowColor.cgColor
+        surfaceLayer.shadowOpacity = palette.isDark ? 0.48 : 0.24
+        surfaceLayer.shadowRadius = 13
+        surfaceLayer.shadowOffset = CGSize(width: 0, height: -5)
+      } else {
+        surfaceLayer.shadowColor = palette.orbitCardShadowColor.cgColor
+        surfaceLayer.shadowOpacity = palette.isDark ? 0.40 : 0.18
+        surfaceLayer.shadowRadius = 10
+        surfaceLayer.shadowOffset = CGSize(width: 0, height: -4)
+      }
+    }
+
+    updateShadowPath()
+    needsDisplay = true
+  }
+
+  override func layout() {
+    super.layout()
+    updateShadowPath()
+    needsDisplay = true
+  }
+
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    updateShadowPath()
+    needsDisplay = true
+  }
+
+  private func updateShadowPath() {
+    guard bounds.width > 1, bounds.height > 1 else {
+      layer?.shadowPath = nil
+      return
+    }
+    let radius = min(cornerRadius, min(bounds.width, bounds.height) / 2.0)
+    layer?.shadowPath = CGPath(
+      roundedRect: bounds,
+      cornerWidth: radius,
+      cornerHeight: radius,
+      transform: nil
+    )
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard bounds.width > 1, bounds.height > 1,
+          let ctx = NSGraphicsContext.current?.cgContext else { return }
+
+    let radius = min(cornerRadius, min(bounds.width, bounds.height) / 2.0)
+    let cardPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    let space = CGColorSpaceCreateDeviceRGB()
+
+    // 1. 16 DIP rounded glass card body fill
+    ctx.saveGState()
+    ctx.addPath(cardPath)
+    ctx.clip()
+
+    if let grad = CGGradient(
+      colorsSpace: space,
+      colors: [topColor.cgColor, bottomColor.cgColor] as CFArray,
+      locations: [0.0, 1.0]
+    ) {
+      ctx.drawLinearGradient(
+        grad,
+        start: CGPoint(x: bounds.minX, y: bounds.maxY),
+        end: CGPoint(x: bounds.maxX, y: bounds.minY),
+        options: []
+      )
+    }
+
+    // 2. Subtle hover/selected optical specular sheen
+    if sheenOpacity > 0.001 {
+      let sheenCenter = CGPoint(x: bounds.midX, y: bounds.maxY)
+      let sheenColor = isDarkTheme
+        ? NSColor(srgbRed: 0.702, green: 0.827, blue: 1.0, alpha: 0.30 * sheenOpacity)
+        : NSColor.white.withAlphaComponent(0.55 * sheenOpacity)
+      if let sheen = CGGradient(
+        colorsSpace: space,
+        colors: [sheenColor.cgColor, NSColor.clear.cgColor] as CFArray,
+        locations: [0.0, 1.0]
+      ) {
+        ctx.drawRadialGradient(
+          sheen,
+          startCenter: sheenCenter,
+          startRadius: 0,
+          endCenter: sheenCenter,
+          endRadius: max(bounds.width, bounds.height) * 0.70,
+          options: []
+        )
+      }
+    }
+
+    // 3. Subtle 1pt inner glass specular rim for crisp edge separation on light & dark wallpapers
+    let innerInset = borderWidth + 0.5
+    let innerRect = bounds.insetBy(dx: innerInset, dy: innerInset)
+    if innerRect.width > 2, innerRect.height > 2 {
+      let innerRadius = max(0, radius - innerInset)
+      let innerPath = CGPath(
+        roundedRect: innerRect,
+        cornerWidth: innerRadius,
+        cornerHeight: innerRadius,
+        transform: nil
+      )
+      ctx.addPath(innerPath)
+      ctx.setStrokeColor(innerHighlightColor.cgColor)
+      ctx.setLineWidth(1.0)
+      ctx.strokePath()
+    }
+
+    ctx.restoreGState()
+
+    // 4. Crisp 1px (1.5px selected) outer rounded border
+    let strokeInset = borderWidth / 2.0
+    let strokeRect = bounds.insetBy(dx: strokeInset, dy: strokeInset)
+    if strokeRect.width > 1, strokeRect.height > 1 {
+      let strokeRadius = max(0, radius - strokeInset)
+      let strokePath = CGPath(
+        roundedRect: strokeRect,
+        cornerWidth: strokeRadius,
+        cornerHeight: strokeRadius,
+        transform: nil
+      )
+      ctx.saveGState()
+      ctx.addPath(strokePath)
+      ctx.setStrokeColor(borderColor.cgColor)
+      ctx.setLineWidth(borderWidth)
+      ctx.strokePath()
+      ctx.restoreGState()
+    }
+  }
+}
 
 /// Individual V15 Orbit card slot with one shared lift coordinate system for both
 /// the 16-corner card surface and the sibling 28×28 remove button.
@@ -720,9 +927,7 @@ final class LumenOrbitCardView: NSView {
   var snapshotTargetView: NSView { cardSurface }
 
   private let liftContainer = NSView()
-  private let cardSurface = NSView()
-  private let cardLayer = CAGradientLayer()
-  private let shineLayer = CAGradientLayer()
+  private let cardSurface = LumenOrbitCardSurfaceView()
 
   // Header (34 DIP, type glyph + type label + tabular time)
   private let headerView = NSView()
@@ -772,33 +977,7 @@ final class LumenOrbitCardView: NSView {
     liftContainer.layer?.masksToBounds = false
     liftContainer.translatesAutoresizingMaskIntoConstraints = false
 
-    cardSurface.wantsLayer = true
-    cardSurface.layer?.cornerRadius = LumenV15Tokens.orbitCardCorner
-    cardSurface.layer?.cornerCurve = .continuous
-    cardSurface.layer?.masksToBounds = false
-    cardSurface.layer?.shadowColor = NSColor(srgbRed: 0.04, green: 0.11, blue: 0.22, alpha: 1).cgColor
-    cardSurface.layer?.shadowOpacity = 0.20
-    cardSurface.layer?.shadowRadius = 11
-    cardSurface.layer?.shadowOffset = NSSize(width: 0, height: -5)
     cardSurface.translatesAutoresizingMaskIntoConstraints = false
-
-    cardLayer.cornerRadius = LumenV15Tokens.orbitCardCorner
-    cardLayer.cornerCurve = .continuous
-    cardLayer.masksToBounds = true
-    cardLayer.startPoint = CGPoint(x: 0, y: 1)
-    cardLayer.endPoint = CGPoint(x: 1, y: 0)
-    cardSurface.layer?.addSublayer(cardLayer)
-
-    shineLayer.cornerRadius = LumenV15Tokens.orbitCardCorner
-    shineLayer.cornerCurve = .continuous
-    shineLayer.startPoint = CGPoint(x: 0, y: 1)
-    shineLayer.endPoint = CGPoint(x: 0.85, y: 0.2)
-    shineLayer.colors = [
-      NSColor.white.withAlphaComponent(0.28).cgColor,
-      NSColor.clear.cgColor
-    ]
-    shineLayer.opacity = 0
-    cardSurface.layer?.addSublayer(shineLayer)
 
     removeButton.translatesAutoresizingMaskIntoConstraints = false
     removeButton.configureAccessibility(itemTitle: item.displayTitle)
@@ -843,11 +1022,7 @@ final class LumenOrbitCardView: NSView {
 
   override func layout() {
     super.layout()
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    cardLayer.frame = cardSurface.bounds
-    shineLayer.frame = cardSurface.bounds
-    CATransaction.commit()
+    cardSurface.needsDisplay = true
   }
 
   override func updateTrackingAreas() {
@@ -965,14 +1140,14 @@ final class LumenOrbitCardView: NSView {
     sourceFallbackBadge.wantsLayer = true
     sourceFallbackBadge.layer?.cornerRadius = 5
     sourceFallbackBadge.translatesAutoresizingMaskIntoConstraints = false
-    sourceFallbackLetter.stringValue = String(item.sourceLabel.prefix(1)).uppercased()
+    sourceFallbackLetter.stringValue = item.hasKnownSourceApp ? String(item.sourceLabel.prefix(1)).uppercased() : "?"
     sourceFallbackLetter.font = .systemFont(ofSize: 9, weight: .bold)
     sourceFallbackLetter.textColor = .white
     sourceFallbackLetter.alignment = .center
     sourceFallbackLetter.translatesAutoresizingMaskIntoConstraints = false
     sourceFallbackBadge.addSubview(sourceFallbackLetter)
 
-    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+    if let appIcon = LumenSourceAppIconCache.shared.icon(for: item) {
       sourceIconView.image = appIcon
       sourceIconView.isHidden = false
       sourceFallbackBadge.isHidden = true
@@ -982,6 +1157,7 @@ final class LumenOrbitCardView: NSView {
     }
 
     sourceLabel.stringValue = item.sourceLabel
+    sourceLabel.toolTip = item.sourceLabel
     sourceLabel.font = .systemFont(ofSize: 11, weight: .regular)
     sourceLabel.lineBreakMode = .byTruncatingTail
     sourceLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -1452,7 +1628,6 @@ final class LumenOrbitCardView: NSView {
   func applyTheme(_ next: LumenPalette, glowEnabled nextGlow: Bool) {
     palette = next
     glowEnabled = nextGlow
-    cardLayer.colors = [next.orbitCardTop.cgColor, next.orbitCardBottom.cgColor]
     typeGlyphView.configure(identity: identity, isDark: next.isDark, size: 18)
 
     let metaInk = next.isDark
@@ -1534,17 +1709,7 @@ final class LumenOrbitCardView: NSView {
     }
     currentLiftY = targetLiftY
 
-    cardLayer.borderWidth = isSelected ? 1.5 : 1.0
-    cardLayer.borderColor = (isSelected ? palette.orbitCardSelectedBorder : palette.orbitCardBorder).cgColor
-    shineLayer.opacity = (glowEnabled && (isSelected || visualState == .hovered)) ? 0.60 : 0.0
-
-    if let surfaceLayer = cardSurface.layer {
-      surfaceLayer.shadowColor = (isSelected && glowEnabled
-        ? palette.orbitCardSelectedGlow
-        : NSColor(srgbRed: 0.04, green: 0.11, blue: 0.22, alpha: 1)).cgColor
-      surfaceLayer.shadowOpacity = isSelected ? (glowEnabled ? 0.62 : 0.32) : 0.20
-      surfaceLayer.shadowRadius = isSelected ? 18 : 11
-    }
+    cardSurface.applyAppearance(palette: palette, state: visualState, glowEnabled: glowEnabled)
 
     if let outer = self.layer {
       outer.zPosition = isSelected ? 4 : (visualState == .hovered ? 2 : 0)

@@ -155,7 +155,14 @@ final class ClipboardWorkspaceWindow: NSObject,
       case .settingsUpdated:
         if self.activeNav == .settings { self.settingsView.reload() }
         self.updateSidebar()
-      case .statusUpdated, .connectionUpdated:
+      case .statusUpdated:
+        self.updateSidebar()
+        if self.activeNav == .settings {
+          self.settingsView.reload()
+        } else {
+          self.renderInspector()
+        }
+      case .connectionUpdated:
         self.updateSidebar()
         if self.activeNav == .settings { self.settingsView.reload() }
       case .preferencesUpdated:
@@ -888,6 +895,7 @@ final class ClipboardWorkspaceWindow: NSObject,
         item.displayTitle.lowercased().contains(q)
           || item.effectiveText.lowercased().contains(q)
           || item.sourceLabel.lowercased().contains(q)
+          || item.sourceApp.lowercased().contains(q)
           || item.contentIdentity.displayName.lowercased().contains(q)
           || item.files.contains(where: { $0.lowercased().contains(q) })
       }

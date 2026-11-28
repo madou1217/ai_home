@@ -2110,53 +2110,224 @@ final class LumenIdentityGlyphView: NSView {
   }
 }
 
-// MARK: - System Application Source Icon Resolver (§5.2, §18.2)
+// MARK: - System Application Source Name & Icon Resolver (§5.2, §18.2, S01/S02, A10)
+
+/// Resolves human-readable application source names from `sourceApp` without ever
+/// falling back to device IDs/names:
+/// - Empty `sourceApp` -> "来源未知".
+/// - Bundle-ID-like values (containing `.`) -> localized app name via NSWorkspace / Bundle,
+///   falling back to the last dot segment when the app is not installed on this Mac.
+enum LumenSourceAppResolver {
+  static let unknownLabel = "来源未知"
+
+  private static let lock = NSLock()
+  private static var nameCache: [String: String] = [:]
+
+  static func isUnknown(_ rawSourceApp: String) -> Bool {
+    rawSourceApp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  static func looksLikeBundleIdentifier(_ raw: String) -> Bool {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.contains("."),
+          !trimmed.contains(where: { $0.isWhitespace || $0.isNewline }),
+          !trimmed.contains("/"),
+          !trimmed.contains("\\") else {
+      return false
+    }
+    let segments = trimmed.split(separator: ".").filter { !$0.isEmpty }
+    return segments.count >= 2
+  }
+
+  static func displayName(for rawSourceApp: String) -> String {
+    let clean = rawSourceApp.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return unknownLabel }
+    if clean == unknownLabel { return unknownLabel }
+
+    lock.lock()
+    if let cached = nameCache[clean] {
+      lock.unlock()
+      return cached
+    }
+    lock.unlock()
+
+    let resolved: String
+    if looksLikeBundleIdentifier(clean) {
+      resolved = resolveBundleIdentifierName(clean)
+    } else {
+      resolved = clean
+    }
+
+    lock.lock()
+    nameCache[clean] = resolved
+    lock.unlock()
+    return resolved
+  }
+
+  private static func resolveBundleIdentifierName(_ bundleID: String) -> String {
+    // 1. Fast path: currently running application matching bundle identifier
+    for app in NSWorkspace.shared.runningApplications {
+      if let appBundleID = app.bundleIdentifier,
+         appBundleID.caseInsensitiveCompare(bundleID) == .orderedSame,
+         let name = normalizedAppName(app.localizedName) {
+        return name
+      }
+    }
+
+    // 2. Installed application bundle lookup via LaunchServices / NSWorkspace
+    if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID),
+       let localized = localizedAppName(at: appURL) {
+      return localized
+    }
+
+    // 3. Fallback: last dot-separated segment (guarding bare "Foo.app" / "Foo.exe")
+    let segments = bundleID.split(separator: ".").map(String.init).filter { !$0.isEmpty }
+    if segments.count == 2 {
+      let ext = segments[1].lowercased()
+      if ext == "app" || ext == "exe" {
+        return segments[0]
+      }
+    }
+    return segments.last ?? bundleID
+  }
+
+  private static func localizedAppName(at appURL: URL) -> String? {
+    if let bundle = Bundle(url: appURL) {
+      if let localizedDisplay = normalizedAppName(bundle.localizedInfoDictionary?["CFBundleDisplayName"] as? String) {
+        return localizedDisplay
+      }
+      if let localizedName = normalizedAppName(bundle.localizedInfoDictionary?["CFBundleName"] as? String) {
+        return localizedName
+      }
+    }
+
+    let fsDisplay = stripAppExtension(FileManager.default.displayName(atPath: appURL.path))
+    if let normalized = normalizedAppName(fsDisplay) {
+      return normalized
+    }
+
+    if let bundle = Bundle(url: appURL) {
+      if let infoDisplay = normalizedAppName(bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) {
+        return infoDisplay
+      }
+      if let infoName = normalizedAppName(bundle.object(forInfoDictionaryKey: "CFBundleName") as? String) {
+        return infoName
+      }
+    }
+
+    return normalizedAppName(appURL.deletingPathExtension().lastPathComponent)
+  }
+
+  private static func stripAppExtension(_ raw: String) -> String {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.lowercased().hasSuffix(".app"), trimmed.count > 4 {
+      return String(trimmed.dropLast(4))
+    }
+    return trimmed
+  }
+
+  private static func normalizedAppName(_ raw: String?) -> String? {
+    guard let raw else { return nil }
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+}
 
 /// Resolves real macOS application icons via NSWorkspace / running applications,
-/// caching by normalized source app name and falling back cleanly when unknown.
+/// caching by normalized source app identifier/name and falling back cleanly when unknown.
 final class LumenSourceAppIconCache {
   static let shared = LumenSourceAppIconCache()
 
+  private let lock = NSLock()
   private var iconCache: [String: NSImage] = [:]
   private var misses: Set<String> = []
 
   private init() {}
 
+  func icon(for item: LumenClipboardItem) -> NSImage? {
+    guard item.hasKnownSourceApp else { return nil }
+    if let icon = icon(forSourceApp: item.sourceApp) {
+      return icon
+    }
+    let resolved = item.sourceLabel
+    if resolved != item.sourceApp {
+      return icon(forSourceApp: resolved)
+    }
+    return nil
+  }
+
   func icon(forSourceApp name: String) -> NSImage? {
     let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty, clean != "本机", clean != "来源未知", clean != "Unknown" else {
+    guard !clean.isEmpty, clean != "本机", clean != LumenSourceAppResolver.unknownLabel, clean != "Unknown" else {
       return nil
     }
     let key = clean.lowercased()
-    if let cached = iconCache[key] { return cached }
-    if misses.contains(key) { return nil }
 
-    // 1. Check currently running applications (fast & exact for localized names)
-    for app in NSWorkspace.shared.runningApplications {
+    lock.lock()
+    if let cached = iconCache[key] {
+      lock.unlock()
+      return cached
+    }
+    if misses.contains(key) {
+      lock.unlock()
+      return nil
+    }
+    lock.unlock()
+
+    // 1. Direct bundle identifier lookup via NSWorkspace (works even when app is not running)
+    if LumenSourceAppResolver.looksLikeBundleIdentifier(clean),
+       let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: clean) {
+      let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+      cacheHit(icon, forKey: key)
+      return icon
+    }
+
+    // 2. Check currently running applications (fast & exact for localized names and bundle IDs)
+    let running = NSWorkspace.shared.runningApplications
+    for app in running {
       let localized = app.localizedName?.lowercased() ?? ""
       let bundleID = app.bundleIdentifier?.lowercased() ?? ""
-      if localized == key || bundleID == key || (!localized.isEmpty && localized.contains(key)) {
+      if localized == key || bundleID == key {
         if let icon = app.icon {
-          iconCache[key] = icon
+          cacheHit(icon, forKey: key)
           return icon
         }
       }
     }
+    for app in running {
+      let localized = app.localizedName?.lowercased() ?? ""
+      if !localized.isEmpty && localized.contains(key), let icon = app.icon {
+        cacheHit(icon, forKey: key)
+        return icon
+      }
+    }
 
-    // 2. Check standard macOS application bundles
+    // 3. Check standard macOS application bundles
+    let homeApps = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Applications", isDirectory: true)
+      .path
     let candidates: [String] = [
       "/Applications/\(clean).app",
+      "\(homeApps)/\(clean).app",
       "/System/Applications/\(clean).app",
       "/System/Applications/Utilities/\(clean).app",
       "/System/Library/CoreServices/\(clean).app"
     ]
     for path in candidates where FileManager.default.fileExists(atPath: path) {
       let icon = NSWorkspace.shared.icon(forFile: path)
-      iconCache[key] = icon
+      cacheHit(icon, forKey: key)
       return icon
     }
 
+    lock.lock()
     misses.insert(key)
+    lock.unlock()
     return nil
+  }
+
+  private func cacheHit(_ icon: NSImage, forKey key: String) {
+    lock.lock()
+    iconCache[key] = icon
+    lock.unlock()
   }
 }

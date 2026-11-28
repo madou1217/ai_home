@@ -71,14 +71,19 @@
 
 **WinDivert 结论**：它是 P0 的**可运行原型**，但 WinDivert 无法提供内核级 processId 归因；UDP/IPv6/竞态无法达到“精确 per-instance”验收。长期必须用 WFP callout。
 
-### 2.1a WFP 前置条件（当前阻塞）
+### 2.1a WFP 前置条件（构建链已通，加载待重启）
 
 - [ ] WDK 安装：26100/28000 均失败 1714；阻塞包 `SDK ARM64 Additions`（`{7D0E0601-E6CC-870D-0002-C93DD14EDA30}`）无法卸载（msiexec 返回 1612，安装源不可用）；需要修复 VS/SDK 组件或用 EWDK/VS Installer
 - [ ] VS Installer `--add Microsoft.VisualStudio.Component.WDK` 未产出 km 头文件，需要进一步修复安装
-- [ ] test signing：Secure Boot 已关闭，可开启；需要重启
-- [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
 - [x] 绕过安装器：官方 NuGet `Microsoft.Windows.WDK.x64 10.0.28000.2526` 可解出 `ntddk.h`/`fwpsk.h`/`ntoskrnl.lib`
-- [ ] WFP callout 驱动骨架（C/C++）待写
+- [x] 完整编译链：NuGet WDK 缺少基础 `shared` 头，改用 `tpn/winsdk-10` 的 **16299 完整头文件树**（`km`/`shared`/`km\crt`/`ucrt`）+ WDK 28000 导入库；`/DNDIS60=1` 启用 NDIS6 类型，`INITGUID` 自含 WFP 层 GUID。**真机产物 `aih-netguard.sys` 9,728 字节**
+- [x] WFP callout 驱动骨架（C）：provider/sublayer/callout V4+V6，ALE_AUTH_CONNECT 按 `FWPS_METADATA_FIELD_PROCESS_ID` 阻断；IOCTL 设置 PID 集合/查询计数
+- [x] loopback 豁免：V4 127.0.0.0/8、V6 ::1 与 ::ffff:127.0.0.0/8 放行（实例代理与 AIH 本地入口）
+- [x] 测试签名证书：`CN=AIH NetGuard Test` 自签代码签名证书，导入 Root/TrustedPublisher，`Set-AuthenticodeSignature` 签名后 `Get-AuthenticodeSignature = Valid`
+- [x] 驱动安装：`System32\drivers\aihnetguard.sys` + `AihNetGuard` kernel 服务已注册（demand start）
+- [ ] test signing：`bcdedit /set testsigning on` + 重启（Secure Boot 已关闭）；当前 `sc start` 返回 **577**，属预期
+- [ ] 驱动加载后的真机验收：目标进程外联被阻断、loopback 代理可用、非目标进程不受影响、卸载清理
+- [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
 - [ ] Windows Store/UWP 风险：Claude 是 `shell:AppsFolder\AnthropicPBC.Claude_...!Claude`，Codex/ChatGPT 也是 AppsFolder；同包多实例/多 OAuth 可能受厂商单实例限制，需真机验证
 
 ### 2.2 P1：per-instance 透明 TCP 代理（WinDivert NAT）
@@ -93,13 +98,15 @@
 
 ### 2.3 P2：WFP callout 产品化（C/C++）
 
-- [ ] 安装 WDK / 驱动构建链
+- [x] 安装 WDK / 驱动构建链（NuGet + 16299 头文件树绕过安装器）
+- [x] 驱动骨架：PID 集合阻断 + loopback 豁免 + IOCTL 控制面
+- [x] 用户态控制：`internal/runtime/netguard/wfp_windows.go`（设备 IOCTL、PID 并集、250ms 进程树、自动后端选择；交叉编译通过）
 - [ ] ALE_CONNECT_REDIRECT per-process/实例重定向
 - [ ] 内核侧实例上下文，避免 PID 复用竞态
-- [ ] 用户态控制服务 IOCTL / 生命周期
-- [ ] EV 签名 / attestation / test signing 方案
+- [ ] 用户态控制服务 IOCTL / 生命周期（当前由 aih-netguard 进程直接持有设备）
+- [ ] EV 签名 / attestation / test signing 方案（测试证书已就绪，testsigning 待重启）
 - [ ] EDR/杀软兼容测试
-- [ ] 决策 WinDivert vs WFP 作为长期默认
+- [ ] 决策 WinDivert vs WFP 作为长期默认（当前自动：驱动可用→WFP，否则 WinDivert）
 
 ### 2.4 Windows GUI 验收
 
@@ -218,8 +225,8 @@
 | 代理选择 / 临时入口 / 稳定端口 / 健康 | 高 | 90% | ✅ 基础完成 |
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
-| 严格进程级网络控制（跨平台） | 中 | 15% | 🚧 Phase 1/2/3 |
-| Windows per-instance GUI（JP/SG） | P0 TCP 原型可运行 | 8% | 🚧 Phase 2 |
+| 严格进程级网络控制（跨平台） | 中 | 18% | 🚧 Phase 1/2/3 |
+| Windows per-instance GUI（JP/SG） | P0 TCP + WFP 驱动可编译/签名/安装 | 15% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+三 CLI 启动已验证 | 40% | 🚧 Phase 3 |
 | macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
@@ -228,7 +235,7 @@
 | 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈22%** | 🚧 |
+| **总目标** | — | **≈24%** | 🚧 |
 
 ---
 
@@ -251,8 +258,8 @@
 
 ## 当前状态
 
-- 当前阶段：**Windows WFP 被 WDK 阻塞；macOS CLI/Chromium GUI 原型、Linux cgroup 阻断均已真机通过**
-- 已完成：Phase 0；Phase 1 契约代码；P0 IPv4 TCP；macOS CLI sandbox；Linux cgroup 阻断
-- 未开始：Phase 2.2 P1 透明 TCP、Phase 2.3 WFP、Phase 3.2 vendor GUI、Phase 5–9
+- 当前阶段：**Windows WFP 驱动已编译+签名+安装；待 test signing 重启后加载验收**
+- 已完成：Phase 0；Phase 1 契约代码；P0 IPv4 TCP；WFP 驱动构建链/驱动骨架/用户态控制；macOS CLI sandbox；Linux cgroup 阻断
+- 未开始：Phase 2.2 P1 透明 TCP、Phase 3.2 vendor GUI、Phase 5–9
 - 最近更新：2026-11-28
-- 证据：Windows 目标 `DIRECT_ERROR`/`blocked=3`、非目标 `DIRECT_OK 200`；macOS 代理 204、`--noproxy '*'` 拒绝、双实例 AU/SG；Linux cgroup 目标 timeout、loopback 200、其他 301
+- 证据：Windows 目标 `DIRECT_ERROR`/`blocked=3`、非目标 `DIRECT_OK 200`；`aih-netguard.sys` 9,728 B、签名 `Valid`、`sc create` 成功、`sc start` = 577（testsigning 未开）；macOS 代理 204、`--noproxy '*'` 拒绝、双实例 AU/SG；Linux cgroup 目标 timeout、loopback 200、其他 301

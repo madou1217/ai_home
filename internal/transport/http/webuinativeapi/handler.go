@@ -146,7 +146,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 func (h *Handler) serveGlobalSessions(response http.ResponseWriter, request *http.Request) {
 	h.globalMu.Lock()
 	defer h.globalMu.Unlock()
-	if len(h.globalBody) > 0 && time.Since(h.globalAt) < 5*time.Second {
+	if len(h.globalBody) > 0 && time.Since(h.globalAt) < 4*time.Second {
 		response.Header().Set("Content-Type", "application/json; charset=utf-8")
 		response.WriteHeader(http.StatusOK)
 		_, _ = response.Write(h.globalBody)
@@ -159,7 +159,7 @@ func (h *Handler) serveGlobalSessions(response http.ResponseWriter, request *htt
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, cli, "ss", "--list", "--all", "--json")
+	cmd := exec.CommandContext(ctx, cli, "ss", "--list", "--all", "--json", "--preview")
 	cmd.Env = append(os.Environ(), "AIH_HOME_DIR="+h.aiHomeDir)
 	if h.hostHomeDir != "" {
 		cmd.Env = append(cmd.Env, "HOME="+h.hostHomeDir)

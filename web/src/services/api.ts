@@ -2773,6 +2773,13 @@ export const nativeSessionsAPI = {
   },
 };
 
+export interface GlobalSessionPreviewEntry {
+  Kind: 'user' | 'assistant' | 'tool' | 'screen' | string;
+  Role: string;
+  Text: string;
+  AtMS?: number;
+}
+
 export interface GlobalSessionRow {
   Provider: string;
   RuntimeScope: string;
@@ -2791,6 +2798,8 @@ export interface GlobalSessionRow {
   LastMessage: string;
   LastMessageRole: string;
   LastMessageAtMS: number;
+  Preview?: GlobalSessionPreviewEntry[];
+  PreviewSource?: 'tmux' | 'transcript' | string;
   WindowName: string;
   Command: string;
   PanePID: number;

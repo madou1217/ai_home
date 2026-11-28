@@ -73,6 +73,10 @@ var skippedInputItemTypes = map[string]bool{
 	"local_shell_call":        true,
 	"local_shell_call_output": true,
 	"web_search_call":         true,
+	// remote compaction 项只对生成它的 OpenAI 后端有意义（encrypted_content 不透明），
+	// Canonical 无法投影；跳过而不是整轮 400。
+	"compaction":         true,
+	"compaction_summary": true,
 }
 
 func (output *decodedInput) appendItem(raw json.RawMessage, field string) error {
@@ -111,6 +115,9 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 		return nil
 	case header.Type == "reasoning":
 		message, decodeErr := decodeReasoningItem(raw, field)
+		if errors.Is(decodeErr, errSkipInputItem) {
+			return nil
+		}
 		if decodeErr != nil {
 			return inputItemError(decodeErr, field, header.Type)
 		}
@@ -395,40 +402,46 @@ func decodeReasoningItem(raw json.RawMessage, field string) (inference.Message, 
 	if err != nil {
 		return inference.Message{}, err
 	}
-	if wireReasoning.Type != "reasoning" ||
-		(wireReasoning.Status != "" && wireReasoning.Status != "completed") {
+	if wireReasoning.Type != "reasoning" {
 		return inference.Message{}, invalidField(field)
 	}
-	if hasJSONValue(wireReasoning.Content) && !isEmptyJSONArray(wireReasoning.Content) {
-		return inference.Message{}, unsupportedField(field + ".content")
+	// 历史 reasoning 只是可选的暖场上下文：未完成、空摘要或不可解密时跳过这一项，
+	// 不能因此拒绝整个会话。
+	if wireReasoning.Status != "" && wireReasoning.Status != "completed" {
+		return inference.Message{}, errSkipInputItem
 	}
 	contents := make([]inference.Content, 0, len(wireReasoning.Summary)+1)
-	for index, summary := range wireReasoning.Summary {
+	for _, summary := range wireReasoning.Summary {
 		if summary.Type != "summary_text" {
-			return inference.Message{}, invalidField(fmt.Sprintf("%s.summary[%d].type", field, index))
+			continue
 		}
 		content, contentErr := inference.NewReasoningSummaryContent(summary.Text)
 		if contentErr != nil {
-			return inference.Message{}, invalidField(fmt.Sprintf("%s.summary[%d].text", field, index))
+			continue
 		}
 		contents = append(contents, content)
 	}
 	if wireReasoning.EncryptedContent != "" {
-		content, contentErr := inference.NewEncryptedReasoningContent(wireReasoning.EncryptedContent)
-		if contentErr != nil {
-			return inference.Message{}, invalidField(field + ".encrypted_content")
+		if content, contentErr := inference.NewEncryptedReasoningContent(wireReasoning.EncryptedContent); contentErr == nil {
+			contents = append(contents, content)
 		}
-		contents = append(contents, content)
 	}
 	if len(contents) == 0 {
-		return inference.Message{}, invalidField(field)
+		return inference.Message{}, errSkipInputItem
+	}
+	if hasJSONValue(wireReasoning.Content) && !isEmptyJSONArray(wireReasoning.Content) {
+		// 只有 content 没有 summary/encrypted 的项在上面已经因 contents 为空被跳过；
+		// 其余情况丢弃未建模的 content，保留可用的摘要/密文。
 	}
 	message, messageErr := inference.NewMessage(inference.RoleAssistant, contents...)
 	if messageErr != nil {
-		return inference.Message{}, invalidField(field)
+		return inference.Message{}, errSkipInputItem
 	}
 	return message, nil
 }
+
+// errSkipInputItem 表示该项是可选历史（reasoning/辅助项），跳过即可，不能 400。
+var errSkipInputItem = errors.New("skip optional input item")
 
 // inputItemError 在字段路径中补充输入项 type，便于从日志直接判断是哪种 item
 // 携带了未知字段；type 经过诊断包的白名单清洗，不落正文。

@@ -77,6 +77,7 @@ func NewWFPGuard(options Options) (Guard, error) {
 		status: GuardStatus{
 			Mode:    ModeStrict,
 			Backend: "wfp",
+			DNSMode: options.Policy.DNS,
 		},
 	}
 	controller.register(guard)

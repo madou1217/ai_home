@@ -113,6 +113,7 @@ func NewWinDivertGuard(options Options) (Guard, error) {
 		status: GuardStatus{
 			Mode:    ModeStrict,
 			Backend: "windivert",
+			DNSMode: options.Policy.DNS,
 		},
 	}, nil
 }

@@ -87,7 +87,9 @@
 - [x] 测试签名证书：`CN=AIH NetGuard Test` 自签代码签名证书，导入 Root/TrustedPublisher，`Set-AuthenticodeSignature` 签名后 `Get-AuthenticodeSignature = Valid`
 - [x] 驱动安装：`System32\drivers\aihnetguard.sys` + `AihNetGuard` kernel 服务已注册（demand start）
 - ⛔ test signing：`bcdedit /set testsigning on` + 重启（Secure Boot 已关闭）；当前 `sc start` 返回 **577**。**等待用户授权重启**
-- ⛔ 驱动加载后的真机验收：被 test signing 重启授权阻塞
+- [x] 驱动加载：testsigning 重启后 `AihNetGuard` RUNNING
+- [x] WFP 外部阻断真机：受保护进程 TCP/UDP 外联失败，`blocked=3`
+- [ ] WFP loopback 放行：真机仍失败（127.0.0.1:18080 被阻断），需继续修 classify 地址判断
 - [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
 - [x] Windows Store/UWP 事实确认：Claude/Codex 均为 AppsFolder/AppContainer；命令行代理参数不可注入、同包多实例受限。Chrome/Edge（独立 profile）可严格启动；UWP 双实例需透明重定向
 

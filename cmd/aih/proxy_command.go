@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -91,11 +90,9 @@ type proxyServeOptions struct {
 	// exitWithParent 由 launchd/systemd 的包装器追加：监督进程消失时优雅退出。
 	exitWithParent bool
 	json           bool
-	// hotSwap 是运行期共享开关（默认关闭）；轮换时原地替换上游而不是重建入口。
-	hotSwap *atomic.Bool
-	// retryOnLoss 允许失败请求等待一次原地恢复（即使热替换关闭），
-	// 用于消掉 Server 重启后首条请求的 502。
-	retryOnLoss bool
+	// inPlace reports whether this entry can swap its upstream without
+	// rebinding listeners. When false, recovery falls back to a full rebuild.
+	inPlace bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
@@ -299,16 +296,9 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		}
 	}
 	homeDir, _ := resolveAIHomeDir(runtime)
-	settings := proxycontrol.LoadSettings(homeDir)
-	// Normalize a v1/missing file to the current schema so the default-on choice
-	// is visible on disk, not only in memory.
-	_ = proxycontrol.SaveSettings(homeDir, settings)
-	hotSwapEnabled := &atomic.Bool{}
-	hotSwapAvailable := proxyHotSwapAvailable(options)
-	hotSwapEnabled.Store(hotSwapAvailable && settings.HotSwap)
-	options.hotSwap = hotSwapEnabled
-	options.retryOnLoss = hotSwapAvailable
-	controlHub := newProxyControlHub(homeDir, hotSwapEnabled, hotSwapAvailable)
+	inPlace := proxyInPlaceAvailable(options)
+	options.inPlace = inPlace
+	controlHub := newProxyControlHub(homeDir, inPlace)
 
 	unit, err := newServeEntryUnit(ctx, runtime, options)
 	if err != nil {
@@ -346,8 +336,8 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 
 	leaseErr := make(chan error, 1)
 	// leaseLost is a failure discovered by a live request, not by the periodic
-	// renewal. It gets an emergency in-place recovery even when hot-swap is off,
-	// so the request that discovered the loss can retry instead of returning 502.
+	// renewal. It gets an in-place recovery when possible so the request that
+	// discovered the loss can retry instead of returning 502.
 	leaseLost := make(chan error, 1)
 	leaseActive := true
 	lastRenewAt := time.Now().UnixMilli()
@@ -364,7 +354,7 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			LeaseName:     leaseName,
 			Region:        proxyregion.RegionLabel(country, cityCode),
 			LeaseActive:   leaseActive,
-			HotSwap:       hotSwapEnabled.Load(),
+			InPlace:       inPlace,
 			LastRenewAtMs: lastRenewAt,
 			LastError:     lastErr,
 			Reconnects:    reconnects,
@@ -505,18 +495,6 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			return errors.New("TUN 内核已退出，代理入口随之关闭")
 		case action := <-controlHub.commands:
 			switch action.kind {
-			case "hot-swap":
-				if !hotSwapAvailable {
-					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("当前入口不支持热替换（需要匿名且非 TUN）")}
-					continue
-				}
-				hotSwapEnabled.Store(action.enabled)
-				if saveErr := proxycontrol.SaveSettings(homeDir, proxycontrol.Settings{HotSwap: action.enabled}); saveErr != nil {
-					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: fmt.Errorf("保存热替换开关失败: %w", saveErr)}
-					continue
-				}
-				publishStatus()
-				action.reply <- proxyControlResult{status: controlHub.snapshot()}
 			case "renew":
 				renewErr := lease.client.Renew(ctx, lease.leaseID())
 				if renewErr == nil {
@@ -536,25 +514,21 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 				leaseActive = false
 				lastErr = renewErr.Error()
 				publishStatus()
-				if hotSwapEnabled.Load() && hotSwapAvailable {
-					if refreshErr := refreshInPlace(); refreshErr != nil {
-						action.reply <- proxyControlResult{status: controlHub.snapshot(), err: refreshErr}
+				if inPlace {
+					if refreshErr := refreshInPlace(); refreshErr == nil {
+						action.reply <- proxyControlResult{status: controlHub.snapshot()}
 						continue
 					}
-					action.reply <- proxyControlResult{status: controlHub.snapshot()}
-					continue
 				}
+				// In-place recovery is unavailable or failed; rebuild the entry.
 				if rotation == nil {
-					// 点名节点不允许换到别的出口，但可以用**同一个 selector**
-					// 重新取得租约；Server 重启后这能把入口救回来，出口 IP 不变。
-					if refreshErr := refreshInPlace(); refreshErr != nil {
-						action.reply <- proxyControlResult{status: controlHub.snapshot(), err: refreshErr}
+					if healErr := rebuildSameSelection(); healErr != nil {
+						action.reply <- proxyControlResult{status: controlHub.snapshot(), err: healErr}
 						continue
 					}
 					action.reply <- proxyControlResult{status: controlHub.snapshot()}
 					continue
 				}
-				// 用户显式续约时允许重新尝试所有候选；自动失败循环仍保留排除集。
 				rotation.Reset()
 				if _, healErr := rebuildEntry(renewErr.Error()); healErr != nil {
 					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: healErr}
@@ -568,19 +542,18 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			leaseActive = false
 			lastErr = lostErr.Error()
 			publishStatus()
-			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 请求发现上游失效（%v），正在原地恢复…\n", lostErr)
-			if !hotSwapAvailable {
-				lease.finishRecovery(errors.New("当前入口不支持原地恢复"))
-				continue
-			}
-			// Emergency path: keep the listener, swap the lease in place and let
-			// the failed request retry. This is independent of the hot-swap
-			// policy; periodic renewals still rebuild when hot-swap is off.
-			if refreshErr := retryRecovery(ctx, 15, time.Second, refreshInPlace); refreshErr == nil {
-				lease.finishRecovery(nil)
-				continue
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 请求发现上游失效（%v），正在恢复…\n", lostErr)
+			if inPlace {
+				// Keep the listener, swap the lease in place and let the failed
+				// request retry.
+				if refreshErr := retryRecovery(ctx, 15, time.Second, refreshInPlace); refreshErr == nil {
+					lease.finishRecovery(nil)
+					continue
+				} else {
+					lease.finishRecovery(refreshErr)
+				}
 			} else {
-				lease.finishRecovery(refreshErr)
+				lease.finishRecovery(errors.New("当前入口不支持原地恢复"))
 			}
 			// In-place recovery failed; fall back to a full rebuild so the entry
 			// does not stay dead until the next renewal.
@@ -603,22 +576,22 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			lastErr = renewErr.Error()
 			publishStatus()
 			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 代理租约续期失败（%v），正在恢复…\n", renewErr)
-			hotSwap := hotSwapEnabled.Load() && hotSwapAvailable
-			if hotSwap {
-				// 热替换开启：入口保持，上游原地恢复；请求在上游不可用期间
-				// 一律 502，不会落到直连。
+			if inPlace {
+				// Seamless path: keep listeners, swap the upstream in place.
 				if refreshErr := retryRecovery(ctx, 15, 2*time.Second, refreshInPlace); refreshErr == nil {
 					lease.finishRecovery(nil)
 					if !options.json {
 						writeServeEntrySummary(runtime, options, lease)
 					}
 					continue
+				} else {
+					lease.finishRecovery(refreshErr)
 				}
-				lease.finishRecovery(errors.New("上游恢复超时"))
-				return fmt.Errorf("代理租约续期失败: %w", renewErr)
+			} else {
+				lease.finishRecovery(errors.New("当前入口不支持原地恢复"))
 			}
-			// 热替换关闭：先掐断入口，再在同一端口重建。恢复期间所有连接
-			// 被拒绝（fail closed），绝不回落到直连。
+			// In-place unavailable or failed: close the listeners and rebuild on
+			// the same port. Recovery is fail closed, never direct.
 			stopWatchers()
 			_ = unit.Close()
 			lease.finishRecovery(errors.New("入口已断开，等待恢复"))

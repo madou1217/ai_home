@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
@@ -22,9 +21,8 @@ import (
 const controlFileVersion = 1
 
 type proxyControlAction struct {
-	kind    string
-	enabled bool
-	reply   chan proxyControlResult
+	kind  string
+	reply chan proxyControlResult
 }
 
 type proxyControlResult struct {
@@ -34,27 +32,24 @@ type proxyControlResult struct {
 
 // proxyControlHub relays dashboard/WebUI commands into the serve loop.
 type proxyControlHub struct {
-	home      string
-	commands  chan proxyControlAction
-	hotSwap   *atomic.Bool
-	available bool
+	home     string
+	commands chan proxyControlAction
+	inPlace  bool
 
 	mu     sync.RWMutex
 	status proxycontrol.Status
 }
 
-func newProxyControlHub(home string, hotSwap *atomic.Bool, available bool) *proxyControlHub {
+func newProxyControlHub(home string, inPlace bool) *proxyControlHub {
 	return &proxyControlHub{
-		home:      home,
-		commands:  make(chan proxyControlAction, 4),
-		hotSwap:   hotSwap,
-		available: available,
+		home:     home,
+		commands: make(chan proxyControlAction, 4),
+		inPlace:  inPlace,
 		status: proxycontrol.Status{
-			Running:          true,
-			PID:              os.Getpid(),
-			HotSwap:          hotSwap != nil && hotSwap.Load(),
-			HotSwapAvailable: available,
-			UpdatedAtMs:      time.Now().UnixMilli(),
+			Running:     true,
+			PID:         os.Getpid(),
+			InPlace:     inPlace,
+			UpdatedAtMs: time.Now().UnixMilli(),
 		},
 	}
 }
@@ -65,8 +60,7 @@ func (hub *proxyControlHub) setStatus(status proxycontrol.Status) {
 	}
 	status.PID = os.Getpid()
 	status.Running = true
-	status.HotSwapAvailable = hub.available
-	status.HotSwap = hub.hotSwap != nil && hub.hotSwap.Load()
+	status.InPlace = hub.inPlace
 	status.UpdatedAtMs = time.Now().UnixMilli()
 	hub.mu.Lock()
 	hub.status = status
@@ -80,18 +74,17 @@ func (hub *proxyControlHub) snapshot() proxycontrol.Status {
 	hub.mu.RLock()
 	defer hub.mu.RUnlock()
 	status := hub.status
-	status.HotSwap = hub.hotSwap != nil && hub.hotSwap.Load()
-	status.HotSwapAvailable = hub.available
+	status.InPlace = hub.inPlace
 	return status
 }
 
-func (hub *proxyControlHub) request(ctx context.Context, kind string, enabled bool) (proxycontrol.Status, error) {
+func (hub *proxyControlHub) request(ctx context.Context, kind string) (proxycontrol.Status, error) {
 	if hub == nil {
 		return proxycontrol.Status{}, errors.New("代理控制未启用")
 	}
 	reply := make(chan proxyControlResult, 1)
 	select {
-	case hub.commands <- proxyControlAction{kind: kind, enabled: enabled, reply: reply}:
+	case hub.commands <- proxyControlAction{kind: kind, reply: reply}:
 	case <-ctx.Done():
 		return hub.snapshot(), ctx.Err()
 	case <-time.After(5 * time.Second):
@@ -174,26 +167,7 @@ func (hub *proxyControlHub) handler(token string) http.Handler {
 			writeControlJSON(writer, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
 			return
 		}
-		status, err := hub.request(request.Context(), "renew", false)
-		writeControlResult(writer, status, err)
-	})
-	mux.HandleFunc("/hot-swap", func(writer http.ResponseWriter, request *http.Request) {
-		if !validControlToken(request, token) {
-			writeControlJSON(writer, http.StatusUnauthorized, map[string]any{"ok": false, "error": "unauthorized"})
-			return
-		}
-		if request.Method != http.MethodPost {
-			writeControlJSON(writer, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
-			return
-		}
-		var payload struct {
-			Enabled bool `json:"enabled"`
-		}
-		if json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4096)).Decode(&payload) != nil {
-			writeControlJSON(writer, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload"})
-			return
-		}
-		status, err := hub.request(request.Context(), "hot-swap", payload.Enabled)
+		status, err := hub.request(request.Context(), "renew")
 		writeControlResult(writer, status, err)
 	})
 	return mux
@@ -273,7 +247,7 @@ func removeControlFile(path string, pid int) {
 	_ = os.Remove(path)
 }
 
-func proxyHotSwapAvailable(options proxyServeOptions) bool {
+func proxyInPlaceAvailable(options proxyServeOptions) bool {
 	// Authenticated client URLs embed the lease token; swapping it would leave
 	// existing clients presenting the old one. TUN owns its own upstream.
 	return options.anonymous && !options.tun

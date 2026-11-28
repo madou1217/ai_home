@@ -30,18 +30,16 @@ const (
 	//	POST /v1/management/webui/apps/launch
 	Path       = "/v1/management/webui/apps"
 	LaunchPath = Path + "/launch"
-	// DeskPath 是「应用看台」：已启动实例 + 代理状态 + 续约/结束/热替换。
+	// DeskPath 是「应用看台」：已启动实例 + 代理状态 + 续约/结束。
 	//
 	//	GET  /v1/management/webui/apps/desk
 	//	POST /v1/management/webui/apps/desk/renew
 	//	POST /v1/management/webui/apps/desk/kill
-	//	POST /v1/management/webui/apps/desk/hot-swap
 	//	GET  /v1/management/webui/apps/desk/history
 	//	POST /v1/management/webui/apps/desk/history/clear
 	DeskPath             = Path + "/desk"
 	DeskRenewPath        = DeskPath + "/renew"
 	DeskKillPath         = DeskPath + "/kill"
-	DeskHotSwapPath      = DeskPath + "/hot-swap"
 	DeskHistoryPath      = DeskPath + "/history"
 	DeskHistoryClearPath = DeskHistoryPath + "/clear"
 
@@ -149,13 +147,6 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			return
 		}
 		handler.kill(response, request)
-	case DeskHotSwapPath:
-		if request.Method != http.MethodPost {
-			response.Header().Set("Allow", http.MethodPost)
-			writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
-			return
-		}
-		handler.hotSwap(response, request)
 	case DeskHistoryPath:
 		if request.Method != http.MethodGet {
 			response.Header().Set("Allow", http.MethodGet)
@@ -308,7 +299,6 @@ type deskView struct {
 	// full history on every poll; rows are fetched lazily.
 	HistoryCount int                 `json:"historyCount"`
 	Proxy        proxycontrol.Status `json:"proxy"`
-	HotSwap      bool                `json:"hotSwap"`
 	ProxyError   string              `json:"proxyError,omitempty"`
 }
 
@@ -323,7 +313,6 @@ func (handler *Handler) deskView(request *http.Request) (deskView, error) {
 	view := deskView{
 		Instances:    active,
 		HistoryCount: len(history),
-		HotSwap:      proxycontrol.LoadSettings(handler.aiHomeDir).HotSwap,
 	}
 	client, loadErr := proxycontrol.Load(handler.aiHomeDir)
 	if loadErr != nil {
@@ -339,7 +328,6 @@ func (handler *Handler) deskView(request *http.Request) (deskView, error) {
 	view.Proxy = status
 	view.Proxy.HTTPURL = stripURLUserinfo(status.HTTPURL)
 	view.Proxy.SOCKS5URL = stripURLUserinfo(status.SOCKS5URL)
-	view.HotSwap = status.HotSwap
 	return view, nil
 }
 
@@ -546,34 +534,6 @@ func (handler *Handler) kill(response http.ResponseWriter, request *http.Request
 	writeJSON(response, http.StatusOK, payloadOut)
 }
 
-func (handler *Handler) hotSwap(response http.ResponseWriter, request *http.Request) {
-	var payload struct {
-		Enabled bool `json:"enabled"`
-	}
-	if json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes)).Decode(&payload) != nil {
-		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload"})
-		return
-	}
-	client, loadErr := proxycontrol.Load(handler.aiHomeDir)
-	if loadErr != nil {
-		// No running entry: persist the preference for the next start.
-		if err := proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{HotSwap: payload.Enabled}); err != nil {
-			writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "save_failed", "message": err.Error()})
-			return
-		}
-		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "hotSwap": payload.Enabled, "running": false})
-		return
-	}
-	status, err := client.SetHotSwap(request.Context(), payload.Enabled)
-	if err != nil {
-		writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "hot_swap_failed", "message": err.Error(), "proxy": status})
-		return
-	}
-	_ = proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{HotSwap: payload.Enabled})
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "hotSwap": payload.Enabled, "proxy": status})
-}
-
-// history returns ended launches only; the live desk never includes them.
 func (handler *Handler) history(response http.ResponseWriter, request *http.Request) {
 	history, err := appsessions.New(handler.aiHomeDir).History(request.Context())
 	if err != nil {

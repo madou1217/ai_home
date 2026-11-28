@@ -42,8 +42,8 @@ export interface AppDeskProxyStatus {
   /** 出口国家/城市（由租约名解析，能解析时才有）。 */
   region?: string;
   leaseActive: boolean;
-  hotSwap: boolean;
-  hotSwapAvailable: boolean;
+  /** 该入口是否支持原地恢复；false 时恢复会重建入口。 */
+  inPlace: boolean;
   lastRenewAtMs?: number;
   lastError?: string;
   reconnects?: number;
@@ -56,7 +56,6 @@ export interface AppDeskView {
   /** 已结束实例数；历史行按需从 /desk/history 拉取。 */
   historyCount: number;
   proxy: AppDeskProxyStatus;
-  hotSwap: boolean;
   proxyError?: string;
 }
 
@@ -116,12 +115,6 @@ export interface AppDeskKillResponse {
   desk?: AppDeskView;
 }
 
-export interface AppDeskHotSwapResponse {
-  ok: boolean;
-  hotSwap: boolean;
-  proxy?: AppDeskProxyStatus;
-  running?: boolean;
-}
 
 export interface AppDeskErrorInfo {
   code?: string;
@@ -138,15 +131,13 @@ const MANAGEMENT_APPS_BASE = '/v1/management/webui/apps';
 const DEFAULT_PROXY_STATUS: AppDeskProxyStatus = {
   running: false,
   leaseActive: false,
-  hotSwap: false,
-  hotSwapAvailable: false
+  inPlace: false
 };
 
 const ERROR_CODE_LABELS: Record<string, string> = {
   app_not_proxied: '选中的应用没有使用代理',
   proxy_not_running: '本机代理入口未运行',
   renew_failed: '代理租约续约失败',
-  hot_swap_failed: '切换热替换失败',
   kill_failed: '结束应用进程失败',
   desk_failed: '读取应用看台失败',
   route_not_found: '当前服务端未启用应用看台接口（需要桌面会话）'
@@ -225,8 +216,7 @@ function normalizeProxyStatus(raw?: Partial<AppDeskProxyStatus> | null): AppDesk
     leaseName: typeof raw.leaseName === 'string' && raw.leaseName ? raw.leaseName : undefined,
     region: typeof raw.region === 'string' && raw.region ? raw.region : undefined,
     leaseActive: Boolean(raw.leaseActive),
-    hotSwap: Boolean(raw.hotSwap),
-    hotSwapAvailable: Boolean(raw.hotSwapAvailable),
+    inPlace: Boolean(raw.inPlace),
     lastRenewAtMs: typeof raw.lastRenewAtMs === 'number' && raw.lastRenewAtMs > 0 ? raw.lastRenewAtMs : undefined,
     lastError: typeof raw.lastError === 'string' && raw.lastError ? raw.lastError : undefined,
     reconnects: typeof raw.reconnects === 'number' && raw.reconnects >= 0 ? raw.reconnects : 0,
@@ -240,7 +230,6 @@ function normalizeDeskView(raw?: Partial<AppDeskView> | null): AppDeskView {
     instances: Array.isArray(raw?.instances) ? raw.instances : [],
     historyCount: typeof raw?.historyCount === 'number' && raw.historyCount > 0 ? raw.historyCount : 0,
     proxy,
-    hotSwap: typeof raw?.hotSwap === 'boolean' ? raw.hotSwap : proxy.hotSwap,
     proxyError: typeof raw?.proxyError === 'string' && raw.proxyError ? raw.proxyError : undefined
   };
 }
@@ -340,21 +329,6 @@ export const appDeskAPI = {
       ok: Boolean(data.ok),
       results: Array.isArray(data.results) ? data.results : [],
       desk: data.desk ? normalizeDeskView(data.desk) : undefined
-    };
-  },
-
-  async setHotSwap(enabled: boolean): Promise<AppDeskHotSwapResponse> {
-    const data = await requestDesk<{
-      ok: boolean;
-      hotSwap?: boolean;
-      proxy?: Partial<AppDeskProxyStatus>;
-      running?: boolean;
-    }>('POST', '/hot-swap', { enabled });
-    return {
-      ok: Boolean(data.ok),
-      hotSwap: typeof data.hotSwap === 'boolean' ? data.hotSwap : enabled,
-      proxy: data.proxy ? normalizeProxyStatus(data.proxy) : undefined,
-      running: data.running
     };
   },
 

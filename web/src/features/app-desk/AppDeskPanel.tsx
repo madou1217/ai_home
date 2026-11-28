@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Checkbox, Input, Modal, Segmented, Select, Spin, Switch, Tooltip, message } from 'antd';
+import { Checkbox, Input, Modal, Segmented, Select, Spin, Tooltip, message } from 'antd';
 import {
   CheckOutlined,
   CloseOutlined,
@@ -187,7 +187,7 @@ function AnimatedCheck({ size = 14 }: { size?: number }) {
 /**
  * 应用看台（Toolkit → 应用与集成）：
  * 展示通过 `aih app` 与 WebUI 启动的本机应用实例、实时进程/代理状态，
- * 并提供代理续约、热替换切换与进程结束控制。
+ * 并提供代理续约、恢复方式展示与进程结束控制。
  */
 export default function AppDeskPanel() {
   const [desk, setDesk] = useState<AppDeskView | null>(null);
@@ -198,7 +198,6 @@ export default function AppDeskPanel() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [renewing, setRenewing] = useState(false);
   const [killingMode, setKillingMode] = useState<'' | 'selected' | 'all'>('');
-  const [togglingHotSwap, setTogglingHotSwap] = useState(false);
   const [copiedSample, setCopiedSample] = useState(false);
 
   // 主列表只放运行中的实例；已结束的行进历史视图，避免列表无限增长。
@@ -384,8 +383,7 @@ export default function AppDeskPanel() {
   const historyRows = useMemo(() => history.filter((item) => !item.live), [history]);
   const proxy = desk?.proxy;
   const proxyState = resolveProxyVisualState(proxy, desk?.proxyError);
-  const hotSwapEnabled = desk?.hotSwap ?? false;
-  const hotSwapUnavailable = Boolean(proxy?.running && !proxy.hotSwapAvailable);
+  const inPlaceRecovery = Boolean(proxy?.inPlace);
 
   const selectedApp = useMemo(
     () => appCatalog.find((item) => item.id === launchAppId),
@@ -605,48 +603,6 @@ export default function AppDeskPanel() {
       ),
       onOk: () => handleKillAllConfirm()
     });
-  };
-
-  const handleToggleHotSwap = async (nextEnabled: boolean) => {
-    if (togglingHotSwap || hotSwapUnavailable) return;
-    setTogglingHotSwap(true);
-    mutationEpochRef.current += 1;
-    try {
-      const result = await appDeskAPI.setHotSwap(nextEnabled);
-      if (!mountedRef.current) return;
-      mutationEpochRef.current += 1;
-      if (result.proxy) {
-        observeProxyTransition(result.proxy);
-      }
-      setDesk((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          hotSwap: result.hotSwap,
-          proxy: result.proxy ?? { ...current.proxy, hotSwap: result.hotSwap }
-        };
-      });
-      const detail = result.running === false
-        ? '代理入口未运行，已保存为下次启动默认配置'
-        : result.hotSwap
-          ? '恢复默认：所有恢复都原地替换上游并自动重试'
-          : '已切换为排障模式：周期/手动失效将强制重建入口';
-      showFeedback('info', result.hotSwap ? '上游热替换已开启' : '上游热替换已关闭', detail);
-      message.success(result.hotSwap ? '上游热替换已开启' : '上游热替换已关闭');
-    } catch (error: unknown) {
-      if (!mountedRef.current) return;
-      const info = extractAppDeskError(error, '切换热替换失败');
-      if (info.proxy) {
-        const nextProxy = info.proxy;
-        mutationEpochRef.current += 1;
-        observeProxyTransition(nextProxy);
-        setDesk((current) => (current ? { ...current, proxy: nextProxy, hotSwap: nextProxy.hotSwap } : current));
-      }
-      showFeedback('error', `热替换切换失败：${info.message}`);
-      message.error(info.message);
-    } finally {
-      if (mountedRef.current) setTogglingHotSwap(false);
-    }
   };
 
   const handleCopySample = async () => {
@@ -947,7 +903,7 @@ export default function AppDeskPanel() {
           <div className="toolkit-panel-kicker">APP DESK</div>
           <h2 id="toolkit-app-desk">应用看台</h2>
           <p>
-            实时跟踪通过 <code>aih app</code> 或 WebUI 启动的本机应用实例，统一管理进程状态、代理续约与上游热替换。
+            实时跟踪通过 <code>aih app</code> 或 WebUI 启动的本机应用实例，统一管理进程状态、代理续约与上游恢复。
           </p>
         </div>
         <div className="app-desk-header-actions">
@@ -981,7 +937,7 @@ export default function AppDeskPanel() {
         </InlineNote>
       ) : null}
 
-      {/* 代理状态卡：完整描边 + 状态点 + 热替换开关，无左侧粗竖条、无大块 Alert */}
+      {/* 代理状态卡：完整描边 + 状态点 + 恢复方式，无左侧粗竖条、无大块 Alert */}
       <article
         className="app-desk-proxy-card"
         data-proxy-state={proxyState}
@@ -1094,49 +1050,21 @@ export default function AppDeskPanel() {
             </dd>
           </div>
           <div className="app-desk-metric">
-            <dt>热替换状态</dt>
+            <dt>恢复方式</dt>
             <dd>
               <strong className="app-desk-metric-value">
-                {hotSwapUnavailable
-                  ? '不可用'
-                  : hotSwapEnabled
-                    ? '已开启'
-                    : '已关闭'}
+                {proxy?.running ? (inPlaceRecovery ? '原地热替换' : '重建入口') : '—'}
               </strong>
               <span className="app-desk-metric-sub">
-                {hotSwapUnavailable
-                  ? '需匿名且非 TUN'
-                  : hotSwapEnabled
-                    ? '原地替换并重试'
-                    : '强制重建（排障）'}
+                {proxy?.running ? (inPlaceRecovery ? '不断线并重试' : '短暂断线') : '入口未运行'}
               </span>
             </dd>
           </div>
         </dl>
 
-        <div className="app-desk-hotswap-row">
-          <div className="app-desk-hotswap-control">
-            <label className="app-desk-hotswap-label" htmlFor="app-desk-hotswap-switch">
-              <ThunderboltOutlined className="app-desk-hotswap-icon" />
-              <span>上游热替换</span>
-            </label>
-            <Switch
-              id="app-desk-hotswap-switch"
-              size="small"
-              checked={hotSwapEnabled && !hotSwapUnavailable}
-              loading={togglingHotSwap}
-              disabled={(loading && !desk) || hotSwapUnavailable || togglingHotSwap}
-              onChange={(checked) => void handleToggleHotSwap(checked)}
-            />
-          </div>
-          <p className="app-desk-hotswap-desc" data-unavailable={hotSwapUnavailable ? 'true' : 'false'}>
-            {hotSwapUnavailable
-              ? '当前入口不支持热替换：需要匿名入口且非 TUN 模式（带认证入口 URL 内嵌租约凭据，TUN 独立持有上游，均无法原地替换）。'
-              : hotSwapEnabled
-                ? '已开启（默认，推荐）：周期续期、手动续约与请求失效全部原地替换上游并自动重试；不会重建入口。'
-                : '已关闭（排障）：周期续期/手动续约失效时强制重建入口（短暂断线）；请求中发现的失效仍会自动原地恢复并重试当前请求。'}
-          </p>
-        </div>
+        <p className="app-desk-recovery-desc">
+          恢复策略：优先原地替换上游并自动重试当前请求；认证入口或 TUN 等无法原地恢复时，才重建入口（短暂断线）。
+        </p>
 
         {proxy?.running && proxy.lastError ? (
           <div className="app-desk-proxy-note">

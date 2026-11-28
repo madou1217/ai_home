@@ -157,11 +157,17 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
   }
 
   private func present(queue nextQueue: [LumenPreviewItem], startIndex: Int) {
+    // Always stop and release any previous renderer (media decoders / ZIP secrets) before loading a new queue.
+    activeRendererView?.teardown()
+    activeRendererView?.removeFromSuperview()
+    activeRendererView = nil
+
     queue = nextQueue
     activeIndex = max(0, min(nextQueue.count - 1, startIndex))
     updateQueueVisibility()
     queueTable.reloadData()
-    mountActiveRenderer(animated: false)
+    // Opening Quick Look NEVER auto-plays audio or video (Q06, Q08, A13)
+    mountActiveRenderer(animated: false, autoPlay: false)
     showAnimated()
   }
 
@@ -456,8 +462,11 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     footerHintsLabel.textColor = palette.muted
     updateHeaderButtonsTheme()
     if !queue.isEmpty {
+      activeRendererView?.teardown()
+      activeRendererView?.removeFromSuperview()
+      activeRendererView = nil
       queueTable.reloadData()
-      mountActiveRenderer(animated: false)
+      mountActiveRenderer(animated: false, autoPlay: false)
     }
   }
 
@@ -469,11 +478,13 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     queueDivider.isHidden = !showQueue
     queueWidthConstraint?.constant = showQueue ? 236 : 0
     let audioOnly = !queue.isEmpty && queue.allSatisfy { $0.kind == .audio }
-    queueHeaderLabel.stringValue = "\(audioOnly ? "播放队列" : "文件集合") · \(queue.count)"
+    let videoOnly = !queue.isEmpty && queue.allSatisfy { $0.kind == .video }
+    let queueTitle = audioOnly ? "播放队列" : (videoOnly ? "视频队列" : "文件集合")
+    queueHeaderLabel.stringValue = "\(queueTitle) · \(queue.count)"
     updateHeaderButtonsTheme()
   }
 
-  private func mountActiveRenderer(animated: Bool) {
+  private func mountActiveRenderer(animated: Bool, autoPlay: Bool = false) {
     guard activeIndex >= 0, activeIndex < queue.count else { return }
     let item = queue[activeIndex]
     let palette = LumenPalette.current()
@@ -485,18 +496,29 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     footerLeftLabel.stringValue = "\(item.identity.displayName) · \(item.sizeLabel)"
     updateHeaderButtonsTheme()
 
-    activeRendererView?.teardown()
-    activeRendererView?.removeFromSuperview()
-
     let ctx = LumenPreviewContext(
       store: LumenClipboardStore.shared,
       cache: LumenPreviewCache.shared,
       palette: palette,
-      onStepQueue: { [weak self] delta, _ in self?.stepQueue(delta) },
-      onSelectQueueIndex: { [weak self] idx in self?.selectQueueIndex(idx) },
+      queueCount: queue.count,
+      queueIndex: activeIndex,
+      onStepQueue: { [weak self] delta, shouldAutoPlay in self?.stepQueue(delta, autoPlay: shouldAutoPlay) },
+      onSelectQueueIndex: { [weak self] idx in self?.selectQueueIndex(idx, autoPlay: false) },
       onToast: { [weak self] msg in self?.onToast?(msg) },
       onCopyItem: { [weak self] previewItem in self?.copyPreviewItem(previewItem) }
     )
+
+    // Audio collections share ONE persistent player instance across track switches so volume,
+    // mute, and loop settings remain continuous while releasing the previous track's decoder (Q06, Q08, A13).
+    if item.kind == .audio, let existingAudio = activeRendererView as? LumenAudioRendererView {
+      existingAudio.loadTrack(item: item, context: ctx, autoPlay: autoPlay)
+      return
+    }
+
+    // Switching away from media/ZIP/other renderer: always stop old media & release decoders/caches immediately.
+    activeRendererView?.teardown()
+    activeRendererView?.removeFromSuperview()
+
     let view = LumenPreviewRegistry.shared.makeView(for: item, context: ctx)
     view.translatesAutoresizingMaskIntoConstraints = false
     stageContainer.addSubview(view)
@@ -523,18 +545,18 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     }
   }
 
-  private func selectQueueIndex(_ idx: Int) {
+  private func selectQueueIndex(_ idx: Int, autoPlay: Bool = false) {
     guard idx >= 0, idx < queue.count, idx != activeIndex else { return }
     activeIndex = idx
     queueTable.reloadData()
     queueTable.scrollRowToVisible(idx)
-    mountActiveRenderer(animated: true)
+    mountActiveRenderer(animated: true, autoPlay: autoPlay)
   }
 
-  private func stepQueue(_ delta: Int) {
+  private func stepQueue(_ delta: Int, autoPlay: Bool = false) {
     let next = activeIndex + delta
     guard next >= 0, next < queue.count else { return }
-    selectQueueIndex(next)
+    selectQueueIndex(next, autoPlay: autoPlay)
   }
 
   private func flashCopyConfirmed() {
@@ -599,6 +621,16 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
   }
 
   private func handleKeyEvent(_ event: NSEvent) -> Bool {
+    // When an inline editable input (e.g. ZIP password field) has focus, let it receive
+    // Space, arrows, Enter, and text keys normally; only Esc closes Quick Look.
+    if let editor = panel.firstResponder as? NSTextView, editor.isEditable {
+      if event.keyCode == 53 {
+        closeAnimated()
+        return true
+      }
+      return false
+    }
+
     let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
     switch event.keyCode {
     case 53: // Esc

@@ -11,6 +11,8 @@ enum LumenPreviewKind: Equatable {
   case link
   case pdf
   case office(format: String) // "docx", "xlsx", "pptx"
+  case csv
+  case archive(format: String) // "zip", "rar", "7z", "tar", "gz", etc.
   case audio
   case video
   case collection
@@ -30,6 +32,15 @@ enum LumenPreviewKind: Equatable {
       case "xlsx", "xls", "ods": return "Excel 表格"
       case "pptx", "ppt", "odp": return "PowerPoint 演示文稿"
       default: return "Office 文档"
+      }
+    case .csv: return "CSV 表格"
+    case .archive(let fmt):
+      switch fmt.lowercased() {
+      case "zip": return "ZIP 归档"
+      case "rar": return "RAR 归档"
+      case "7z": return "7z 归档"
+      case "tar", "tgz", "gz", "bz2", "xz": return "TAR / 压缩包"
+      default: return "压缩包"
       }
     case .audio: return "音频"
     case .video: return "视频"
@@ -53,6 +64,8 @@ enum LumenPreviewKind: Equatable {
       case "pptx", "ppt", "odp": return "PPT"
       default: return "DOC"
       }
+    case .csv: return "CSV"
+    case .archive(let fmt): return fmt.isEmpty ? "ZIP" : fmt.uppercased()
     case .audio: return "AUD"
     case .video: return "VID"
     case .collection: return "SET"
@@ -119,7 +132,7 @@ struct LumenPreviewItem: Equatable {
     case .document:
       if identity.subtype == "pdf" || ext == "pdf" { return .pdf }
       if LumenClassifier.officeExtensions.contains(ext) { return .office(format: ext) }
-      if identity.subtype == "csv" || ext == "csv" { return .text }
+      if identity.subtype == "csv" || ext == "csv" || ext == "tsv" { return .csv }
       return .file
     case .image:
       return .image
@@ -135,7 +148,9 @@ struct LumenPreviewItem: Equatable {
       return .code(language: identity.language ?? "unknown")
     case .text:
       return .text
-    case .archive, .file:
+    case .archive:
+      return .archive(format: ext.isEmpty ? identity.subtype : ext)
+    case .file:
       return .file
     }
   }
@@ -357,6 +372,8 @@ struct LumenPreviewContext {
   let store: LumenClipboardStore
   let cache: LumenPreviewCache
   let palette: LumenPalette
+  let queueCount: Int
+  let queueIndex: Int
   let onStepQueue: (Int, Bool) -> Void
   let onSelectQueueIndex: (Int) -> Void
   let onToast: (String) -> Void
@@ -431,7 +448,9 @@ final class LumenPreviewRegistry {
     register(LumenPDFRenderer())
     register(LumenAudioRenderer())
     register(LumenVideoRenderer())
+    register(LumenZipRenderer())
     register(LumenOfficeRenderer())
+    register(LumenCSVRenderer())
     register(LumenImageRenderer())
     register(LumenColorRenderer())
     register(LumenCodeRenderer())

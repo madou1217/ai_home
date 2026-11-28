@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import AVKit
 import CoreGraphics
+import CoreMedia
 import Foundation
 import PDFKit
 import QuartzCore
@@ -310,17 +311,10 @@ struct LumenAudioRenderer: LumenPreviewRenderer {
   }
 }
 
-/// Interactive 66-bar CoreGraphics waveform with click & drag seek.
+/// Interactive 66-bar CoreGraphics waveform driven exclusively by decoded PCM peaks (click & drag seek).
 private final class LumenWaveformView: NSView {
-  var peaks: [CGFloat] = {
-    var values: [CGFloat] = []
-    values.reserveCapacity(66)
-    for index in 0..<66 {
-      let wave = abs(sin(Double(index) * 1.73) * cos(Double(index) * 0.21))
-      values.append(CGFloat(0.24 + wave * 0.72))
-    }
-    return values
-  }() { didSet { needsDisplay = true } }
+  /// Neutral flat baseline until real PCM audio peaks finish decoding (never fakes waveform shapes).
+  var peaks: [CGFloat] = [CGFloat](repeating: 0.16, count: 66) { didSet { needsDisplay = true } }
   var progress: CGFloat = 0 { didSet { needsDisplay = true } }
   var playedColor: NSColor = NSColor(srgbRed: 0.408, green: 0.522, blue: 0.835, alpha: 1)
   var unplayedColor: NSColor = NSColor(srgbRed: 0.569, green: 0.655, blue: 0.847, alpha: 0.42)
@@ -337,7 +331,7 @@ private final class LumenWaveformView: NSView {
     let maxHeight = max(8, bounds.height - 6)
 
     for i in 0..<count {
-      let norm = max(0.12, min(1.0, peaks[i]))
+      let norm = max(0.10, min(1.0, peaks[i]))
       let h = maxHeight * norm
       let x = startX + CGFloat(i) * (barWidth + gap)
       let y = (bounds.height - h) / 2
@@ -366,6 +360,32 @@ private final class LumenWaveformView: NSView {
 }
 
 final class LumenAudioRendererView: LumenPreviewRendererView {
+  enum RepeatMode: Int {
+    case off = 0
+    case loopQueue = 1
+    case repeatOne = 2
+
+    var next: RepeatMode {
+      RepeatMode(rawValue: (rawValue + 1) % 3) ?? .off
+    }
+
+    var symbolName: String {
+      switch self {
+      case .off: return "repeat"
+      case .loopQueue: return "repeat"
+      case .repeatOne: return "repeat.1"
+      }
+    }
+
+    var label: String {
+      switch self {
+      case .off: return "循环：关闭"
+      case .loopQueue: return "循环：列表循环"
+      case .repeatOne: return "循环：单曲循环"
+      }
+    }
+  }
+
   private let palette: LumenPalette
   private let coverView = LumenAlbumCoverView()
   private let titleLabel = NSTextField(labelWithString: "")
@@ -374,6 +394,7 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
   private let nowLabel = NSTextField(labelWithString: "0:00")
   private let durationLabel = NSTextField(labelWithString: "0:00")
   private let seekSlider = NSSlider(value: 0, minValue: 0, maxValue: 1000, target: nil, action: nil)
+  private let muteButton = NSButton()
   private let volumeSlider = NSSlider(value: 0.75, minValue: 0, maxValue: 1, target: nil, action: nil)
   private let repeatButton = NSButton()
   private let prevButton = NSButton()
@@ -381,11 +402,13 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
   private let nextButton = NSButton()
   private let statusLabel = NSTextField(labelWithString: "")
 
+  private var activeAsset: AVURLAsset?
   private var player: AVPlayer?
   private var timeObserver: Any?
   private var endObserver: NSObjectProtocol?
   private var durationSeconds: Double = 0
-  private var repeatEnabled = false
+  private var repeatMode: RepeatMode = .off
+  private var isMuted = false
   private var isPlaying = false
   private var loadGeneration = 0
 
@@ -440,9 +463,9 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
     progressStack.spacing = 10
     progressStack.translatesAutoresizingMaskIntoConstraints = false
 
-    configureTransportButton(repeatButton, symbol: "repeat", size: 15, action: #selector(toggleRepeat))
-    configureTransportButton(prevButton, symbol: "backward.end.fill", size: 16, action: #selector(stepPrev))
-    configureTransportButton(nextButton, symbol: "forward.end.fill", size: 16, action: #selector(stepNext))
+    configureTransportButton(repeatButton, symbol: "repeat", size: 15, tip: "切换循环模式", action: #selector(toggleRepeat))
+    configureTransportButton(prevButton, symbol: "backward.end.fill", size: 16, tip: "上一首", action: #selector(stepPrev))
+    configureTransportButton(nextButton, symbol: "forward.end.fill", size: 16, tip: "下一首", action: #selector(stepNext))
 
     playButton.isBordered = false
     playButton.wantsLayer = true
@@ -450,6 +473,7 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
     playButton.action = #selector(playButtonClicked)
     playButton.image = LumenIcons.symbol("play.fill", size: 20, weight: .semibold)
     playButton.contentTintColor = .white
+    playButton.toolTip = "播放 / 暂停 (Space)"
     playButton.layer?.cornerRadius = 26
     playButton.layer?.backgroundColor = palette.accent.cgColor
     playButton.translatesAutoresizingMaskIntoConstraints = false
@@ -460,19 +484,26 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
     controlsStack.alignment = .centerY
     controlsStack.translatesAutoresizingMaskIntoConstraints = false
 
-    let volIcon = NSImageView(image: LumenIcons.symbol("speaker.wave.2.fill", size: 12))
-    volIcon.contentTintColor = palette.muted
-    volIcon.translatesAutoresizingMaskIntoConstraints = false
+    muteButton.isBordered = false
+    muteButton.image = LumenIcons.symbol("speaker.wave.2.fill", size: 12)
+    muteButton.contentTintColor = palette.muted
+    muteButton.toolTip = "静音 / 取消静音"
+    muteButton.target = self
+    muteButton.action = #selector(toggleMute)
+    muteButton.translatesAutoresizingMaskIntoConstraints = false
+    muteButton.widthAnchor.constraint(equalToConstant: 22).isActive = true
+    muteButton.heightAnchor.constraint(equalToConstant: 22).isActive = true
 
     volumeSlider.target = self
     volumeSlider.action = #selector(volumeChanged)
     volumeSlider.isContinuous = true
     volumeSlider.translatesAutoresizingMaskIntoConstraints = false
-    volumeSlider.widthAnchor.constraint(equalToConstant: 110).isActive = true
+    volumeSlider.widthAnchor.constraint(equalToConstant: 118).isActive = true
 
-    let volumeStack = NSStackView(views: [volIcon, volumeSlider])
+    let volumeStack = NSStackView(views: [muteButton, volumeSlider])
     volumeStack.orientation = .horizontal
-    volumeStack.spacing = 8
+    volumeStack.spacing = 6
+    volumeStack.alignment = .centerY
     volumeStack.translatesAutoresizingMaskIntoConstraints = false
 
     statusLabel.font = .systemFont(ofSize: 11)
@@ -508,13 +539,15 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
       container.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
       container.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24)
     ])
+    updateRepeatButtonAppearance()
   }
 
-  private func configureTransportButton(_ button: NSButton, symbol: String, size: CGFloat, action: Selector) {
+  private func configureTransportButton(_ button: NSButton, symbol: String, size: CGFloat, tip: String, action: Selector) {
     button.isBordered = false
     button.wantsLayer = true
     button.image = LumenIcons.symbol(symbol, size: size, weight: .medium)
     button.contentTintColor = palette.ink
+    button.toolTip = tip
     button.target = self
     button.action = action
     button.layer?.cornerRadius = 17
@@ -524,41 +557,63 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
   }
 
   override func load(item: LumenPreviewItem, context: LumenPreviewContext) {
-    teardown()
+    // Opening Quick Look NEVER auto-plays audio (Q06, Q08, A13)
+    loadTrack(item: item, context: context, autoPlay: false)
+  }
+
+  /// Reuses this single audio player across tracks in an audio collection while preserving
+  /// volume, mute, and repeat mode and releasing the previous track's decoder immediately.
+  func loadTrack(item: LumenPreviewItem, context: LumenPreviewContext, autoPlay: Bool) {
+    stopCurrentPlaybackAndReleaseDecoder()
     super.load(item: item, context: context)
     loadGeneration += 1
     let gen = loadGeneration
 
+    let hasQueue = context.queueCount > 1
+    prevButton.isHidden = !hasQueue
+    nextButton.isHidden = !hasQueue
+    prevButton.isEnabled = hasQueue && (context.queueIndex > 0 || repeatMode == .loopQueue)
+    nextButton.isEnabled = hasQueue && (context.queueIndex < context.queueCount - 1 || repeatMode == .loopQueue)
+
     coverView.seedIndex = item.seedIndex
-    coverView.badgeText = String(format: "LUMEN / %02d", (item.seedIndex % 99) + 1)
+    coverView.badgeText = hasQueue
+      ? String(format: "TRACK %02d / %02d", context.queueIndex + 1, context.queueCount)
+      : "LUMEN / AUDIO"
     titleLabel.stringValue = (item.title as NSString).deletingPathExtension
     subtitleLabel.stringValue = "\(item.subtitle) · \(item.sizeLabel)"
-    statusLabel.stringValue = ""
+    statusLabel.stringValue = repeatMode == .off ? "" : repeatMode.label
     nowLabel.stringValue = "0:00"
     durationLabel.stringValue = "0:00"
+    durationSeconds = 0
     seekSlider.doubleValue = 0
     waveformView.progress = 0
+    waveformView.peaks = [CGFloat](repeating: 0.16, count: 66)
 
     let asset: AVURLAsset?
     if let localURL = item.localURL, FileManager.default.fileExists(atPath: localURL.path) {
-      asset = AVURLAsset(url: localURL)
-      decodeWaveform(from: localURL, cacheKey: item.cacheKey, cache: context.cache, generation: gen)
+      let localAsset = AVURLAsset(url: localURL)
+      asset = localAsset
+      decodeRealPCMWaveform(localURL: localURL, asset: localAsset, cacheKey: item.cacheKey, cache: context.cache, generation: gen)
     } else if let clip = item.clipboardItem,
               let streamURL = context.store.api.itemFileStreamURL(itemID: clip.id, index: item.fileIndex ?? 0) {
       let headers = context.store.api.authHeaders()
-      asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+      let remoteAsset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+      asset = remoteAsset
+      decodeRemotePCMWaveform(clipID: clip.id, fileIndex: item.fileIndex ?? 0, cacheKey: item.cacheKey, context: context, generation: gen)
     } else {
       asset = nil
     }
 
     guard let asset else {
       statusLabel.stringValue = "音频文件不可用"
+      setPlayingUI(false)
       return
     }
 
+    activeAsset = asset
     let playerItem = AVPlayerItem(asset: asset)
     let avPlayer = AVPlayer(playerItem: playerItem)
-    avPlayer.volume = Float(volumeSlider.doubleValue)
+    avPlayer.volume = isMuted ? 0 : Float(volumeSlider.doubleValue)
     player = avPlayer
 
     asset.loadValuesAsynchronously(forKeys: ["duration"]) { [weak self] in
@@ -599,67 +654,192 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
       queue: .main
     ) { [weak self] _ in
       guard let self else { return }
-      if self.repeatEnabled {
-        self.player?.seek(to: .zero)
-        self.player?.play()
+      self.handleTrackEnded()
+    }
+
+    if autoPlay {
+      avPlayer.play()
+      setPlayingUI(true)
+    } else {
+      setPlayingUI(false)
+    }
+  }
+
+  private func handleTrackEnded() {
+    switch repeatMode {
+    case .repeatOne:
+      player?.seek(to: .zero)
+      player?.play()
+      setPlayingUI(true)
+    case .loopQueue:
+      guard let ctx = currentContext else { return }
+      if ctx.queueCount <= 1 {
+        player?.seek(to: .zero)
+        player?.play()
+        setPlayingUI(true)
+      } else if ctx.queueIndex + 1 < ctx.queueCount {
+        ctx.onStepQueue(1, true)
       } else {
-        self.setPlayingUI(false)
-        self.currentContext?.onStepQueue(1, true)
+        // Wrap back to first track and continue playback
+        ctx.onStepQueue(-ctx.queueIndex, true)
+      }
+    case .off:
+      guard let ctx = currentContext else {
+        setPlayingUI(false)
+        return
+      }
+      if ctx.queueIndex + 1 < ctx.queueCount {
+        ctx.onStepQueue(1, true)
+      } else {
+        setPlayingUI(false)
       }
     }
   }
 
-  private func decodeWaveform(from url: URL, cacheKey: String, cache: LumenPreviewCache, generation: Int) {
+  /// Decodes real PCM samples into 66 RMS amplitude bars (AVAudioFile first, AVAssetReader PCM fallback).
+  private func decodeRealPCMWaveform(localURL: URL, asset: AVAsset, cacheKey: String, cache: LumenPreviewCache, generation: Int) {
     if let cached = cache.waveform(for: cacheKey) {
       waveformView.peaks = cached
       return
     }
     DispatchQueue.global(qos: .utility).async { [weak self] in
-      guard let audioFile = try? AVAudioFile(forReading: url) else { return }
-      let totalFrames = Int(audioFile.length)
-      guard totalFrames > 0 else { return }
-      let barCount = 66
-      let maxFramesToRead = min(totalFrames, 44_100 * 120) // cap 2 min decode for snappy response
-      let format = audioFile.processingFormat
-      let frameChunk = max(256, maxFramesToRead / barCount)
-      var peaks: [CGFloat] = []
-      peaks.reserveCapacity(barCount)
-
-      guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(min(frameChunk, 16_384))) else { return }
-      for i in 0..<barCount {
-        let startFrame = AVAudioFramePosition(Int64(i) * Int64(totalFrames) / Int64(barCount))
-        audioFile.framePosition = startFrame
-        let readCount = AVAudioFrameCount(min(Int(buffer.frameCapacity), max(1, totalFrames - Int(startFrame))))
-        do {
-          try audioFile.read(into: buffer, frameCount: readCount)
-          guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else {
-            peaks.append(0.15)
-            continue
-          }
-          let n = Int(buffer.frameLength)
-          let strideStep = max(1, n / 128)
-          var sumSq: Float = 0
-          var samples = 0
-          var idx = 0
-          while idx < n {
-            let sample = channel[idx]
-            sumSq += sample * sample
-            samples += 1
-            idx += strideStep
-          }
-          peaks.append(CGFloat(sqrt(sumSq / Float(max(1, samples)))))
-        } catch {
-          peaks.append(0.15)
-        }
-      }
-      let peakMax = max(0.001, peaks.max() ?? 0.001)
-      let normalized = peaks.map { pow($0 / peakMax, 0.72) }
+      let peaks = Self.extractPCMPeaksFromFile(url: localURL) ?? Self.extractPCMPeaksViaAssetReader(asset: asset)
+      guard let peaks, !peaks.isEmpty else { return }
       DispatchQueue.main.async {
         guard let self, self.loadGeneration == generation else { return }
-        cache.storeWaveform(normalized, for: cacheKey)
-        self.waveformView.peaks = normalized
+        cache.storeWaveform(peaks, for: cacheKey)
+        self.waveformView.peaks = peaks
       }
     }
+  }
+
+  private func decodeRemotePCMWaveform(clipID: String, fileIndex: Int, cacheKey: String, context: LumenPreviewContext, generation: Int) {
+    if let cached = context.cache.waveform(for: cacheKey) {
+      waveformView.peaks = cached
+      return
+    }
+    context.store.api.fetchItemFileData(id: clipID, index: fileIndex) { [weak self] result in
+      guard let self, self.loadGeneration == generation else { return }
+      guard case .success(let (data, _)) = result, data.count <= 24 * 1024 * 1024 else { return }
+      let titleForExt = self.currentItem?.title ?? "audio.m4a"
+      DispatchQueue.global(qos: .utility).async {
+        let ext = URL(fileURLWithPath: titleForExt).pathExtension
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lumen-pcm-\(UUID().uuidString).\(ext.isEmpty ? "m4a" : ext)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        guard (try? data.write(to: tmp)) != nil else { return }
+        let peaks = Self.extractPCMPeaksFromFile(url: tmp) ?? Self.extractPCMPeaksViaAssetReader(asset: AVURLAsset(url: tmp))
+        guard let peaks, !peaks.isEmpty else { return }
+        DispatchQueue.main.async {
+          guard self.loadGeneration == generation else { return }
+          context.cache.storeWaveform(peaks, for: cacheKey)
+          self.waveformView.peaks = peaks
+        }
+      }
+    }
+  }
+
+  private static func extractPCMPeaksFromFile(url: URL) -> [CGFloat]? {
+    guard let audioFile = try? AVAudioFile(forReading: url) else { return nil }
+    let totalFrames = Int(audioFile.length)
+    guard totalFrames > 0 else { return nil }
+    let barCount = 66
+    let maxFramesToRead = min(totalFrames, 44_100 * 180)
+    let format = audioFile.processingFormat
+    let frameChunk = max(256, maxFramesToRead / barCount)
+    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(min(frameChunk, 16_384))) else {
+      return nil
+    }
+    var peaks: [CGFloat] = []
+    peaks.reserveCapacity(barCount)
+    for i in 0..<barCount {
+      let startFrame = AVAudioFramePosition(Int64(i) * Int64(totalFrames) / Int64(barCount))
+      audioFile.framePosition = startFrame
+      let readCount = AVAudioFrameCount(min(Int(buffer.frameCapacity), max(1, totalFrames - Int(startFrame))))
+      do {
+        try audioFile.read(into: buffer, frameCount: readCount)
+        guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else {
+          peaks.append(0.12)
+          continue
+        }
+        let n = Int(buffer.frameLength)
+        let strideStep = max(1, n / 128)
+        var sumSq: Float = 0
+        var samples = 0
+        var idx = 0
+        while idx < n {
+          let sample = channel[idx]
+          sumSq += sample * sample
+          samples += 1
+          idx += strideStep
+        }
+        peaks.append(CGFloat(sqrt(sumSq / Float(max(1, samples)))))
+      } catch {
+        peaks.append(0.12)
+      }
+    }
+    let peakMax = max(0.001, peaks.max() ?? 0.001)
+    return peaks.map { max(0.12, pow($0 / peakMax, 0.72)) }
+  }
+
+  private static func extractPCMPeaksViaAssetReader(asset: AVAsset) -> [CGFloat]? {
+    guard let track = asset.tracks(withMediaType: .audio).first,
+          let reader = try? AVAssetReader(asset: asset) else { return nil }
+    let settings: [String: Any] = [
+      AVFormatIDKey: kAudioFormatLinearPCM,
+      AVLinearPCMBitDepthKey: 32,
+      AVLinearPCMIsFloatKey: true,
+      AVLinearPCMIsBigEndianKey: false,
+      AVLinearPCMIsNonInterleaved: false
+    ]
+    let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+    guard reader.canAdd(output) else { return nil }
+    reader.add(output)
+    guard reader.startReading() else { return nil }
+
+    var buckets = [Double](repeating: 0, count: 66)
+    var counts = [Int](repeating: 0, count: 66)
+    let estimatedSamples = max(66, Int(CMTimeGetSeconds(asset.duration) * 44_100))
+    var sampleIndex = 0
+    let maxSamples = 44_100 * 180
+
+    while reader.status == .reading && sampleIndex < maxSamples,
+          let sampleBuffer = output.copyNextSampleBuffer() {
+      guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
+      let byteLength = CMBlockBufferGetDataLength(blockBuffer)
+      guard byteLength >= 4 else { continue }
+      var raw = [Float](repeating: 0, count: byteLength / 4)
+      raw.withUnsafeMutableBytes { ptr in
+        if let base = ptr.baseAddress {
+          _ = CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: byteLength, destination: base)
+        }
+      }
+      let step = max(1, raw.count / 64)
+      var i = 0
+      while i < raw.count {
+        let bucketIdx = min(65, (sampleIndex + i) * 66 / max(1, estimatedSamples))
+        let v = Double(raw[i])
+        buckets[bucketIdx] += v * v
+        counts[bucketIdx] += 1
+        i += step
+      }
+      sampleIndex += raw.count
+    }
+    reader.cancelReading()
+
+    let rms = (0..<66).map { i -> CGFloat in
+      let c = counts[i]
+      guard c > 0 else { return 0.12 }
+      return CGFloat(sqrt(buckets[i] / Double(c)))
+    }
+    let peakMax = max(0.001, rms.max() ?? 0.001)
+    return rms.map { max(0.12, pow($0 / peakMax, 0.72)) }
+  }
+
+  private func updateRepeatButtonAppearance() {
+    repeatButton.image = LumenIcons.symbol(repeatMode.symbolName, size: 15, weight: .medium)
+    repeatButton.contentTintColor = repeatMode == .off ? palette.ink : palette.accent
+    repeatButton.toolTip = repeatMode.label
+    statusLabel.stringValue = repeatMode == .off ? "" : repeatMode.label
   }
 
   private func setPlayingUI(_ playing: Bool) {
@@ -689,17 +869,53 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
   }
 
   @objc private func playButtonClicked() { _ = togglePlayPause() }
-  @objc private func stepPrev() { currentContext?.onStepQueue(-1, true) }
-  @objc private func stepNext() { currentContext?.onStepQueue(1, true) }
-  @objc private func toggleRepeat() {
-    repeatEnabled.toggle()
-    repeatButton.contentTintColor = repeatEnabled ? palette.accent : palette.ink
+
+  @objc private func stepPrev() {
+    guard let ctx = currentContext else { return }
+    let shouldResume = isPlaying
+    if ctx.queueIndex > 0 {
+      ctx.onStepQueue(-1, shouldResume)
+    } else if repeatMode == .loopQueue && ctx.queueCount > 1 {
+      ctx.onStepQueue(ctx.queueCount - 1, shouldResume)
+    }
   }
+
+  @objc private func stepNext() {
+    guard let ctx = currentContext else { return }
+    let shouldResume = isPlaying
+    if ctx.queueIndex + 1 < ctx.queueCount {
+      ctx.onStepQueue(1, shouldResume)
+    } else if repeatMode == .loopQueue && ctx.queueCount > 1 {
+      ctx.onStepQueue(-ctx.queueIndex, shouldResume)
+    }
+  }
+
+  @objc private func toggleRepeat() {
+    repeatMode = repeatMode.next
+    updateRepeatButtonAppearance()
+    if let ctx = currentContext {
+      let hasQueue = ctx.queueCount > 1
+      prevButton.isEnabled = hasQueue && (ctx.queueIndex > 0 || repeatMode == .loopQueue)
+      nextButton.isEnabled = hasQueue && (ctx.queueIndex < ctx.queueCount - 1 || repeatMode == .loopQueue)
+    }
+  }
+
+  @objc private func toggleMute() {
+    isMuted.toggle()
+    player?.volume = isMuted ? 0 : Float(volumeSlider.doubleValue)
+    muteButton.image = LumenIcons.symbol(isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill", size: 12)
+  }
+
   @objc private func seekSliderChanged() {
     seekToFraction(seekSlider.doubleValue / 1000.0)
   }
+
   @objc private func volumeChanged() {
-    player?.volume = Float(volumeSlider.doubleValue)
+    if isMuted && volumeSlider.doubleValue > 0 {
+      isMuted = false
+      muteButton.image = LumenIcons.symbol("speaker.wave.2.fill", size: 12)
+    }
+    player?.volume = isMuted ? 0 : Float(volumeSlider.doubleValue)
   }
 
   override func togglePlayPause() -> Bool {
@@ -717,8 +933,10 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
     return true
   }
 
-  override func teardown() {
+  private func stopCurrentPlaybackAndReleaseDecoder() {
     loadGeneration += 1
+    activeAsset?.cancelLoading()
+    activeAsset = nil
     if let obs = timeObserver, let player {
       player.removeTimeObserver(obs)
     }
@@ -728,12 +946,17 @@ final class LumenAudioRendererView: LumenPreviewRendererView {
       endObserver = nil
     }
     player?.pause()
+    player?.replaceCurrentItem(with: nil)
     player = nil
     isPlaying = false
   }
+
+  override func teardown() {
+    stopCurrentPlaybackAndReleaseDecoder()
+  }
 }
 
-// MARK: - 3. Native AVKit / AVFoundation Video Renderer
+// MARK: - 3. Native AVKit / AVFoundation Video Renderer (Supports Video Queues, Never Auto-Plays)
 
 struct LumenVideoRenderer: LumenPreviewRenderer {
   let rendererID = "native.avkit.video"
@@ -748,7 +971,9 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
   private let palette: LumenPalette
   private let toolbar: NSView
   private let infoLabel: NSTextField
+  private let badgeLabel: NSTextField
   private let playerView = AVPlayerView()
+  private var activeAsset: AVURLAsset?
   private var player: AVPlayer?
   private var loadGeneration = 0
 
@@ -756,6 +981,7 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
     self.palette = palette
     toolbar = makeRendererToolbar(palette: palette)
     infoLabel = makeStatusLabel("视频预览", palette: palette)
+    badgeLabel = makeStatusLabel("AVKit 原生控件 · 打开不自动播放", palette: palette)
     super.init(frame: .zero)
     wantsLayer = true
     setupUI()
@@ -768,9 +994,8 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
   }
 
   private func setupUI() {
-    let badge = makeStatusLabel("AVKit 原生控件", palette: palette)
     toolbar.addSubview(infoLabel)
-    toolbar.addSubview(badge)
+    toolbar.addSubview(badgeLabel)
 
     playerView.controlsStyle = .inline
     playerView.showsFullScreenToggleButton = false
@@ -792,8 +1017,8 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
       toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
       infoLabel.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 14),
       infoLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
-      badge.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -14),
-      badge.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+      badgeLabel.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -14),
+      badgeLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
 
       stage.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
       stage.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -813,6 +1038,9 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
     loadGeneration += 1
     let gen = loadGeneration
 
+    let queuePrefix = context.queueCount > 1 ? "视频队列 \(context.queueIndex + 1) / \(context.queueCount)" : "视频预览"
+    badgeLabel.stringValue = context.queueCount > 1 ? "← → 切换视频 · Space 播放/暂停" : "AVKit 原生控件 · Space 播放/暂停"
+
     let asset: AVURLAsset?
     if let localURL = item.localURL, FileManager.default.fileExists(atPath: localURL.path) {
       asset = AVURLAsset(url: localURL)
@@ -826,10 +1054,12 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
       infoLabel.stringValue = "视频文件不可用"
       return
     }
+    activeAsset = asset
     let avPlayer = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+    avPlayer.pause() // Strictly never auto-play on open (Q08, A13)
     player = avPlayer
     playerView.player = avPlayer
-    infoLabel.stringValue = "视频预览 · \(item.sizeLabel)"
+    infoLabel.stringValue = "\(queuePrefix) · \(item.sizeLabel)"
 
     asset.loadValuesAsynchronously(forKeys: ["duration", "tracks"]) { [weak self] in
       let secs = CMTimeGetSeconds(asset.duration)
@@ -837,7 +1067,7 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
       let dims = track?.naturalSize.applying(track?.preferredTransform ?? .identity)
       DispatchQueue.main.async {
         guard let self, self.loadGeneration == gen else { return }
-        var parts: [String] = ["视频预览"]
+        var parts: [String] = [queuePrefix]
         if let dims, abs(dims.width) > 0, abs(dims.height) > 0 {
           parts.append("\(Int(abs(dims.width))) × \(Int(abs(dims.height)))")
         }
@@ -861,7 +1091,10 @@ final class LumenVideoRendererView: LumenPreviewRendererView {
 
   override func teardown() {
     loadGeneration += 1
+    activeAsset?.cancelLoading()
+    activeAsset = nil
     player?.pause()
+    player?.replaceCurrentItem(with: nil)
     playerView.player = nil
     player = nil
   }
@@ -1764,7 +1997,450 @@ final class LumenImageRendererView: LumenPreviewRendererView {
   }
 }
 
-// MARK: - 6. Native CoreGraphics Color Swatch Renderer
+// MARK: - 5B. Native Read-Only CSV Table Renderer (Q13, A30 — Max 250 Rows, Zero Execution)
+
+struct LumenCSVDocument {
+  let headers: [String]
+  let rows: [[String]]
+  let totalDataRowCount: Int
+  let isTruncated: Bool
+  let delimiter: Character
+
+  var columnCount: Int {
+    max(headers.count, rows.map(\.count).max() ?? 0)
+  }
+}
+
+enum LumenCSVParser {
+  static let maxDataRows = 250
+
+  static func parse(_ rawText: String, maxDataRows: Int = LumenCSVParser.maxDataRows) -> LumenCSVDocument {
+    var source = rawText
+    if source.hasPrefix("\u{FEFF}") {
+      source.removeFirst()
+    }
+    let delimiter = detectDelimiter(in: source)
+
+    var allRows: [[String]] = []
+    var currentRow: [String] = []
+    var field = ""
+    var inQuotes = false
+    var totalRowsParsed = 0
+    var truncated = false
+
+    let chars = Array(source)
+    var i = 0
+    let n = chars.count
+
+    while i < n {
+      let ch = chars[i]
+      if inQuotes {
+        if ch == "\"" {
+          if i + 1 < n && chars[i + 1] == "\"" {
+            field.append("\"")
+            i += 2
+            continue
+          }
+          inQuotes = false
+        } else {
+          field.append(ch)
+        }
+      } else {
+        if ch == "\"" && field.isEmpty {
+          inQuotes = true
+        } else if ch == delimiter {
+          currentRow.append(field)
+          field = ""
+        } else if ch == "\r" || ch == "\n" {
+          if ch == "\r" && i + 1 < n && chars[i + 1] == "\n" {
+            i += 1
+          }
+          currentRow.append(field)
+          field = ""
+          if !(currentRow.count == 1 && currentRow[0].isEmpty && allRows.isEmpty) {
+            totalRowsParsed += 1
+            if allRows.count < maxDataRows + 1 {
+              allRows.append(currentRow)
+            } else {
+              truncated = true
+            }
+          }
+          currentRow = []
+        } else {
+          field.append(ch)
+        }
+      }
+      i += 1
+    }
+
+    if !field.isEmpty || !currentRow.isEmpty {
+      currentRow.append(field)
+      totalRowsParsed += 1
+      if allRows.count < maxDataRows + 1 {
+        allRows.append(currentRow)
+      } else {
+        truncated = true
+      }
+    }
+
+    // Trim trailing completely empty row if present
+    while let last = allRows.last, last.allSatisfy({ $0.isEmpty }) {
+      allRows.removeLast()
+      totalRowsParsed = max(0, totalRowsParsed - 1)
+    }
+
+    guard let firstRow = allRows.first else {
+      return LumenCSVDocument(headers: [], rows: [], totalDataRowCount: 0, isTruncated: false, delimiter: delimiter)
+    }
+    let dataRows = Array(allRows.dropFirst())
+    let totalDataRows = max(dataRows.count, totalRowsParsed - 1)
+    return LumenCSVDocument(
+      headers: firstRow,
+      rows: dataRows,
+      totalDataRowCount: totalDataRows,
+      isTruncated: truncated || totalDataRows > maxDataRows,
+      delimiter: delimiter
+    )
+  }
+
+  static func columnLetter(for index: Int) -> String {
+    var n = index + 1
+    var out = ""
+    while n > 0 {
+      let rem = (n - 1) % 26
+      if let scalar = UnicodeScalar(65 + rem) {
+        out = String(scalar) + out
+      }
+      n = (n - 1) / 26
+    }
+    return out
+  }
+
+  private static func detectDelimiter(in text: String) -> Character {
+    let firstLine = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? ""
+    let tabCount = firstLine.filter { $0 == "\t" }.count
+    let commaCount = firstLine.filter { $0 == "," }.count
+    let semiCount = firstLine.filter { $0 == ";" }.count
+    if tabCount > commaCount && tabCount > 0 { return "\t" }
+    if semiCount > commaCount && commaCount == 0 && semiCount > 0 { return ";" }
+    return ","
+  }
+}
+
+/// Reusable read-only native `NSTableView` for CSV files and CSV members inside ZIP archives.
+final class LumenCSVTableView: NSView, NSTableViewDataSource, NSTableViewDelegate {
+  private let palette: LumenPalette
+  private let scrollView = NSScrollView()
+  private let tableView = NSTableView()
+  private var doc = LumenCSVDocument(headers: [], rows: [], totalDataRowCount: 0, isTruncated: false, delimiter: ",")
+  private var fontSize: CGFloat = 12
+
+  var parsedDocument: LumenCSVDocument { doc }
+
+  init(palette: LumenPalette) {
+    self.palette = palette
+    super.init(frame: .zero)
+    wantsLayer = true
+    layer?.backgroundColor = palette.windowBackground.cgColor
+
+    tableView.backgroundColor = palette.windowBackground
+    tableView.usesAlternatingRowBackgroundColors = true
+    tableView.gridStyleMask = [.solidHorizontalGridLineMask, .solidVerticalGridLineMask]
+    tableView.gridColor = palette.border
+    tableView.rowHeight = 26
+    tableView.columnAutoresizingStyle = .noColumnAutoresizing
+    tableView.allowsColumnSelection = false
+    tableView.allowsMultipleSelection = false
+    tableView.dataSource = self
+    tableView.delegate = self
+
+    scrollView.documentView = tableView
+    scrollView.hasVerticalScroller = true
+    scrollView.hasHorizontalScroller = true
+    scrollView.autohidesScrollers = true
+    scrollView.drawsBackground = true
+    scrollView.backgroundColor = palette.windowBackground
+    scrollView.borderType = .noBorder
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(scrollView)
+
+    NSLayoutConstraint.activate([
+      scrollView.topAnchor.constraint(equalTo: topAnchor),
+      scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: bottomAnchor)
+    ])
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  func loadCSV(text: String) {
+    doc = LumenCSVParser.parse(text)
+    rebuildColumns()
+    tableView.reloadData()
+  }
+
+  func setFontSize(_ next: CGFloat) {
+    fontSize = next
+    tableView.rowHeight = max(24, round(next * 2.15))
+    tableView.reloadData()
+  }
+
+  private func rebuildColumns() {
+    for col in tableView.tableColumns {
+      tableView.removeTableColumn(col)
+    }
+
+    // Column 0: fixed row number gutter (`#`)
+    let rowCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("csv:row"))
+    rowCol.title = "#"
+    rowCol.width = 48
+    rowCol.minWidth = 42
+    rowCol.maxWidth = 72
+    rowCol.headerCell.alignment = .right
+    tableView.addTableColumn(rowCol)
+
+    let colCount = min(64, max(1, doc.columnCount))
+    for c in 0..<colCount {
+      let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("csv:col:\(c)"))
+      let colCode = LumenCSVParser.columnLetter(for: c)
+      let headerText = c < doc.headers.count ? doc.headers[c].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+      col.title = headerText.isEmpty ? colCode : "\(colCode) · \(headerText)"
+      let estimatedWidth = max(108, min(260, CGFloat(col.title.count) * 9.5 + 36))
+      col.width = estimatedWidth
+      col.minWidth = 72
+      tableView.addTableColumn(col)
+    }
+  }
+
+  func numberOfRows(in tableView: NSTableView) -> Int {
+    doc.rows.count
+  }
+
+  func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    guard let colID = tableColumn?.identifier.rawValue else { return nil }
+    let cellID = NSUserInterfaceItemIdentifier("csvCell:\(colID == "csv:row" ? "row" : "data")")
+    let label = (tableView.makeView(withIdentifier: cellID, owner: nil) as? NSTextField) ?? {
+      let tf = NSTextField(labelWithString: "")
+      tf.identifier = cellID
+      tf.lineBreakMode = .byTruncatingTail
+      tf.isSelectable = true
+      return tf
+    }()
+
+    if colID == "csv:row" {
+      label.font = .monospacedDigitSystemFont(ofSize: max(10.5, fontSize - 1), weight: .regular)
+      label.textColor = palette.muted
+      label.alignment = .right
+      label.stringValue = "\(row + 1) "
+      return label
+    }
+
+    guard let colIndex = Int(colID.replacingOccurrences(of: "csv:col:", with: "")),
+          row < doc.rows.count else {
+      label.stringValue = ""
+      return label
+    }
+
+    let value = colIndex < doc.rows[row].count ? doc.rows[row][colIndex] : ""
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    let isNumeric = !trimmed.isEmpty && Double(trimmed.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "%", with: "")) != nil
+    label.font = .monospacedDigitSystemFont(ofSize: fontSize, weight: .regular)
+    label.textColor = palette.ink
+    label.alignment = isNumeric ? .right : .left
+    label.stringValue = value.replacingOccurrences(of: "\n", with: " ↵ ")
+    label.toolTip = value
+    return label
+  }
+}
+
+struct LumenCSVRenderer: LumenPreviewRenderer {
+  let rendererID = "native.appkit.csv"
+  let priority = 88
+  func canRender(_ item: LumenPreviewItem) -> Bool { item.kind == .csv }
+  func makeView(for item: LumenPreviewItem, context: LumenPreviewContext) -> LumenPreviewRendererView {
+    LumenCSVRendererView(palette: context.palette)
+  }
+}
+
+final class LumenCSVRendererView: LumenPreviewRendererView {
+  private let palette: LumenPalette
+  private let toolbar: NSView
+  private let infoLabel: NSTextField
+  private let tableView: LumenCSVTableView
+  private var rawCSV = ""
+  private var fontSize: CGFloat = 12
+  private var loadGeneration = 0
+
+  init(palette: LumenPalette) {
+    self.palette = palette
+    toolbar = makeRendererToolbar(palette: palette)
+    infoLabel = makeStatusLabel("CSV 表格预览", palette: palette)
+    tableView = LumenCSVTableView(palette: palette)
+    super.init(frame: .zero)
+    wantsLayer = true
+    layer?.backgroundColor = palette.windowBackground.cgColor
+    setupUI()
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  private func setupUI() {
+    let smallerBtn = makePillButton(title: "A−", target: self, action: #selector(zoomOutClicked), palette: palette)
+    let largerBtn = makePillButton(title: "A+", target: self, action: #selector(zoomInClicked), palette: palette)
+    let copyBtn = makePillButton(title: "复制 CSV", target: self, action: #selector(copyCSVClicked), palette: palette)
+    let rightStack = NSStackView(views: [smallerBtn, largerBtn, copyBtn])
+    rightStack.orientation = .horizontal
+    rightStack.spacing = 6
+    rightStack.translatesAutoresizingMaskIntoConstraints = false
+
+    toolbar.addSubview(infoLabel)
+    toolbar.addSubview(rightStack)
+
+    tableView.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(toolbar)
+    addSubview(tableView)
+
+    NSLayoutConstraint.activate([
+      toolbar.topAnchor.constraint(equalTo: topAnchor),
+      toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
+      toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
+      infoLabel.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 14),
+      infoLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+      rightStack.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -14),
+      rightStack.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+
+      tableView.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+      tableView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      tableView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      tableView.bottomAnchor.constraint(equalTo: bottomAnchor)
+    ])
+  }
+
+  override func load(item: LumenPreviewItem, context: LumenPreviewContext) {
+    super.load(item: item, context: context)
+    loadGeneration += 1
+    let gen = loadGeneration
+
+    if let cached = context.cache.text(for: item.cacheKey) {
+      applyCSV(cached)
+      return
+    }
+    if let url = item.localURL, FileManager.default.fileExists(atPath: url.path) {
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        let data = try? Data(contentsOf: url)
+        let text = data.flatMap { String(data: $0.prefix(512_000), encoding: .utf8) } ?? ""
+        DispatchQueue.main.async {
+          guard let self, self.loadGeneration == gen else { return }
+          context.cache.storeText(text, for: item.cacheKey)
+          self.applyCSV(text)
+        }
+      }
+      return
+    }
+    if let inline = item.inlineText {
+      applyCSV(inline)
+    }
+    if let clip = item.clipboardItem {
+      if clip.kind == "file" {
+        context.store.api.fetchItemFileData(id: clip.id, index: item.fileIndex ?? 0) { [weak self] result in
+          guard let self, self.loadGeneration == gen else { return }
+          if case .success(let (data, _)) = result, let text = String(data: data.prefix(512_000), encoding: .utf8) {
+            context.cache.storeText(text, for: item.cacheKey)
+            self.applyCSV(text)
+          }
+        }
+      } else {
+        context.store.hydrateItemDetail(id: clip.id) { [weak self] detailed in
+          guard let self, self.loadGeneration == gen, let full = detailed?.effectiveText else { return }
+          context.cache.storeText(full, for: item.cacheKey)
+          self.applyCSV(full)
+        }
+      }
+    }
+  }
+
+  private func applyCSV(_ text: String) {
+    rawCSV = text
+    tableView.loadCSV(text: text)
+    let doc = tableView.parsedDocument
+    if doc.isTruncated {
+      infoLabel.stringValue = "CSV 表格 · 显示前 \(doc.rows.count) 行（共 \(doc.totalDataRowCount) 行）· \(doc.columnCount) 列 · 只读"
+    } else {
+      infoLabel.stringValue = "CSV 表格 · \(doc.rows.count) 行 · \(doc.columnCount) 列 · 只读"
+    }
+  }
+
+  @objc private func copyCSVClicked() {
+    if !rawCSV.isEmpty {
+      let pb = NSPasteboard.general
+      pb.clearContents()
+      pb.setString(rawCSV, forType: .string)
+      currentContext?.onToast("已复制原始 CSV 文本")
+    } else {
+      copyPrimaryContent()
+    }
+  }
+
+  @objc private func zoomInClicked() { zoomIn() }
+  @objc private func zoomOutClicked() { zoomOut() }
+
+  override func zoomIn() {
+    fontSize = min(18, fontSize + 1.5)
+    tableView.setFontSize(fontSize)
+  }
+
+  override func zoomOut() {
+    fontSize = max(9.5, fontSize - 1.5)
+    tableView.setFontSize(fontSize)
+  }
+
+  override func resetZoom() {
+    fontSize = 12
+    tableView.setFontSize(fontSize)
+  }
+}
+
+// MARK: - 6. Native CoreGraphics Color Swatch Renderer (HEX / RGB / HSL One-Click Copy, Q05, A30)
+
+private final class LumenCheckerboardSwatchView: NSView {
+  var swatchColor: NSColor = .systemBlue { didSet { needsDisplay = true } }
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layer?.cornerRadius = 18
+    layer?.cornerCurve = .continuous
+    layer?.masksToBounds = true
+    layer?.borderWidth = 1
+    layer?.borderColor = NSColor.white.withAlphaComponent(0.28).cgColor
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+    let tile: CGFloat = 14
+    let light = NSColor(white: 0.92, alpha: 1).cgColor
+    let dark = NSColor(white: 0.78, alpha: 1).cgColor
+    var y: CGFloat = 0
+    var row = 0
+    while y < bounds.height {
+      var x: CGFloat = 0
+      var col = 0
+      while x < bounds.width {
+        ctx.setFillColor(((row + col) % 2 == 0) ? light : dark)
+        ctx.fill(CGRect(x: x, y: y, width: tile, height: tile))
+        x += tile
+        col += 1
+      }
+      y += tile
+      row += 1
+    }
+    ctx.setFillColor(swatchColor.cgColor)
+    ctx.fill(bounds)
+  }
+}
 
 struct LumenColorRenderer: LumenPreviewRenderer {
   let rendererID = "native.coregraphics.color"
@@ -1777,10 +2453,14 @@ struct LumenColorRenderer: LumenPreviewRenderer {
 
 final class LumenColorRendererView: LumenPreviewRendererView {
   private let palette: LumenPalette
-  private let swatchView = NSView()
-  private let hexLabel = NSTextField(labelWithString: "")
-  private let rgbLabel = NSTextField(labelWithString: "")
-  private let hslLabel = NSTextField(labelWithString: "")
+  private let swatchView = LumenCheckerboardSwatchView()
+  private let overlayHexLabel = NSTextField(labelWithString: "")
+  private let hexValueLabel = NSTextField(labelWithString: "")
+  private let rgbValueLabel = NSTextField(labelWithString: "")
+  private let hslValueLabel = NSTextField(labelWithString: "")
+  private var hexString = ""
+  private var rgbString = ""
+  private var hslString = ""
 
   init(palette: LumenPalette) {
     self.palette = palette
@@ -1793,62 +2473,129 @@ final class LumenColorRendererView: LumenPreviewRendererView {
   required init?(coder: NSCoder) { nil }
 
   private func setupUI() {
-    swatchView.wantsLayer = true
-    swatchView.layer?.cornerRadius = 18
-    swatchView.layer?.cornerCurve = .continuous
-    swatchView.layer?.borderWidth = 1
-    swatchView.layer?.borderColor = NSColor.white.withAlphaComponent(0.28).cgColor
     swatchView.translatesAutoresizingMaskIntoConstraints = false
 
-    hexLabel.font = .monospacedSystemFont(ofSize: 28, weight: .bold)
-    hexLabel.textColor = palette.ink
-    hexLabel.isSelectable = true
-    hexLabel.translatesAutoresizingMaskIntoConstraints = false
+    overlayHexLabel.font = .monospacedSystemFont(ofSize: 22, weight: .bold)
+    overlayHexLabel.translatesAutoresizingMaskIntoConstraints = false
+    swatchView.addSubview(overlayHexLabel)
 
-    for lbl in [rgbLabel, hslLabel] {
-      lbl.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-      lbl.textColor = palette.muted
-      lbl.isSelectable = true
-      lbl.translatesAutoresizingMaskIntoConstraints = false
-    }
+    let hexRow = makeFormatRow(tag: "HEX", valueLabel: hexValueLabel, action: #selector(copyHexClicked))
+    let rgbRow = makeFormatRow(tag: "RGB", valueLabel: rgbValueLabel, action: #selector(copyRGBClicked))
+    let hslRow = makeFormatRow(tag: "HSL", valueLabel: hslValueLabel, action: #selector(copyHSLClicked))
 
-    let copyBtn = makePillButton(title: "复制色值", target: self, action: #selector(copySwatch), palette: palette)
-    let stack = NSStackView(views: [swatchView, hexLabel, rgbLabel, hslLabel, copyBtn])
+    let formatsStack = NSStackView(views: [hexRow, rgbRow, hslRow])
+    formatsStack.orientation = .vertical
+    formatsStack.spacing = 8
+    formatsStack.translatesAutoresizingMaskIntoConstraints = false
+
+    let stack = NSStackView(views: [swatchView, formatsStack])
     stack.orientation = .vertical
     stack.alignment = .centerX
-    stack.spacing = 10
-    stack.setCustomSpacing(18, after: swatchView)
+    stack.spacing = 20
     stack.translatesAutoresizingMaskIntoConstraints = false
 
     addSubview(stack)
     NSLayoutConstraint.activate([
-      swatchView.widthAnchor.constraint(equalToConstant: 360),
-      swatchView.heightAnchor.constraint(equalToConstant: 210),
+      swatchView.widthAnchor.constraint(equalToConstant: 416),
+      swatchView.heightAnchor.constraint(equalToConstant: 212),
+      overlayHexLabel.leadingAnchor.constraint(equalTo: swatchView.leadingAnchor, constant: 18),
+      overlayHexLabel.bottomAnchor.constraint(equalTo: swatchView.bottomAnchor, constant: -16),
+
+      formatsStack.widthAnchor.constraint(equalToConstant: 416),
+      hexRow.widthAnchor.constraint(equalTo: formatsStack.widthAnchor),
+      rgbRow.widthAnchor.constraint(equalTo: formatsStack.widthAnchor),
+      hslRow.widthAnchor.constraint(equalTo: formatsStack.widthAnchor),
+
       stack.centerXAnchor.constraint(equalTo: centerXAnchor),
       stack.centerYAnchor.constraint(equalTo: centerYAnchor)
     ])
   }
 
+  private func makeFormatRow(tag: String, valueLabel: NSTextField, action: Selector) -> NSView {
+    let row = NSView()
+    row.wantsLayer = true
+    row.layer?.cornerRadius = 10
+    row.layer?.cornerCurve = .continuous
+    row.layer?.backgroundColor = palette.surface.cgColor
+    row.layer?.borderWidth = 1
+    row.layer?.borderColor = palette.border.cgColor
+    row.translatesAutoresizingMaskIntoConstraints = false
+
+    let tagLbl = NSTextField(labelWithString: tag)
+    tagLbl.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
+    tagLbl.textColor = palette.muted
+    tagLbl.translatesAutoresizingMaskIntoConstraints = false
+
+    valueLabel.font = .monospacedSystemFont(ofSize: 13.5, weight: .medium)
+    valueLabel.textColor = palette.ink
+    valueLabel.isSelectable = true
+    valueLabel.lineBreakMode = .byTruncatingTail
+    valueLabel.translatesAutoresizingMaskIntoConstraints = false
+
+    let copyBtn = makePillButton(title: "复制 \(tag)", target: self, action: action, palette: palette)
+    row.addSubview(tagLbl)
+    row.addSubview(valueLabel)
+    row.addSubview(copyBtn)
+
+    NSLayoutConstraint.activate([
+      row.heightAnchor.constraint(equalToConstant: 42),
+      tagLbl.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 14),
+      tagLbl.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+      tagLbl.widthAnchor.constraint(equalToConstant: 36),
+
+      valueLabel.leadingAnchor.constraint(equalTo: tagLbl.trailingAnchor, constant: 8),
+      valueLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+      valueLabel.trailingAnchor.constraint(lessThanOrEqualTo: copyBtn.leadingAnchor, constant: -10),
+
+      copyBtn.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -10),
+      copyBtn.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+      copyBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 74)
+    ])
+    return row
+  }
+
   override func load(item: LumenPreviewItem, context: LumenPreviewContext) {
     super.load(item: item, context: context)
     let raw = (item.inlineText ?? item.title).trimmingCharacters(in: .whitespacesAndNewlines)
-    let color = LumenClassifier.parseHexColor(raw) ?? palette.accent
+    let color = LumenColorMath.parseAnyColor(raw) ?? palette.accent
     let srgb = color.usingColorSpace(.sRGB) ?? color
-    swatchView.layer?.backgroundColor = srgb.cgColor
-    hexLabel.stringValue = raw.uppercased()
-    let r = Int(round(srgb.redComponent * 255))
-    let g = Int(round(srgb.greenComponent * 255))
-    let b = Int(round(srgb.blueComponent * 255))
-    rgbLabel.stringValue = "RGB(\(r), \(g), \(b))"
-    var h: CGFloat = 0, s: CGFloat = 0, br: CGFloat = 0, a: CGFloat = 0
-    srgb.getHue(&h, saturation: &s, brightness: &br, alpha: &a)
-    hslLabel.stringValue = String(format: "HSB(%.0f°, %.0f%%, %.0f%%)", h * 360, s * 100, br * 100)
+    swatchView.swatchColor = srgb
+
+    hexString = LumenColorMath.hexString(from: srgb)
+    rgbString = LumenColorMath.rgbString(from: srgb)
+    hslString = LumenColorMath.hslString(from: srgb)
+
+    // Choose legible foreground color over swatch based on relative luminance
+    let luma = 0.2126 * srgb.redComponent + 0.7152 * srgb.greenComponent + 0.0722 * srgb.blueComponent
+    overlayHexLabel.textColor = (luma > 0.62 && srgb.alphaComponent > 0.5)
+      ? NSColor(srgbRed: 0.11, green: 0.15, blue: 0.22, alpha: 0.92)
+      : NSColor.white.withAlphaComponent(0.95)
+    overlayHexLabel.stringValue = hexString
+
+    hexValueLabel.stringValue = hexString
+    rgbValueLabel.stringValue = rgbString
+    hslValueLabel.stringValue = hslString
   }
 
-  @objc private func copySwatch() { copyPrimaryContent() }
+  private func copyFormatValue(_ value: String, label: String, sender: NSButton) {
+    guard !value.isEmpty else { return }
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    pb.setString(value, forType: .string)
+    currentContext?.onToast("已复制 \(label)：\(value)")
+    let prevTitle = sender.title
+    sender.title = "已复制"
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak sender] in
+      sender?.title = prevTitle
+    }
+  }
+
+  @objc private func copyHexClicked(_ sender: NSButton) { copyFormatValue(hexString, label: "HEX", sender: sender) }
+  @objc private func copyRGBClicked(_ sender: NSButton) { copyFormatValue(rgbString, label: "RGB", sender: sender) }
+  @objc private func copyHSLClicked(_ sender: NSButton) { copyFormatValue(hslString, label: "HSL", sender: sender) }
 }
 
-// MARK: - 7. Native Syntax-Highlighted Code Renderer
+// MARK: - 7. Native Syntax-Highlighted Code Renderer (Q04, A29, A59)
 
 struct LumenCodeRenderer: LumenPreviewRenderer {
   let rendererID = "native.appkit.code"
@@ -1865,18 +2612,22 @@ struct LumenCodeRenderer: LumenPreviewRenderer {
 final class LumenCodeRendererView: LumenPreviewRendererView {
   private let palette: LumenPalette
   private let toolbar: NSView
+  private let langGlyph = LumenIdentityGlyphView(size: 16)
   private let infoLabel: NSTextField
+  private let wrapBtn: NSButton
   private let scrollView = NSScrollView()
   private let textView = NSTextView()
   private var codeContent = ""
-  private var language = "js"
+  private var language = "unknown"
   private var fontSize: CGFloat = 13
+  private var wrapLines = false
   private var loadGeneration = 0
 
   init(palette: LumenPalette) {
     self.palette = palette
     toolbar = makeRendererToolbar(palette: palette, darkOverride: true)
-    infoLabel = makeStatusLabel("代码预览", palette: palette, dark: true)
+    infoLabel = makeStatusLabel("未知语言", palette: palette, dark: true)
+    wrapBtn = NSButton()
     super.init(frame: .zero)
     wantsLayer = true
     layer?.backgroundColor = palette.codeBackground.cgColor
@@ -1886,15 +2637,34 @@ final class LumenCodeRendererView: LumenPreviewRendererView {
   required init?(coder: NSCoder) { nil }
 
   private func setupUI() {
+    langGlyph.translatesAutoresizingMaskIntoConstraints = false
+
+    wrapBtn.title = "自动换行"
+    wrapBtn.target = self
+    wrapBtn.action = #selector(toggleWrapClicked)
+    wrapBtn.isBordered = false
+    wrapBtn.wantsLayer = true
+    wrapBtn.font = .systemFont(ofSize: 11.5, weight: .medium)
+    wrapBtn.contentTintColor = palette.codeBaseText
+    wrapBtn.layer?.cornerRadius = 7
+    wrapBtn.layer?.cornerCurve = .continuous
+    wrapBtn.layer?.borderWidth = 1
+    wrapBtn.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
+    wrapBtn.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+    wrapBtn.translatesAutoresizingMaskIntoConstraints = false
+    wrapBtn.heightAnchor.constraint(equalToConstant: 26).isActive = true
+    wrapBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 66).isActive = true
+
     let copyBtn = makePillButton(title: "复制代码", target: self, action: #selector(copyCodeClicked), palette: palette, dark: true)
     let smallerBtn = makePillButton(title: "A−", target: self, action: #selector(zoomOutClicked), palette: palette, dark: true)
     let largerBtn = makePillButton(title: "A+", target: self, action: #selector(zoomInClicked), palette: palette, dark: true)
 
-    let rightStack = NSStackView(views: [smallerBtn, largerBtn, copyBtn])
+    let rightStack = NSStackView(views: [wrapBtn, smallerBtn, largerBtn, copyBtn])
     rightStack.orientation = .horizontal
     rightStack.spacing = 6
     rightStack.translatesAutoresizingMaskIntoConstraints = false
 
+    toolbar.addSubview(langGlyph)
     toolbar.addSubview(infoLabel)
     toolbar.addSubview(rightStack)
 
@@ -1923,7 +2693,11 @@ final class LumenCodeRendererView: LumenPreviewRendererView {
       toolbar.topAnchor.constraint(equalTo: topAnchor),
       toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
       toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
-      infoLabel.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 14),
+      langGlyph.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 14),
+      langGlyph.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+      langGlyph.widthAnchor.constraint(equalToConstant: 16),
+      langGlyph.heightAnchor.constraint(equalToConstant: 16),
+      infoLabel.leadingAnchor.constraint(equalTo: langGlyph.trailingAnchor, constant: 8),
       infoLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
       rightStack.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -14),
       rightStack.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
@@ -1940,8 +2714,11 @@ final class LumenCodeRendererView: LumenPreviewRendererView {
     loadGeneration += 1
     let gen = loadGeneration
     if case .code(let lang) = item.kind {
-      language = lang
+      language = LumenContentIdentityRegistry.shared.normalizeLanguageID(lang)
+    } else {
+      language = "unknown"
     }
+    langGlyph.configure(identity: item.identity, isDark: true, size: 16)
 
     if let cached = context.cache.text(for: item.cacheKey) {
       applyCode(cached)
@@ -1984,17 +2761,20 @@ final class LumenCodeRendererView: LumenPreviewRendererView {
   private func applyCode(_ source: String) {
     codeContent = source
     let lines = source.components(separatedBy: "\n")
-    let langTitle = LumenClassifier.languageDisplayName(language)
-    infoLabel.stringValue = "● \(langTitle) · \(lines.count) 行 · UTF-8"
+    let normLang = LumenContentIdentityRegistry.shared.normalizeLanguageID(language)
+    let langTitle = normLang == "unknown" ? "未知语言" : LumenContentIdentityRegistry.shared.languageDisplayName(normLang)
+    let styleNote = normLang == "unknown" ? "中性样式" : "语法高亮"
+    infoLabel.stringValue = "\(langTitle) · \(lines.count) 行 · \(source.count) 字符 · \(styleNote)"
 
     let gutterWidth = max(3, String(lines.count).count)
     let numbered = NSMutableAttributedString()
     let gutterFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
     let gutterAttrs: [NSAttributedString.Key: Any] = [
       .font: gutterFont,
-      .foregroundColor: palette.codeGutterText
+      .foregroundColor: palette.codeGutterText,
+      .ligature: 0
     ]
-    let highlightedFull = LumenSyntaxHighlighter.highlight(source, language: language, fontSize: fontSize, darkCanvas: true)
+    let highlightedFull = LumenSyntaxHighlighter.highlight(source, language: normLang, fontSize: fontSize, darkCanvas: true)
     let nsSource = source as NSString
     var cursor = 0
     for (idx, line) in lines.enumerated() {
@@ -2004,7 +2784,7 @@ final class LumenCodeRendererView: LumenPreviewRendererView {
       if cursor + len <= highlightedFull.length {
         numbered.append(highlightedFull.attributedSubstring(from: NSRange(location: cursor, length: len)))
       } else {
-        numbered.append(NSAttributedString(string: line, attributes: [.font: gutterFont, .foregroundColor: palette.codeBaseText]))
+        numbered.append(NSAttributedString(string: line, attributes: [.font: gutterFont, .foregroundColor: palette.codeBaseText, .ligature: 0]))
       }
       if idx < lines.count - 1 {
         numbered.append(NSAttributedString(string: "\n", attributes: gutterAttrs))
@@ -2013,6 +2793,22 @@ final class LumenCodeRendererView: LumenPreviewRendererView {
       if cursor > nsSource.length { break }
     }
     textView.textStorage?.setAttributedString(numbered)
+  }
+
+  @objc private func toggleWrapClicked() {
+    wrapLines.toggle()
+    wrapBtn.title = wrapLines ? "取消换行" : "自动换行"
+    scrollView.hasHorizontalScroller = !wrapLines
+    textView.isHorizontallyResizable = !wrapLines
+    textView.textContainer?.widthTracksTextView = wrapLines
+    if wrapLines {
+      let width = max(200, scrollView.contentSize.width - 36)
+      textView.frame.size.width = scrollView.contentSize.width
+      textView.textContainer?.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+    } else {
+      textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    }
+    applyCode(codeContent)
   }
 
   @objc private func copyCodeClicked() { copyPrimaryContent() }
@@ -2091,7 +2887,7 @@ final class LumenCollectionRendererView: LumenPreviewRendererView {
     super.load(item: item, context: context)
     stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
-    let heading = NSTextField(labelWithString: "文件集合 · \(item.collectionChildren.count) 项")
+    let heading = NSTextField(labelWithString: "\(item.identity.displayName) · \(item.collectionChildren.count) 项")
     heading.font = .systemFont(ofSize: 18, weight: .semibold)
     heading.textColor = palette.ink
     stack.addArrangedSubview(heading)
@@ -2107,29 +2903,30 @@ final class LumenCollectionRendererView: LumenPreviewRendererView {
       row.layer?.borderColor = palette.border.cgColor
       row.translatesAutoresizingMaskIntoConstraints = false
 
-      let icon = NSImageView(image: child.localURL.map { NSWorkspace.shared.icon(forFile: $0.path) } ?? LumenIcons.symbol("doc.fill", size: 18))
-      icon.translatesAutoresizingMaskIntoConstraints = false
+      let glyph = LumenIdentityGlyphView(size: 22)
+      glyph.configure(identity: child.identity, isDark: palette.isDark, size: 22)
+      glyph.translatesAutoresizingMaskIntoConstraints = false
       let name = NSTextField(labelWithString: child.title)
       name.font = .systemFont(ofSize: 13, weight: .medium)
       name.textColor = palette.ink
       name.lineBreakMode = .byTruncatingMiddle
       name.translatesAutoresizingMaskIntoConstraints = false
-      let meta = NSTextField(labelWithString: "\(child.kind.displayLabel) · \(child.sizeLabel)")
+      let meta = NSTextField(labelWithString: "\(child.identity.displayName) · \(child.sizeLabel)")
       meta.font = .systemFont(ofSize: 11)
       meta.textColor = palette.muted
       meta.translatesAutoresizingMaskIntoConstraints = false
 
-      row.addSubview(icon)
+      row.addSubview(glyph)
       row.addSubview(name)
       row.addSubview(meta)
 
       NSLayoutConstraint.activate([
         row.heightAnchor.constraint(equalToConstant: 48),
-        icon.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 12),
-        icon.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-        icon.widthAnchor.constraint(equalToConstant: 28),
-        icon.heightAnchor.constraint(equalToConstant: 28),
-        name.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+        glyph.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 12),
+        glyph.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        glyph.widthAnchor.constraint(equalToConstant: 24),
+        glyph.heightAnchor.constraint(equalToConstant: 24),
+        name.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 10),
         name.centerYAnchor.constraint(equalTo: row.centerYAnchor),
         meta.leadingAnchor.constraint(greaterThanOrEqualTo: name.trailingAnchor, constant: 12),
         meta.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -14),
@@ -2145,7 +2942,7 @@ final class LumenCollectionRendererView: LumenPreviewRendererView {
   }
 }
 
-// MARK: - 9. Native Text & Link Renderer
+// MARK: - 9. Native Text & Link Renderer (Q05, A30 — Line/Char Stats & Preserved Line Breaks)
 
 struct LumenTextRenderer: LumenPreviewRenderer {
   let rendererID = "native.appkit.text"
@@ -2165,6 +2962,7 @@ final class LumenTextRendererView: LumenPreviewRendererView {
   private let openLinkBtn: NSButton
   private let scrollView = NSScrollView()
   private let textView = NSTextView()
+  private var rawContent = ""
   private var fontSize: CGFloat = 15
   private var activeURL: URL?
   private var loadGeneration = 0
@@ -2183,7 +2981,7 @@ final class LumenTextRendererView: LumenPreviewRendererView {
   required init?(coder: NSCoder) { nil }
 
   private func setupUI() {
-    openLinkBtn.title = "打开链接"
+    openLinkBtn.title = "在浏览器打开"
     openLinkBtn.target = self
     openLinkBtn.action = #selector(openURLClicked)
     openLinkBtn.isBordered = false
@@ -2196,13 +2994,15 @@ final class LumenTextRendererView: LumenPreviewRendererView {
     openLinkBtn.layer?.backgroundColor = palette.accentSoft.cgColor
     openLinkBtn.translatesAutoresizingMaskIntoConstraints = false
     openLinkBtn.heightAnchor.constraint(equalToConstant: 26).isActive = true
-    openLinkBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 72).isActive = true
+    openLinkBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 86).isActive = true
     openLinkBtn.isHidden = true
 
+    let smallerBtn = makePillButton(title: "A−", target: self, action: #selector(zoomOutClicked), palette: palette)
+    let largerBtn = makePillButton(title: "A+", target: self, action: #selector(zoomInClicked), palette: palette)
     let copyBtn = makePillButton(title: "复制内容", target: self, action: #selector(copyClicked), palette: palette)
-    let rightStack = NSStackView(views: [openLinkBtn, copyBtn])
+    let rightStack = NSStackView(views: [openLinkBtn, smallerBtn, largerBtn, copyBtn])
     rightStack.orientation = .horizontal
-    rightStack.spacing = 8
+    rightStack.spacing = 6
     rightStack.translatesAutoresizingMaskIntoConstraints = false
 
     toolbar.addSubview(infoLabel)
@@ -2287,18 +3087,23 @@ final class LumenTextRendererView: LumenPreviewRendererView {
   }
 
   private func applyText(_ content: String, isLink: Bool) {
+    rawContent = content
+    // Preserve exact line breaks cleanly for display without mutating original content
+    let displayString = content.replacingOccurrences(of: "\r\n", with: "\n")
     let paragraph = NSMutableParagraphStyle()
     paragraph.lineHeightMultiple = 1.55
     textView.textStorage?.setAttributedString(NSAttributedString(
-      string: content,
+      string: displayString,
       attributes: [
         .font: NSFont.systemFont(ofSize: fontSize),
         .foregroundColor: palette.ink,
         .paragraphStyle: paragraph
       ]
     ))
-    let lines = max(1, content.components(separatedBy: "\n").count)
-    infoLabel.stringValue = "\(isLink ? "链接" : "文本") · \(content.count) 字 · \(lines) 行 · \(LumenFormatters.byteCount(Int64(content.utf8.count)))"
+    let lines = max(1, displayString.components(separatedBy: "\n").count)
+    let nonSpaceChars = content.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }.count
+    let eolTag = content.contains("\r\n") ? "CRLF" : (content.contains("\n") ? "LF" : "单行")
+    infoLabel.stringValue = "\(isLink ? "链接" : "文本") · \(lines) 行 · \(content.count) 字符（非空 \(nonSpaceChars)）· \(eolTag) · \(LumenFormatters.byteCount(Int64(content.utf8.count)))"
     let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
     if isLink, let url = URL(string: trimmed), let scheme = url.scheme, (scheme == "http" || scheme == "https") {
       activeURL = url
@@ -2311,20 +3116,22 @@ final class LumenTextRendererView: LumenPreviewRendererView {
   }
 
   @objc private func copyClicked() { copyPrimaryContent() }
+  @objc private func zoomInClicked() { zoomIn() }
+  @objc private func zoomOutClicked() { zoomOut() }
 
   override func zoomIn() {
     fontSize = min(26, fontSize + 2)
-    applyText(textView.string, isLink: activeURL != nil)
+    applyText(rawContent, isLink: activeURL != nil)
   }
 
   override func zoomOut() {
     fontSize = max(11, fontSize - 2)
-    applyText(textView.string, isLink: activeURL != nil)
+    applyText(rawContent, isLink: activeURL != nil)
   }
 
   override func resetZoom() {
     fontSize = 15
-    applyText(textView.string, isLink: activeURL != nil)
+    applyText(rawContent, isLink: activeURL != nil)
   }
 }
 
@@ -2341,7 +3148,7 @@ struct LumenFileFallbackRenderer: LumenPreviewRenderer {
 
 final class LumenFileFallbackRendererView: LumenPreviewRendererView {
   private let palette: LumenPalette
-  private let iconView = NSImageView()
+  private let glyphView = LumenIdentityGlyphView(size: 56)
   private let nameLabel = NSTextField(labelWithString: "")
   private let metaLabel = NSTextField(wrappingLabelWithString: "")
 
@@ -2356,8 +3163,7 @@ final class LumenFileFallbackRendererView: LumenPreviewRendererView {
   required init?(coder: NSCoder) { nil }
 
   private func setupUI() {
-    iconView.imageScaling = .scaleProportionallyUpOrDown
-    iconView.translatesAutoresizingMaskIntoConstraints = false
+    glyphView.translatesAutoresizingMaskIntoConstraints = false
 
     nameLabel.font = .systemFont(ofSize: 18, weight: .semibold)
     nameLabel.textColor = palette.ink
@@ -2379,7 +3185,7 @@ final class LumenFileFallbackRendererView: LumenPreviewRendererView {
     actions.spacing = 10
     actions.translatesAutoresizingMaskIntoConstraints = false
 
-    let stack = NSStackView(views: [iconView, nameLabel, metaLabel, actions])
+    let stack = NSStackView(views: [glyphView, nameLabel, metaLabel, actions])
     stack.orientation = .vertical
     stack.alignment = .centerX
     stack.spacing = 10
@@ -2388,8 +3194,8 @@ final class LumenFileFallbackRendererView: LumenPreviewRendererView {
 
     addSubview(stack)
     NSLayoutConstraint.activate([
-      iconView.widthAnchor.constraint(equalToConstant: 72),
-      iconView.heightAnchor.constraint(equalToConstant: 72),
+      glyphView.widthAnchor.constraint(equalToConstant: 56),
+      glyphView.heightAnchor.constraint(equalToConstant: 56),
       nameLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
       metaLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 480),
       stack.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -2399,13 +3205,11 @@ final class LumenFileFallbackRendererView: LumenPreviewRendererView {
 
   override func load(item: LumenPreviewItem, context: LumenPreviewContext) {
     super.load(item: item, context: context)
+    glyphView.configure(identity: item.identity, isDark: palette.isDark, size: 56)
     if let url = item.localURL {
-      iconView.image = NSWorkspace.shared.icon(forFile: url.path)
-      metaLabel.stringValue = "\(url.path)\n\(item.sizeLabel) · 尚无此格式的内置渲染器，可调用系统默认应用打开。"
+      metaLabel.stringValue = "\(item.identity.displayName) · \(item.sizeLabel)\n\(url.path)\n尚无此格式的内置渲染器，可调用系统默认应用打开。"
     } else {
-      iconView.image = LumenIcons.symbol("doc.fill", size: 42)
-      iconView.contentTintColor = palette.accent
-      metaLabel.stringValue = "\(item.sizeLabel) · 尚无此格式的内置渲染器。"
+      metaLabel.stringValue = "\(item.identity.displayName) · \(item.sizeLabel)\n尚无此格式的内置渲染器。"
     }
     nameLabel.stringValue = item.title
   }

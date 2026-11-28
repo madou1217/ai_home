@@ -384,43 +384,75 @@ final class LumenAlbumCoverView: NSView {
 }
 
 /// Pure Swift/AppKit syntax highlighter returning styled `NSAttributedString` (no HTML/WebView).
+/// Supports distinct lexical rules & palettes for JS/TS/Go/PHP/Python/JSON/CSS/HTML/SVG/Markdown plus
+/// Rust, SQL, Shell (sh/zsh/fish), YAML, XML, Java, C, C++, C#, Ruby, Swift, Kotlin, Dart, Lua,
+/// TOML, INI, Dockerfile, Makefile, GraphQL, and Diff. Unknown languages remain strictly neutral (§18.2, A29, A59).
 enum LumenSyntaxHighlighter {
   private static let keywordsByLang: [String: Set<String>] = [
-    "js": Set("async function await return const let var new if else for while class import export from throw try catch true false null undefined switch case break continue".split(separator: " ").map(String.init)),
-    "jsx": Set("async function await return const let var new if else for while class import export from throw try catch true false null undefined switch case break continue".split(separator: " ").map(String.init)),
-    "ts": Set("async function await return const let var new if else for while class import export from type interface extends implements readonly public private protected true false null string number boolean void".split(separator: " ").map(String.init)),
-    "tsx": Set("async function await return const let var new if else for while class import export from type interface extends implements readonly public private protected true false null string number boolean void".split(separator: " ").map(String.init)),
-    "go": Set("package import func return if else for range var const type struct interface defer go select switch case default nil true false error map chan make len cap".split(separator: " ").map(String.init)),
-    "swift": Set("import func return if else guard let var struct class final enum protocol extension private fileprivate public internal static override init deinit self Self true false nil switch case break continue where throw throws try catch async await in".split(separator: " ").map(String.init)),
-    "php": Set("namespace use final class extends implements public private protected function return new if else foreach for while static true false null echo throw try catch".split(separator: " ").map(String.init)),
-    "py": Set("from import as def async await return class if elif else for in while with try except finally raise True False None pass yield lambda and or not".split(separator: " ").map(String.init)),
-    "rs": Set("fn let mut pub struct enum impl trait for in while loop if else match return use mod crate self Self true false Some None Ok Err async await Result Option where move".split(separator: " ").map(String.init)),
-    "rust": Set("fn let mut pub struct enum impl trait for in while loop if else match return use mod crate self Self true false Some None Ok Err async await Result Option where move".split(separator: " ").map(String.init)),
-    "sql": Set("SELECT FROM WHERE JOIN LEFT RIGHT INNER OUTER ON GROUP BY ORDER HAVING LIMIT INSERT INTO VALUES UPDATE SET DELETE CREATE TABLE ALTER DROP AS AND OR NOT IN IS NULL DESC ASC COUNT SUM DISTINCT".split(separator: " ").map(String.init)),
-    "sh": Set("if then else elif fi for do done while in function export local echo printf exit set case esac return".split(separator: " ").map(String.init)),
-    "zsh": Set("if then else elif fi for do done while in function export local echo printf exit set case esac return".split(separator: " ").map(String.init)),
-    "fish": Set("if else end for in while function set echo return switch case".split(separator: " ").map(String.init)),
-    "yaml": Set("true false null yes no on off".split(separator: " ").map(String.init)),
+    "js": Set("async function await return const let var new if else for while do class extends super import export default from throw try catch finally true false null undefined switch case break continue typeof instanceof in of yield".split(separator: " ").map(String.init)),
+    "jsx": Set("async function await return const let var new if else for while class extends import export default from throw try catch true false null undefined switch case break continue".split(separator: " ").map(String.init)),
+    "ts": Set("async function await return const let var new if else for while class import export default from type interface extends implements readonly public private protected abstract enum namespace declare keyof infer as is true false null undefined string number boolean void never unknown any".split(separator: " ").map(String.init)),
+    "tsx": Set("async function await return const let var new if else for while class import export default from type interface extends implements readonly public private protected enum keyof as true false null undefined string number boolean void".split(separator: " ").map(String.init)),
+    "go": Set("package import func return if else for range var const type struct interface defer go select switch case default break continue fallthrough goto nil true false error map chan make len cap append copy delete new".split(separator: " ").map(String.init)),
+    "swift": Set("import func return if else guard let var struct class actor final enum protocol extension private fileprivate public internal open static override mutating nonmutating init deinit self Self super true false nil switch case default break continue where throw throws rethrows try catch async await in weak unowned lazy convenience required typealias associatedtype".split(separator: " ").map(String.init)),
+    "php": Set("namespace use final abstract class interface trait extends implements public private protected function fn return new if elseif else foreach for while do switch case break continue static true false null echo print throw try catch finally match readonly".split(separator: " ").map(String.init)),
+    "py": Set("from import as def async await return class if elif else for in while with try except finally raise True False None pass break continue yield lambda and or not is del global nonlocal assert match case".split(separator: " ").map(String.init)),
+    "rs": Set("fn let mut const static pub struct enum union impl trait type for in while loop if else match return break continue use mod crate super self Self true false Some None Ok Err async await unsafe extern dyn where move ref as Box Vec String Result Option".split(separator: " ").map(String.init)),
+    "sql": Set("SELECT DISTINCT FROM WHERE JOIN LEFT RIGHT INNER OUTER FULL CROSS ON USING GROUP BY ORDER HAVING LIMIT OFFSET FETCH INSERT INTO VALUES UPDATE SET DELETE CREATE ALTER DROP TABLE INDEX VIEW TRIGGER PROCEDURE FUNCTION DATABASE SCHEMA AS AND OR NOT IN EXISTS BETWEEN LIKE ILIKE IS NULL TRUE FALSE DESC ASC COUNT SUM AVG MIN MAX CASE WHEN THEN ELSE END UNION ALL PRIMARY KEY FOREIGN REFERENCES CONSTRAINT DEFAULT UNIQUE CHECK".split(separator: " ").map(String.init)),
+    "sh": Set("if then else elif fi for do done while until in function export local readonly declare typeset echo printf read exit return set unset trap shift case esac break continue source eval exec test true false".split(separator: " ").map(String.init)),
+    "zsh": Set("if then else elif fi for foreach do done while until in function export local typeset autoload zmodload echo print printf exit return set setopt unsetopt case esac break continue source true false".split(separator: " ").map(String.init)),
+    "fish": Set("if else end for in while function set set_color echo printf return switch case begin break continue and or not status string test true false".split(separator: " ").map(String.init)),
+    "yaml": Set("true false null yes no on off y n ~".split(separator: " ").map(String.init)),
     "json": Set(["true", "false", "null"]),
-    "css": Set(["important", "inherit", "initial", "unset", "none", "auto", "flex", "grid", "block", "inline", "solid", "relative", "absolute", "fixed"]),
-    "java": Set("public private protected class interface enum static final void new return import package if else for while try catch throws boolean int long double String true false null".split(separator: " ").map(String.init)),
-    "cpp": Set("include int void auto const constexpr class struct public private protected return if else for while namespace using std template typename true false nullptr".split(separator: " ").map(String.init)),
-    "c": Set("include int char float double void struct enum typedef return if else for while const static unsigned signed sizeof NULL".split(separator: " ").map(String.init)),
-    "cs": Set("using namespace class struct interface record public private protected static async await return var string int bool void new if else foreach true false null".split(separator: " ").map(String.init)),
-    "rb": Set("def end class module require include puts if elsif else unless do return nil true false self".split(separator: " ").map(String.init)),
-    "kt": Set("package import fun val var class data object interface override return if else when for while true false null private public internal".split(separator: " ").map(String.init)),
-    "dart": Set("import class final const var void return if else for while async await Future true false null".split(separator: " ").map(String.init)),
-    "lua": Set("local function end if then else elseif for in do while repeat until return true false nil and or not".split(separator: " ").map(String.init))
+    "css": Set("important inherit initial unset none auto flex grid block inline inline-block solid dashed relative absolute fixed sticky hidden visible center space-between".split(separator: " ").map(String.init)),
+    "java": Set("package import public private protected class interface enum record abstract final static synchronized volatile transient native strictfp void new return if else for while do switch case default break continue try catch finally throw throws extends implements this super instanceof boolean byte char short int long float double String var true false null".split(separator: " ").map(String.init)),
+    "cpp": Set("include define ifdef ifndef endif pragma int char short long float double void bool auto const constexpr consteval mutable static extern inline virtual override final explicit friend template typename class struct union enum namespace using std public private protected return if else for while do switch case default break continue try catch throw new delete sizeof alignof decltype noexcept static_cast dynamic_cast reinterpret_cast const_cast true false nullptr this".split(separator: " ").map(String.init)),
+    "c": Set("include define ifdef ifndef endif pragma int char short long float double void signed unsigned const volatile static extern register inline struct union enum typedef return if else for while do switch case default break continue goto sizeof _Bool _Atomic NULL true false".split(separator: " ").map(String.init)),
+    "cs": Set("using namespace class struct interface record enum delegate event public private protected internal static readonly const sealed abstract virtual override partial async await return var dynamic object string char int long float double decimal bool void new if else for foreach while do switch case default break continue try catch finally throw get set init value yield ref out in is as typeof nameof sizeof true false null this base".split(separator: " ").map(String.init)),
+    "rb": Set("def end class module require require_relative include extend prepend attr_reader attr_writer attr_accessor puts print raise begin rescue ensure retry if elsif else unless case when while until for in do yield return break next redo super self nil true false and or not private protected public".split(separator: " ").map(String.init)),
+    "kt": Set("package import fun val var class data sealed inner enum object companion interface abstract open final override private protected internal public suspend inline noinline crossinline reified lateinit const return if else when for while do try catch finally throw is as in out by where this super true false null Unit Nothing Any".split(separator: " ").map(String.init)),
+    "dart": Set("import export part library show hide deferred as class mixin extension enum abstract sealed base final interface const var late dynamic void Function Future Stream async await sync yield return if else for in while do switch case default break continue try on catch finally rethrow throw new this super extends implements with required factory get set operator true false null".split(separator: " ").map(String.init)),
+    "lua": Set("local function end if then else elseif for in do while repeat until break goto return nil true false and or not self".split(separator: " ").map(String.init)),
+    "toml": Set(["true", "false"]),
+    "ini": Set(["true", "false", "yes", "no", "on", "off"]),
+    "docker": Set("FROM RUN CMD LABEL MAINTAINER EXPOSE ENV ADD COPY ENTRYPOINT VOLUME USER WORKDIR ARG ONBUILD STOPSIGNAL HEALTHCHECK SHELL AS".split(separator: " ").map(String.init)),
+    "make": Set("ifeq ifneq ifdef ifndef else endif include sinclude define endef undefine export unexport override private vpath".split(separator: " ").map(String.init)),
+    "graphql": Set("query mutation subscription fragment on type interface union enum input scalar extend implements directive schema repeatable true false null".split(separator: " ").map(String.init))
   ]
 
   private static let tokenRegex: NSRegularExpression? = try? NSRegularExpression(
-    pattern: #"(\/\/[^\n]*|\/\*[\s\S]*?\*\/|--[^\n]*|#[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\$[A-Za-z_]\w*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)"#,
+    pattern: #"(\/\/[^\n]*|\/\*[\s\S]*?\*\/|--\[\[[\s\S]*?\]\]|--[^\n]*|#[^\n]*|;[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|@[A-Za-z_]\w*|\$\{?[A-Za-z_]\w*\}?|\$\([A-Za-z0-9_.-]+\)|:[A-Za-z_]\w*\b|\b0x[0-9A-Fa-f]+\b|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)"#,
     options: []
   )
 
   private static let markupRegex: NSRegularExpression? = try? NSRegularExpression(
-    pattern: #"(<!--[\s\S]*?-->|<\/?[A-Za-z][\w:-]*|\/?>|"[^"\n]*"|'[^'\n]*'|\b[A-Za-z_][\w:-]*(?=\s*=))"#,
+    pattern: #"(<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<\/?[A-Za-z][\w:-]*|\/?>|"[^"\n]*"|'[^'\n]*'|\b[A-Za-z_][\w:-]*(?=\s*=))"#,
     options: []
+  )
+
+  private static let sectionHeaderRegex: NSRegularExpression? = try? NSRegularExpression(
+    pattern: #"^\s*\[{1,2}[^\]\n]+\]{1,2}"#,
+    options: [.anchorsMatchLines]
+  )
+
+  private static let yamlKeyRegex: NSRegularExpression? = try? NSRegularExpression(
+    pattern: #"^(\s*-?\s*)([A-Za-z0-9_.-]+)(?=\s*:)"#,
+    options: [.anchorsMatchLines]
+  )
+
+  private static let kvKeyRegex: NSRegularExpression? = try? NSRegularExpression(
+    pattern: #"^(\s*)([A-Za-z0-9_.-]+)(?=\s*=)"#,
+    options: [.anchorsMatchLines]
+  )
+
+  private static let makeTargetRegex: NSRegularExpression? = try? NSRegularExpression(
+    pattern: #"^([A-Za-z0-9_./%-]+|\.[A-Z]+)(?=\s*:(?!=))"#,
+    options: [.anchorsMatchLines]
+  )
+
+  private static let cPreprocessorRegex: NSRegularExpression? = try? NSRegularExpression(
+    pattern: #"^\s*#\s*(?:include|define|undef|ifdef|ifndef|if|elif|else|endif|pragma|error|warning)\b"#,
+    options: [.anchorsMatchLines]
   )
 
   static func highlight(_ source: String, language: String, fontSize: CGFloat = 12.5, darkCanvas: Bool = true, lineHeightMultiple: CGFloat = 1.48) -> NSAttributedString {
@@ -444,7 +476,7 @@ enum LumenSyntaxHighlighter {
       ]
     )
 
-    // Unknown language stays neutral — never apply JavaScript highlighting (§18.2, A60).
+    // Unknown language stays strictly neutral — never apply JavaScript highlighting (§18.2, A29, A59).
     if lang == "unknown" {
       return attributed
     }
@@ -467,18 +499,15 @@ enum LumenSyntaxHighlighter {
     let funcColor = darkCanvas
       ? NSColor(srgbRed: 0.522, green: 0.784, blue: 0.941, alpha: 1)
       : NSColor(srgbRed: 0.231, green: 0.510, blue: 0.741, alpha: 1)
-    let kwColor: NSColor
-    switch lang {
-    case "go":
-      kwColor = darkCanvas ? NSColor(srgbRed: 0.420, green: 0.855, blue: 0.839, alpha: 1) : NSColor(srgbRed: 0.196, green: 0.529, blue: 0.678, alpha: 1)
-    case "py":
-      kwColor = darkCanvas ? NSColor(srgbRed: 0.945, green: 0.729, blue: 0.553, alpha: 1) : NSColor(srgbRed: 0.690, green: 0.478, blue: 0.192, alpha: 1)
-    case "rs":
-      kwColor = darkCanvas ? NSColor(srgbRed: 0.929, green: 0.678, blue: 0.549, alpha: 1) : NSColor(srgbRed: 0.714, green: 0.420, blue: 0.278, alpha: 1)
-    default:
-      kwColor = darkCanvas ? NSColor(srgbRed: 0.776, green: 0.647, blue: 1.0, alpha: 1) : NSColor(srgbRed: 0.549, green: 0.416, blue: 0.780, alpha: 1)
+    let kwColor = keywordAccentColor(for: lang, darkCanvas: darkCanvas)
+
+    // Special line-oriented diff highlighting (additions / deletions / hunks / headers)
+    if lang == "diff" {
+      highlightDiff(clamped, into: attributed, darkCanvas: darkCanvas, font: font)
+      return attributed
     }
 
+    // XML / HTML / SVG markup mode
     if lang == "html" || lang == "svg" || lang == "xml" {
       markupRegex?.enumerateMatches(in: clamped, options: [], range: fullRange) { match, _, _ in
         guard let match else { return }
@@ -486,6 +515,10 @@ enum LumenSyntaxHighlighter {
         let token = nsText.substring(with: range)
         if token.hasPrefix("<!--") {
           attributed.addAttribute(.foregroundColor, value: commentColor, range: range)
+        } else if token.hasPrefix("<![CDATA[") {
+          attributed.addAttribute(.foregroundColor, value: stringColor, range: range)
+        } else if token.hasPrefix("<?") {
+          attributed.addAttribute(.foregroundColor, value: numberColor, range: range)
         } else if token.hasPrefix("\"") || token.hasPrefix("'") {
           attributed.addAttribute(.foregroundColor, value: stringColor, range: range)
         } else if token.hasPrefix("<") || token.hasSuffix(">") {
@@ -497,27 +530,67 @@ enum LumenSyntaxHighlighter {
       return attributed
     }
 
+    // Structural pre-passes for YAML keys, TOML/INI sections & keys, Makefile targets, C/C++ preprocessor
+    if lang == "yaml" {
+      yamlKeyRegex?.enumerateMatches(in: clamped, options: [], range: fullRange) { match, _, _ in
+        guard let match, match.numberOfRanges >= 3 else { return }
+        attributed.addAttribute(.foregroundColor, value: funcColor, range: match.range(at: 2))
+      }
+    } else if lang == "toml" || lang == "ini" {
+      sectionHeaderRegex?.enumerateMatches(in: clamped, options: [], range: fullRange) { match, _, _ in
+        guard let match else { return }
+        attributed.addAttribute(.foregroundColor, value: kwColor, range: match.range)
+      }
+      kvKeyRegex?.enumerateMatches(in: clamped, options: [], range: fullRange) { match, _, _ in
+        guard let match, match.numberOfRanges >= 3 else { return }
+        attributed.addAttribute(.foregroundColor, value: funcColor, range: match.range(at: 2))
+      }
+    } else if lang == "make" {
+      makeTargetRegex?.enumerateMatches(in: clamped, options: [], range: fullRange) { match, _, _ in
+        guard let match else { return }
+        attributed.addAttribute(.foregroundColor, value: funcColor, range: match.range)
+      }
+    } else if lang == "c" || lang == "cpp" {
+      cPreprocessorRegex?.enumerateMatches(in: clamped, options: [], range: fullRange) { match, _, _ in
+        guard let match else { return }
+        attributed.addAttribute(.foregroundColor, value: kwColor, range: match.range)
+      }
+    }
+
     guard let regex = tokenRegex else { return attributed }
     let keywords = keywordsByLang[lang] ?? []
-    let hashCommentLangs: Set<String> = ["py", "sh", "zsh", "fish", "yaml", "rb", "toml", "ini", "docker", "make", "r", "pl"]
+    let hashCommentLangs: Set<String> = ["py", "sh", "zsh", "fish", "yaml", "rb", "toml", "ini", "docker", "make", "graphql", "r", "pl"]
+    let slashCommentLangs: Set<String> = ["js", "jsx", "ts", "tsx", "go", "php", "rs", "java", "c", "cpp", "cs", "swift", "kt", "dart", "css"]
+    let dashCommentLangs: Set<String> = ["sql", "lua"]
+    let semicolonCommentLangs: Set<String> = ["ini"]
+    let caseInsensitiveKWLangs: Set<String> = ["sql", "docker", "yaml", "ini"]
 
     regex.enumerateMatches(in: clamped, options: [], range: fullRange) { match, _, _ in
       guard let match else { return }
       let range = match.range
       let token = nsText.substring(with: range)
-      if token.hasPrefix("//") || token.hasPrefix("/*")
-        || (lang == "sql" && token.hasPrefix("--"))
-        || (hashCommentLangs.contains(lang) && token.hasPrefix("#")) {
+
+      if (slashCommentLangs.contains(lang) && (token.hasPrefix("//") || token.hasPrefix("/*")))
+        || (lang == "sql" && token.hasPrefix("/*"))
+        || (dashCommentLangs.contains(lang) && token.hasPrefix("--"))
+        || (hashCommentLangs.contains(lang) && token.hasPrefix("#"))
+        || (semicolonCommentLangs.contains(lang) && token.hasPrefix(";")) {
         attributed.addAttribute(.foregroundColor, value: commentColor, range: range)
       } else if token.hasPrefix("\"") || token.hasPrefix("'") || token.hasPrefix("`") {
         attributed.addAttribute(.foregroundColor, value: stringColor, range: range)
       } else if token.hasPrefix("$") {
         attributed.addAttribute(.foregroundColor, value: varColor, range: range)
+      } else if token.hasPrefix("@") {
+        // Decorators / Annotations / GraphQL directives (@Override, @objc, @deprecated)
+        attributed.addAttribute(.foregroundColor, value: numberColor, range: range)
+      } else if lang == "rb" && token.hasPrefix(":") {
+        attributed.addAttribute(.foregroundColor, value: varColor, range: range)
       } else if let first = token.first, first.isNumber {
         attributed.addAttribute(.foregroundColor, value: numberColor, range: range)
-      } else if keywords.contains(token) || (lang == "sql" && keywords.contains(token.uppercased())) {
+      } else if keywords.contains(token)
+        || (caseInsensitiveKWLangs.contains(lang) && (keywords.contains(token.uppercased()) || keywords.contains(token.lowercased()))) {
         attributed.addAttribute(.foregroundColor, value: kwColor, range: range)
-      } else if range.upperBound < nsText.length {
+      } else if range.upperBound < nsText.length, !["yaml", "toml", "ini"].contains(lang) {
         let nextChar = nsText.character(at: range.upperBound)
         if nextChar == 40 { // '('
           attributed.addAttribute(.foregroundColor, value: funcColor, range: range)
@@ -526,5 +599,51 @@ enum LumenSyntaxHighlighter {
     }
 
     return attributed
+  }
+
+  private static func keywordAccentColor(for lang: String, darkCanvas: Bool) -> NSColor {
+    switch lang {
+    case "go", "dart", "docker":
+      return darkCanvas ? NSColor(srgbRed: 0.420, green: 0.855, blue: 0.839, alpha: 1) : NSColor(srgbRed: 0.196, green: 0.529, blue: 0.678, alpha: 1)
+    case "py", "toml":
+      return darkCanvas ? NSColor(srgbRed: 0.945, green: 0.729, blue: 0.553, alpha: 1) : NSColor(srgbRed: 0.690, green: 0.478, blue: 0.192, alpha: 1)
+    case "rs", "swift", "java", "html", "xml":
+      return darkCanvas ? NSColor(srgbRed: 0.937, green: 0.675, blue: 0.533, alpha: 1) : NSColor(srgbRed: 0.714, green: 0.420, blue: 0.278, alpha: 1)
+    case "sh", "zsh", "fish", "make":
+      return darkCanvas ? NSColor(srgbRed: 0.486, green: 0.855, blue: 0.706, alpha: 1) : NSColor(srgbRed: 0.180, green: 0.545, blue: 0.431, alpha: 1)
+    case "rb", "yaml", "graphql":
+      return darkCanvas ? NSColor(srgbRed: 0.945, green: 0.584, blue: 0.725, alpha: 1) : NSColor(srgbRed: 0.725, green: 0.275, blue: 0.467, alpha: 1)
+    case "c", "cpp", "cs", "lua":
+      return darkCanvas ? NSColor(srgbRed: 0.569, green: 0.761, blue: 1.0, alpha: 1) : NSColor(srgbRed: 0.275, green: 0.451, blue: 0.761, alpha: 1)
+    default:
+      return darkCanvas ? NSColor(srgbRed: 0.776, green: 0.647, blue: 1.0, alpha: 1) : NSColor(srgbRed: 0.549, green: 0.416, blue: 0.780, alpha: 1)
+    }
+  }
+
+  private static func highlightDiff(_ source: String, into attributed: NSMutableAttributedString, darkCanvas: Bool, font: NSFont) {
+    let addedFg = darkCanvas ? NSColor(srgbRed: 0.576, green: 0.894, blue: 0.663, alpha: 1) : NSColor(srgbRed: 0.125, green: 0.498, blue: 0.243, alpha: 1)
+    let addedBg = darkCanvas ? NSColor(srgbRed: 0.180, green: 0.480, blue: 0.290, alpha: 0.22) : NSColor(srgbRed: 0.200, green: 0.720, blue: 0.360, alpha: 0.14)
+    let removedFg = darkCanvas ? NSColor(srgbRed: 0.969, green: 0.584, blue: 0.620, alpha: 1) : NSColor(srgbRed: 0.722, green: 0.173, blue: 0.239, alpha: 1)
+    let removedBg = darkCanvas ? NSColor(srgbRed: 0.620, green: 0.200, blue: 0.250, alpha: 0.22) : NSColor(srgbRed: 0.850, green: 0.240, blue: 0.300, alpha: 0.12)
+    let hunkFg = darkCanvas ? NSColor(srgbRed: 0.549, green: 0.796, blue: 0.980, alpha: 1) : NSColor(srgbRed: 0.220, green: 0.451, blue: 0.761, alpha: 1)
+    let headerFg = darkCanvas ? NSColor(srgbRed: 0.953, green: 0.784, blue: 0.525, alpha: 1) : NSColor(srgbRed: 0.678, green: 0.443, blue: 0.153, alpha: 1)
+    let boldFont = NSFont.monospacedSystemFont(ofSize: font.pointSize, weight: .semibold)
+
+    let ns = source as NSString
+    var pos = 0
+    while pos < ns.length {
+      let lineRange = ns.lineRange(for: NSRange(location: pos, length: 0))
+      let line = ns.substring(with: lineRange)
+      if line.hasPrefix("diff ") || line.hasPrefix("index ") || line.hasPrefix("+++ ") || line.hasPrefix("--- ") {
+        attributed.addAttributes([.foregroundColor: headerFg, .font: boldFont], range: lineRange)
+      } else if line.hasPrefix("@@") {
+        attributed.addAttributes([.foregroundColor: hunkFg, .font: boldFont], range: lineRange)
+      } else if line.hasPrefix("+") {
+        attributed.addAttributes([.foregroundColor: addedFg, .backgroundColor: addedBg], range: lineRange)
+      } else if line.hasPrefix("-") {
+        attributed.addAttributes([.foregroundColor: removedFg, .backgroundColor: removedBg], range: lineRange)
+      }
+      pos = lineRange.upperBound
+    }
   }
 }

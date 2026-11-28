@@ -408,7 +408,12 @@ final class LumenContentIdentityRegistry {
     "markdown": "md",
     "kotlin": "kt",
     "yml": "yaml",
-    "htm": "html"
+    "htm": "html",
+    "dockerfile": "docker",
+    "makefile": "make",
+    "gnumakefile": "make",
+    "gql": "graphql",
+    "patch": "diff"
   ]
 
   private static let pdfExtensions: Set<String> = ["pdf"]
@@ -454,6 +459,15 @@ final class LumenContentIdentityRegistry {
   private static let reCSharp = try? NSRegularExpression(pattern: #"^\s*using\s+System(?:\.\w+)*;|public\s+class\s+[A-Z]\w*.*\{\s*get;"#, options: [.anchorsMatchLines])
   private static let reKotlin = try? NSRegularExpression(pattern: #"^\s*data\s+class\s+[A-Z]\w*\s*\(|^\s*fun\s+\w+\s*\([^)]*\)\s*(?:=|\{)"#, options: [.anchorsMatchLines])
   private static let reRuby = try? NSRegularExpression(pattern: #"^\s*def\s+\w+(?:\([^)]*\))?\s*\n[\s\S]*\n\s*end\s*$"#, options: [.anchorsMatchLines])
+  private static let reDart = try? NSRegularExpression(pattern: #"^\s*import\s+'package:[^']+';|^\s*class\s+[A-Z]\w*\s+extends\s+(?:Stateless|Stateful)Widget\b"#, options: [.anchorsMatchLines])
+  private static let reLua = try? NSRegularExpression(pattern: #"^\s*local\s+function\s+\w+\s*\(|^\s*function\s+[\w.:]+\s*\([^)]*\)\s*\n[\s\S]*\n\s*end\b"#, options: [.anchorsMatchLines])
+  private static let reDockerfile = try? NSRegularExpression(pattern: #"^\s*FROM\s+[A-Za-z0-9._:/-]+\s*(?:AS\s+\w+)?\s*\n[\s\S]*^\s*(?:RUN|COPY|ADD|WORKDIR|CMD|ENTRYPOINT|ENV|EXPOSE)\s+"#, options: [.anchorsMatchLines])
+  private static let reMakefile = try? NSRegularExpression(pattern: #"^\s*\.PHONY\s*:|^[A-Za-z0-9_.-]+\s*:\s*[^\n]*\n\t\S"#, options: [.anchorsMatchLines])
+  private static let reGraphQL = try? NSRegularExpression(pattern: #"^\s*(?:query|mutation|subscription|fragment|schema|type|interface|input|enum)\s+[A-Za-z_]\w*[^{]*\{"#, options: [.anchorsMatchLines])
+  private static let reDiff = try? NSRegularExpression(pattern: #"^(?:diff\s+--git\s+|---\s+\S+\n\+\+\+\s+\S+|@@\s+-\d+(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@)"#, options: [.anchorsMatchLines])
+  private static let reTOMLSection = try? NSRegularExpression(pattern: #"^\s*\[{1,2}[A-Za-z0-9_.-]+\]{1,2}\s*$"#, options: [.anchorsMatchLines])
+  private static let reTOMLTypedKV = try? NSRegularExpression(pattern: #"^\s*[A-Za-z0-9_-]+\s*=\s*(?:"[^"\n]*"|\[|true|false|\d)"#, options: [.anchorsMatchLines])
+  private static let reINIKV = try? NSRegularExpression(pattern: #"^\s*[A-Za-z0-9_.-]+\s*=\s*[^=\n]+$"#, options: [.anchorsMatchLines])
 
   private init() {}
 
@@ -917,22 +931,32 @@ final class LumenContentIdentityRegistry {
     // containing words like "return", "go", "select", "let" stay plain text.
     guard hasNewline else { return nil }
 
+    if matches(Self.reDiff, in: trimmed) { return "diff" }
+    if matches(Self.reDockerfile, in: trimmed) { return "docker" }
+    if matches(Self.reMakefile, in: trimmed) { return "make" }
     if matches(Self.reCInclude, in: trimmed) {
       return matches(Self.reCPP, in: trimmed) ? "cpp" : "c"
     }
     if matches(Self.reGoPkg, in: trimmed) && matches(Self.reGoFunc, in: trimmed) { return "go" }
     if matches(Self.reRust, in: trimmed) { return "rs" }
     if matches(Self.reSwift, in: trimmed) { return "swift" }
+    if matches(Self.reDart, in: trimmed) { return "dart" }
     if matches(Self.rePython, in: trimmed) { return "py" }
     if matches(Self.reShell, in: trimmed) { return "sh" }
     if matches(Self.reKotlin, in: trimmed) { return "kt" }
     if matches(Self.reCSharp, in: trimmed) { return "cs" }
     if matches(Self.reJava, in: trimmed) { return "java" }
     if matches(Self.reRuby, in: trimmed) { return "rb" }
+    if matches(Self.reLua, in: trimmed) { return "lua" }
+    if matches(Self.reGraphQL, in: trimmed) { return "graphql" }
     if matches(Self.reTS, in: trimmed) { return "ts" }
     if matches(Self.reJS, in: trimmed) { return "js" }
     if matches(Self.reCSS, in: trimmed) { return "css" }
     if matches(Self.reMarkdownHeading, in: trimmed) && matches(Self.reMarkdownSecondary, in: trimmed) { return "md" }
+    if matches(Self.reTOMLSection, in: trimmed) {
+      if matches(Self.reTOMLTypedKV, in: trimmed) { return "toml" }
+      if matches(Self.reINIKV, in: trimmed) { return "ini" }
+    }
     if matches(Self.reYAMLKey, in: trimmed) && matches(Self.reYAMLIndent, in: trimmed) { return "yaml" }
 
     return nil
@@ -1079,6 +1103,8 @@ enum LumenActionGlyph {
   case chevronLeft
   case chevronRight
   case externalLink
+  case lock
+  case unlock
 }
 
 enum LumenVectorGlyphs {
@@ -1374,6 +1400,23 @@ enum LumenVectorGlyphs {
       ctx.addQuadCurve(to: CGPoint(x: 6, y: 6), control: CGPoint(x: 4, y: 6))
       ctx.addLine(to: CGPoint(x: 10.5, y: 6))
       ctx.strokePath()
+
+    case .lock:
+      ctx.addPath(CGPath(roundedRect: CGRect(x: 5, y: 11, width: 14, height: 9.5), cornerWidth: 2.2, cornerHeight: 2.2, transform: nil))
+      ctx.move(to: CGPoint(x: 8, y: 11))
+      ctx.addLine(to: CGPoint(x: 8, y: 8.2))
+      ctx.addCurve(to: CGPoint(x: 16, y: 8.2), control1: CGPoint(x: 8, y: 4.0), control2: CGPoint(x: 16, y: 4.0))
+      ctx.addLine(to: CGPoint(x: 16, y: 11))
+      ctx.strokePath()
+      ctx.fillEllipse(in: CGRect(x: 10.8, y: 14.5, width: 2.4, height: 2.4))
+
+    case .unlock:
+      ctx.addPath(CGPath(roundedRect: CGRect(x: 5, y: 11, width: 14, height: 9.5), cornerWidth: 2.2, cornerHeight: 2.2, transform: nil))
+      ctx.move(to: CGPoint(x: 8, y: 11))
+      ctx.addLine(to: CGPoint(x: 8, y: 8.0))
+      ctx.addCurve(to: CGPoint(x: 15.6, y: 6.2), control1: CGPoint(x: 8, y: 4.2), control2: CGPoint(x: 13.8, y: 3.8))
+      ctx.strokePath()
+      ctx.fillEllipse(in: CGRect(x: 10.8, y: 14.5, width: 2.4, height: 2.4))
     }
   }
 
@@ -1689,7 +1732,7 @@ enum LumenVectorGlyphs {
     case "sql":
       drawIdentity(glyphID: "database", tint: tint, in: ctx)
 
-    case "sh", "zsh", "fish":
+    case "sh":
       ctx.addPath(CGPath(roundedRect: CGRect(x: 3, y: 4.5, width: 18, height: 15), cornerWidth: 3, cornerHeight: 3, transform: nil))
       ctx.move(to: CGPoint(x: 7, y: 9))
       ctx.addLine(to: CGPoint(x: 10.2, y: 12))
@@ -1697,6 +1740,26 @@ enum LumenVectorGlyphs {
       ctx.move(to: CGPoint(x: 12.8, y: 15))
       ctx.addLine(to: CGPoint(x: 17, y: 15))
       ctx.strokePath()
+
+    case "zsh":
+      ctx.addPath(CGPath(roundedRect: CGRect(x: 3, y: 4.5, width: 18, height: 15), cornerWidth: 3, cornerHeight: 3, transform: nil))
+      ctx.move(to: CGPoint(x: 7.5, y: 8.8))
+      ctx.addLine(to: CGPoint(x: 13.5, y: 8.8))
+      ctx.addLine(to: CGPoint(x: 7.5, y: 15.2))
+      ctx.addLine(to: CGPoint(x: 13.5, y: 15.2))
+      ctx.move(to: CGPoint(x: 15.5, y: 15.2))
+      ctx.addLine(to: CGPoint(x: 17.8, y: 15.2))
+      ctx.strokePath()
+
+    case "fish":
+      ctx.move(to: CGPoint(x: 4, y: 9))
+      ctx.addLine(to: CGPoint(x: 7.5, y: 12))
+      ctx.addLine(to: CGPoint(x: 4, y: 15))
+      ctx.move(to: CGPoint(x: 7.5, y: 12))
+      ctx.addQuadCurve(to: CGPoint(x: 19.5, y: 12), control: CGPoint(x: 13.5, y: 6.5))
+      ctx.addQuadCurve(to: CGPoint(x: 7.5, y: 12), control: CGPoint(x: 13.5, y: 17.5))
+      ctx.strokePath()
+      ctx.fillEllipse(in: CGRect(x: 15.2, y: 10.8, width: 1.8, height: 1.8))
 
     case "json":
       ctx.move(to: CGPoint(x: 9, y: 4.2))
@@ -1759,7 +1822,212 @@ enum LumenVectorGlyphs {
       ctx.addLine(to: CGPoint(x: 18, y: 13))
       ctx.strokePath()
 
-    case "html", "unknown":
+    case "html":
+      // Distinct 5-sided shield badge for HTML (never shares generic </> fallback with unknown)
+      ctx.move(to: CGPoint(x: 5, y: 3.5))
+      ctx.addLine(to: CGPoint(x: 19, y: 3.5))
+      ctx.addLine(to: CGPoint(x: 17.6, y: 19.0))
+      ctx.addLine(to: CGPoint(x: 12, y: 21.0))
+      ctx.addLine(to: CGPoint(x: 6.4, y: 19.0))
+      ctx.closePath()
+      ctx.fillPath()
+      drawCenteredMonogram("H5", fontSize: 9.2, color: .white, in: ctx)
+
+    case "xml":
+      // Tag bracket emblem with XML inner bar
+      ctx.move(to: CGPoint(x: 7.5, y: 6.5))
+      ctx.addLine(to: CGPoint(x: 3.0, y: 12.0))
+      ctx.addLine(to: CGPoint(x: 7.5, y: 17.5))
+      ctx.move(to: CGPoint(x: 16.5, y: 6.5))
+      ctx.addLine(to: CGPoint(x: 21.0, y: 12.0))
+      ctx.addLine(to: CGPoint(x: 16.5, y: 17.5))
+      ctx.strokePath()
+      drawCenteredMonogram("XML", fontSize: 6.4, color: tint, in: ctx)
+
+    case "yaml":
+      // Indented key-value hierarchy tree
+      ctx.move(to: CGPoint(x: 4.5, y: 6.5))
+      ctx.addLine(to: CGPoint(x: 11.5, y: 6.5))
+      ctx.move(to: CGPoint(x: 6.5, y: 6.5))
+      ctx.addLine(to: CGPoint(x: 6.5, y: 17.5))
+      ctx.move(to: CGPoint(x: 6.5, y: 12.0))
+      ctx.addLine(to: CGPoint(x: 10.5, y: 12.0))
+      ctx.move(to: CGPoint(x: 12.2, y: 12.0))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 12.0))
+      ctx.move(to: CGPoint(x: 6.5, y: 17.5))
+      ctx.addLine(to: CGPoint(x: 10.5, y: 17.5))
+      ctx.move(to: CGPoint(x: 12.2, y: 17.5))
+      ctx.addLine(to: CGPoint(x: 17.5, y: 17.5))
+      ctx.strokePath()
+      ctx.fillEllipse(in: CGRect(x: 13.0, y: 5.5, width: 2.0, height: 2.0))
+
+    case "java":
+      // Stylized coffee cup + steam waves
+      ctx.addPath(CGPath(roundedRect: CGRect(x: 5.5, y: 10.5, width: 10.5, height: 7.5), cornerWidth: 2.5, cornerHeight: 2.5, transform: nil))
+      ctx.move(to: CGPoint(x: 16.0, y: 12.0))
+      ctx.addCurve(to: CGPoint(x: 16.0, y: 16.2), control1: CGPoint(x: 19.6, y: 12.0), control2: CGPoint(x: 19.6, y: 16.2))
+      ctx.move(to: CGPoint(x: 4.5, y: 20.2))
+      ctx.addLine(to: CGPoint(x: 17.5, y: 20.2))
+      ctx.move(to: CGPoint(x: 9.0, y: 8.2))
+      ctx.addQuadCurve(to: CGPoint(x: 9.0, y: 4.2), control: CGPoint(x: 7.2, y: 6.2))
+      ctx.move(to: CGPoint(x: 12.8, y: 8.2))
+      ctx.addQuadCurve(to: CGPoint(x: 12.8, y: 4.2), control: CGPoint(x: 14.6, y: 6.2))
+      ctx.strokePath()
+
+    case "rb":
+      // Faceted ruby gemstone
+      ctx.move(to: CGPoint(x: 7.0, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 17.0, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 20.8, y: 9.5))
+      ctx.addLine(to: CGPoint(x: 12.0, y: 19.8))
+      ctx.addLine(to: CGPoint(x: 3.2, y: 9.5))
+      ctx.closePath()
+      ctx.move(to: CGPoint(x: 3.2, y: 9.5))
+      ctx.addLine(to: CGPoint(x: 20.8, y: 9.5))
+      ctx.move(to: CGPoint(x: 7.0, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 12.0, y: 19.8))
+      ctx.addLine(to: CGPoint(x: 17.0, y: 4.5))
+      ctx.strokePath()
+
+    case "swift":
+      // Swept bird-wing silhouette
+      ctx.move(to: CGPoint(x: 4.2, y: 15.2))
+      ctx.addCurve(to: CGPoint(x: 19.8, y: 16.2), control1: CGPoint(x: 9.2, y: 20.8), control2: CGPoint(x: 16.6, y: 20.0))
+      ctx.addCurve(to: CGPoint(x: 15.6, y: 4.6), control1: CGPoint(x: 19.8, y: 11.4), control2: CGPoint(x: 18.2, y: 7.2))
+      ctx.addCurve(to: CGPoint(x: 13.8, y: 12.0), control1: CGPoint(x: 16.4, y: 8.0), control2: CGPoint(x: 15.5, y: 10.6))
+      ctx.addCurve(to: CGPoint(x: 7.2, y: 6.4), control1: CGPoint(x: 11.4, y: 10.4), control2: CGPoint(x: 9.2, y: 8.6))
+      ctx.addCurve(to: CGPoint(x: 11.8, y: 13.6), control1: CGPoint(x: 8.5, y: 9.6), control2: CGPoint(x: 10.2, y: 12.0))
+      ctx.addCurve(to: CGPoint(x: 4.2, y: 15.2), control1: CGPoint(x: 9.2, y: 14.8), control2: CGPoint(x: 6.5, y: 15.4))
+      ctx.closePath()
+      ctx.fillPath()
+
+    case "kt":
+      // Diagonal geometric K-ribbon prism
+      ctx.move(to: CGPoint(x: 4.5, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 12.0, y: 12.0))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 19.5))
+      ctx.addLine(to: CGPoint(x: 4.5, y: 19.5))
+      ctx.closePath()
+      ctx.strokePath()
+      ctx.move(to: CGPoint(x: 4.5, y: 12.5))
+      ctx.addLine(to: CGPoint(x: 12.5, y: 4.5))
+      ctx.move(to: CGPoint(x: 4.5, y: 19.5))
+      ctx.addLine(to: CGPoint(x: 12.0, y: 12.0))
+      ctx.strokePath()
+
+    case "dart":
+      // Folded arrow kite
+      ctx.move(to: CGPoint(x: 4.5, y: 12.0))
+      ctx.addLine(to: CGPoint(x: 12.0, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 9.2))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 18.8))
+      ctx.addLine(to: CGPoint(x: 10.0, y: 18.8))
+      ctx.closePath()
+      ctx.move(to: CGPoint(x: 8.2, y: 8.2))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 18.8))
+      ctx.strokePath()
+
+    case "lua":
+      // Orbiting moon & satellite dot
+      ctx.strokeEllipse(in: CGRect(x: 4.8, y: 5.5, width: 13.6, height: 13.6))
+      ctx.fillEllipse(in: CGRect(x: 12.2, y: 8.6, width: 3.4, height: 3.4))
+      ctx.fillEllipse(in: CGRect(x: 17.4, y: 3.6, width: 3.2, height: 3.2))
+
+    case "toml":
+      // Square bracket table emblem [T]
+      ctx.move(to: CGPoint(x: 7.5, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 4.2, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 4.2, y: 19.5))
+      ctx.addLine(to: CGPoint(x: 7.5, y: 19.5))
+      ctx.move(to: CGPoint(x: 16.5, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 19.8, y: 4.5))
+      ctx.addLine(to: CGPoint(x: 19.8, y: 19.5))
+      ctx.addLine(to: CGPoint(x: 16.5, y: 19.5))
+      ctx.move(to: CGPoint(x: 8.5, y: 8.0))
+      ctx.addLine(to: CGPoint(x: 15.5, y: 8.0))
+      ctx.move(to: CGPoint(x: 12.0, y: 8.0))
+      ctx.addLine(to: CGPoint(x: 12.0, y: 16.5))
+      ctx.strokePath()
+
+    case "ini":
+      // Config sliders emblem
+      ctx.move(to: CGPoint(x: 4.5, y: 7.5))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 7.5))
+      ctx.move(to: CGPoint(x: 4.5, y: 12.0))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 12.0))
+      ctx.move(to: CGPoint(x: 4.5, y: 16.5))
+      ctx.addLine(to: CGPoint(x: 19.5, y: 16.5))
+      ctx.strokePath()
+      ctx.fillEllipse(in: CGRect(x: 7.5, y: 5.8, width: 3.4, height: 3.4))
+      ctx.fillEllipse(in: CGRect(x: 13.5, y: 10.3, width: 3.4, height: 3.4))
+      ctx.fillEllipse(in: CGRect(x: 9.2, y: 14.8, width: 3.4, height: 3.4))
+
+    case "docker":
+      // Stacked container crates over hull line
+      for rect in [
+        CGRect(x: 5.0, y: 9.5, width: 3.6, height: 3.2),
+        CGRect(x: 9.8, y: 9.5, width: 3.6, height: 3.2),
+        CGRect(x: 14.6, y: 9.5, width: 3.6, height: 3.2),
+        CGRect(x: 9.8, y: 5.3, width: 3.6, height: 3.2)
+      ] {
+        ctx.addRect(rect)
+      }
+      ctx.move(to: CGPoint(x: 3.2, y: 14.4))
+      ctx.addLine(to: CGPoint(x: 20.8, y: 14.4))
+      ctx.addCurve(to: CGPoint(x: 4.6, y: 18.2), control1: CGPoint(x: 19.4, y: 19.2), control2: CGPoint(x: 7.6, y: 19.6))
+      ctx.closePath()
+      ctx.strokePath()
+
+    case "make":
+      // Build target wrench/gear cross
+      ctx.addPath(CGPath(roundedRect: CGRect(x: 3.8, y: 4.5, width: 16.4, height: 15.0), cornerWidth: 2.8, cornerHeight: 2.8, transform: nil))
+      ctx.move(to: CGPoint(x: 7.0, y: 15.8))
+      ctx.addLine(to: CGPoint(x: 7.0, y: 8.6))
+      ctx.addLine(to: CGPoint(x: 10.2, y: 12.2))
+      ctx.addLine(to: CGPoint(x: 13.4, y: 8.6))
+      ctx.addLine(to: CGPoint(x: 13.4, y: 15.8))
+      ctx.move(to: CGPoint(x: 16.2, y: 11.0))
+      ctx.addLine(to: CGPoint(x: 17.8, y: 11.0))
+      ctx.move(to: CGPoint(x: 16.2, y: 14.6))
+      ctx.addLine(to: CGPoint(x: 17.8, y: 14.6))
+      ctx.strokePath()
+
+    case "graphql":
+      // Hexagonal node graph with inner triangle
+      let pts = [
+        CGPoint(x: 12.0, y: 3.6),
+        CGPoint(x: 19.2, y: 7.8),
+        CGPoint(x: 19.2, y: 16.2),
+        CGPoint(x: 12.0, y: 20.4),
+        CGPoint(x: 4.8, y: 16.2),
+        CGPoint(x: 4.8, y: 7.8)
+      ]
+      ctx.move(to: pts[0])
+      for pt in pts.dropFirst() { ctx.addLine(to: pt) }
+      ctx.closePath()
+      ctx.move(to: pts[0])
+      ctx.addLine(to: pts[2])
+      ctx.addLine(to: pts[4])
+      ctx.closePath()
+      ctx.strokePath()
+      for pt in pts {
+        ctx.fillEllipse(in: CGRect(x: pt.x - 1.5, y: pt.y - 1.5, width: 3.0, height: 3.0))
+      }
+
+    case "diff":
+      // Explicit +/- hunk emblem
+      ctx.addPath(CGPath(roundedRect: CGRect(x: 3.8, y: 3.8, width: 16.4, height: 16.4), cornerWidth: 3.2, cornerHeight: 3.2, transform: nil))
+      ctx.move(to: CGPoint(x: 8.2, y: 9.2))
+      ctx.addLine(to: CGPoint(x: 15.8, y: 9.2))
+      ctx.move(to: CGPoint(x: 12.0, y: 5.8))
+      ctx.addLine(to: CGPoint(x: 12.0, y: 12.6))
+      ctx.move(to: CGPoint(x: 8.2, y: 16.2))
+      ctx.addLine(to: CGPoint(x: 15.8, y: 16.2))
+      ctx.strokePath()
+
+    case "unknown":
+      // Neutral </> fallback exclusively for unrecognized code (§18.2, A59)
       ctx.move(to: CGPoint(x: 8.2, y: 7))
       ctx.addLine(to: CGPoint(x: 3.4, y: 12))
       ctx.addLine(to: CGPoint(x: 8.2, y: 17))

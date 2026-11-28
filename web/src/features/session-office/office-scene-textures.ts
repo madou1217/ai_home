@@ -49,7 +49,6 @@ const SCREEN_TEXT_BRIGHT = '#f8fbff';
 const SCREEN_TEXT_LABEL = '#c8dcf2';
 const SCREEN_CYAN_BRIGHT = '#67f3ff';
 const SCREEN_GREEN_BRIGHT = '#63f592';
-const SCREEN_AMBER_BRIGHT = '#ffd25a';
 const SCREEN_EXITED_BRIGHT = '#cddcf0';
 
 function createPixelCanvasBundle(
@@ -200,7 +199,7 @@ function getAvailabilityBadge(
     case 'directory-only':
       return { label: '目录在线', color: SCREEN_CYAN_BRIGHT, bg: '#082230' };
     case 'unavailable':
-      return { label: '标识保留', color: SCREEN_AMBER_BRIGHT, bg: '#261a05' };
+      return { label: '会话', color: SCREEN_CYAN_BRIGHT, bg: '#082230' };
     case 'exited':
       return { label: '已退出', color: SCREEN_EXITED_BRIGHT, bg: '#131c2b' };
   }

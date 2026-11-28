@@ -218,6 +218,11 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     return manager.tabs.filter((tab) => !terminatedSessionKeys.has(tab.sessionKey));
   }, [manager.tabs, terminatedSessionKeys]);
 
+  const effectiveUnavailableTabs = useMemo<WebTerminalTab[]>(() => {
+    if (terminatedSessionKeys.size === 0) return manager.unavailableTabs;
+    return manager.unavailableTabs.filter((tab) => !terminatedSessionKeys.has(tab.sessionKey));
+  }, [manager.unavailableTabs, terminatedSessionKeys]);
+
   const [query, setQuery] = useState('');
   const [providerFilter, setProviderFilter] = useState('all');
 
@@ -276,6 +281,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     [
       effectiveDirectorySessions,
       effectiveInteractiveTabs,
+      effectiveUnavailableTabs,
       excludedSessionKeys,
       manager.serverId,
     ],
@@ -419,6 +425,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       serverId: manager.serverId,
       directorySessions: effectiveDirectorySessions,
       interactiveTabs: effectiveInteractiveTabs,
+      unavailableTabs: effectiveUnavailableTabs,
       hiddenSessionKeys: excludedSessionKeys,
       previewsByCacheKey: previewCache,
       query,
@@ -427,6 +434,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     [
       effectiveDirectorySessions,
       effectiveInteractiveTabs,
+      effectiveUnavailableTabs,
       excludedSessionKeys,
       manager.serverId,
       previewCache,

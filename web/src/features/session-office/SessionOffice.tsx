@@ -278,10 +278,7 @@ export default function SessionOffice({
     return activeRoom.sessions[0]?.id ?? null;
   }, [activeRoom, selectedSessionId]);
 
-  const runningSessionsCount = useMemo(
-    () => allSessions.filter((session) => session.availability === 'interactive').length,
-    [allSessions],
-  );
+  const visibleSessionCount = allSessions.length;
 
   const activeRoomCwd = useMemo<string | undefined>(() => {
     if (!activeRoom || activeRoom.isFallbackRoom) return undefined;
@@ -483,8 +480,8 @@ export default function SessionOffice({
 
           <div className="session-office-metrics" aria-label="办公室实时统计">
             <SettingStatusTag
-              status={directoryError ? 'error' : directoryLoading ? 'saving' : runningSessionsCount > 0 ? 'applied' : 'unset'}
-              label={directoryError ? '同步异常' : directoryLoading ? '同步中' : runningSessionsCount > 0 ? `运行中 ${runningSessionsCount}/${allSessions.length}` : '暂无活跃会话'}
+              status={directoryError ? 'error' : directoryLoading ? 'saving' : visibleSessionCount > 0 ? 'applied' : 'unset'}
+              label={directoryError ? '同步异常' : directoryLoading ? '同步中' : visibleSessionCount > 0 ? `会话 ${visibleSessionCount}` : '暂无会话'}
               compact
               live="off"
             />

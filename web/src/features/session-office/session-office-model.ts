@@ -18,6 +18,7 @@ export interface BuildOfficeWorkspaceInput {
   serverId: string;
   directorySessions: TerminalDirectorySession[];
   interactiveTabs: WebTerminalTab[];
+  unavailableTabs: WebTerminalTab[];
   hiddenSessionKeys: ReadonlySet<string>;
   previewsByCacheKey: ReadonlyMap<string, SessionPreviewCacheEntry>;
   query: string;
@@ -177,15 +178,23 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
     interactiveByKey.set(tab.sessionKey, tab);
   }
 
+  const unavailableByKey = new Map<string, WebTerminalTab>();
+  for (const tab of input.unavailableTabs) {
+    if (!tab.sessionKey || input.hiddenSessionKeys.has(tab.sessionKey)) continue;
+    unavailableByKey.set(tab.sessionKey, tab);
+  }
+
   const allKeys = new Set<string>([
     ...dirByKey.keys(),
     ...interactiveByKey.keys(),
+    ...unavailableByKey.keys(),
   ]);
 
   const draftItems: OfficeSessionItem[] = [];
   for (const sessionKey of allKeys) {
     const dir = dirByKey.get(sessionKey);
     const interactiveTab = interactiveByKey.get(sessionKey);
+    const unavailableTab = unavailableByKey.get(sessionKey);
 
     let availability: SessionAvailability;
     let canAttachTerminal = false;
@@ -198,9 +207,17 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
     } else if (dir?.status === 'exited') {
       availability = 'exited';
       canAttachTerminal = false;
-    } else {
+    } else if (dir) {
       availability = 'directory-only';
       canAttachTerminal = false;
+    } else if (unavailableTab) {
+      // Saved native tab that the terminal directory cannot currently verify.
+      // Keep the employee visible in the office; the separate "unavailable" list is gone.
+      availability = 'unavailable';
+      canAttachTerminal = false;
+      tab = unavailableTab;
+    } else {
+      continue;
     }
 
     const source: 'native' | 'web' = dir?.source || (sessionKey.startsWith('native:') ? 'native' : 'web');
@@ -286,7 +303,11 @@ function buildProjectRooms(sessions: OfficeSessionItem[]): OfficeProjectRoom[] {
     let runningCount = 0;
     let exitedCount = 0;
     for (const session of roomSessions) {
-      if (session.availability === 'interactive' || session.availability === 'directory-only') {
+      if (
+        session.availability === 'interactive'
+        || session.availability === 'directory-only'
+        || session.availability === 'unavailable'
+      ) {
         runningCount += 1;
       } else if (session.availability === 'exited') {
         exitedCount += 1;
@@ -363,7 +384,11 @@ function filterProjectRooms(
     let runningCount = 0;
     let exitedCount = 0;
     for (const session of matchingSessions) {
-      if (session.availability === 'interactive' || session.availability === 'directory-only') {
+      if (
+        session.availability === 'interactive'
+        || session.availability === 'directory-only'
+        || session.availability === 'unavailable'
+      ) {
         runningCount += 1;
       } else if (session.availability === 'exited') {
         exitedCount += 1;

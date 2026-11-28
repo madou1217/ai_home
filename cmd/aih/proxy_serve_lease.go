@@ -70,11 +70,17 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 	}
 	lease.dial = func(dialCtx context.Context) (io.ReadWriteCloser, error) {
 		stream, dialErr := client.Connect(dialCtx, lease.leaseID())
-		if dialErr == nil || !errors.Is(dialErr, managementproxy.ErrLeaseLost) {
-			return stream, dialErr
+		if dialErr == nil {
+			return stream, nil
 		}
-		// Server 明确说租约没了。通知主循环；热替换开启时，等它换好上游后
-		// 用同一个请求重试一次，这样浏览器不会看到第一条 502。
+		if dialCtx.Err() != nil {
+			// The caller went away; this is not an upstream failure.
+			return nil, dialErr
+		}
+		// Any failure to establish the upstream stream means the bridge is
+		// down. Notify the main loop immediately: with hot swap off it closes
+		// the listeners (fail closed); with hot swap on it retries the same
+		// selector in place and this request waits once for that recovery.
 		select {
 		case lease.lost <- dialErr:
 		default:

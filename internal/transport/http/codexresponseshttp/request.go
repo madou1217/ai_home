@@ -95,10 +95,17 @@ func readRequest(response http.ResponseWriter, request *http.Request) ([]byte, n
 		return nil, metadata, err
 	}
 	if jsonErr := json.Unmarshal(body, &metadata); jsonErr != nil {
-		// 保留可诊断细节：长度、编码来源与前缀魔数足以区分截断/压缩/形状错误，
-		// 不落正文。
-		return nil, metadata, fmt.Errorf("%w: json=%v len=%d encoding=%q sniffed=%q prefix=%x",
-			errInvalidRequest, jsonErr, len(body), encoding, sniffed, bodyPrefix(body, 16))
+		// 保留可诊断细节：长度、编码来源、首尾字节与客户端标识，足以区分
+		// 截断/压缩/形状错误；只记录首尾片段，不落正文。
+		hint := ""
+		if strings.Contains(jsonErr.Error(), "unexpected end of JSON input") {
+			hint = " hint=truncated-json"
+		}
+		return nil, metadata, fmt.Errorf("%w: json=%v len=%d cl_header=%q te=%q ua=%q originator=%q encoding=%q sniffed=%q prefix=%x tail=%x tail_ascii=%q%s",
+			errInvalidRequest, jsonErr, len(body), request.Header.Get("Content-Length"),
+			strings.Join(request.TransferEncoding, ","), request.Header.Get("User-Agent"),
+			request.Header.Get("originator"), encoding, sniffed,
+			bodyPrefix(body, 16), bodyTail(body, 32), printableTail(body, 32), hint)
 	}
 	// model 允许为空：Codex 从 WS 掉到 HTTPS 时，续接帧常常省略 model，
 	// 交由 resolveContinuation 用持久化的响应上下文补回；无上下文时再拒绝。
@@ -117,6 +124,28 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	return payload, nil
+}
+
+// bodyTail 返回末尾最多 n 字节，用于定位 JSON 在哪被截断。
+func bodyTail(body []byte, n int) []byte {
+	if len(body) <= n {
+		return body
+	}
+	return body[len(body)-n:]
+}
+
+// printableTail 返回可打印的末尾片段，控制字符替换为 '.'。
+func printableTail(body []byte, n int) string {
+	tail := bodyTail(body, n)
+	clean := make([]byte, 0, len(tail))
+	for _, char := range tail {
+		if char >= 0x20 && char < 0x7f {
+			clean = append(clean, char)
+		} else {
+			clean = append(clean, '.')
+		}
+	}
+	return string(clean)
 }
 
 // bodyPrefix 返回最多 n 字节前缀，用于日志识别压缩魔数。

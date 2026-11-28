@@ -20,6 +20,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/clientkeystats"
+	"github.com/madou1217/ai_home/application/codexcontext"
 	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
@@ -77,6 +78,9 @@ type Upstream interface {
 }
 
 type Dependencies struct {
+	// ResponseContexts 可选：持久化的响应上下文，用于把 WS 掉线后的 HTTP
+	// 续接帧展开成无状态请求并补回省略的 model。
+	ResponseContexts   codexcontext.Store
 	Authorizer         Authorizer
 	Accounts           AccountSource
 	Upstream           Upstream
@@ -182,6 +186,23 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	// payload 已解码：原生上游与交还 Canonical 的请求都不能再带客户端编码头，
 	// 否则上游会把纯 JSON 再解压一次（invalid_request_body / 415）。
 	request.Header.Del("Content-Encoding")
+	// WS 掉线后的 HTTP 续接帧常省略 model，只带 previous_response_id。用持久化
+	// 的响应上下文展开成无状态请求并补回 model；无记录且 model 也缺失则明确拒绝。
+	if metadata.Model == "" || metadata.PreviousResponseID != "" {
+		if rewritten, resolved, ok := handler.resolveContinuation(ctx, payload, metadata); ok {
+			payload, metadata = rewritten, resolved
+		} else if metadata.Model == "" {
+			inferenceapi.MarkDecodeRejected(response)
+			log.Printf(
+				"Codex Responses decode rejected: request_id=%s content_length=%d content_encoding=%q err=missing model and unresolved continuation",
+				requestid.FromContext(ctx),
+				request.ContentLength,
+				strings.TrimSpace(request.Header.Get("Content-Encoding")),
+			)
+			writeError(response, "invalid_request_body")
+			return
+		}
+	}
 	// 标准 OpenAI Responses SDK 会携带 temperature / max_output_tokens / metadata
 	// 等 Codex 原生线协议表达不了的可选字段。原生快路径是字节透传，直接送给
 	// 上游会被 400 拒绝；这类请求交回 Canonical，由适配层做宽容投影。

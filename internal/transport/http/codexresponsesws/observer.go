@@ -156,7 +156,7 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 	case "response.completed":
 		// 先记住响应归属：后续换号/重连时用它把续接钉回原账号。
 		if observer.responseAccounts != nil && event.Response.ID != "" {
-			observer.responseAccounts.Bind(event.Response.ID, observer.route.AccountRef(), observer.clock())
+			observer.responseAccounts.Bind(event.Response.ID, observer.route.AccountRef(), observer.route.ModelID().String(), observer.clock())
 		}
 		generate, err := observer.finishTurn()
 		if err != nil {

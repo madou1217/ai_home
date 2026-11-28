@@ -43,6 +43,7 @@ func newResponseAccounts(store codexcontext.Store) *responseAccounts {
 func (registry *responseAccounts) Bind(
 	responseID string,
 	account accountcore.AccountRef,
+	model string,
 	now time.Time,
 ) {
 	if registry == nil || responseID == "" {
@@ -57,7 +58,7 @@ func (registry *responseAccounts) Bind(
 	store := registry.store
 	registry.mu.Unlock()
 	if store != nil {
-		store.SaveAccount(responseID, account.String(), now)
+		store.SaveBinding(responseID, account.String(), model, now)
 	}
 	registry.mu.Lock()
 }

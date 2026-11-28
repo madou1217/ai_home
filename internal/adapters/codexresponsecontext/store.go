@@ -36,6 +36,7 @@ const schema = `
 CREATE TABLE IF NOT EXISTS codex_response_contexts (
     response_id TEXT PRIMARY KEY,
     account_ref TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
     items_json BLOB NOT NULL DEFAULT X'',
     bytes INTEGER NOT NULL DEFAULT 0,
     updated_at_ms INTEGER NOT NULL
@@ -55,6 +56,7 @@ type writeOp struct {
 	kind       writeKind
 	responseID string
 	accountRef string
+	model      string
 	items      []json.RawMessage
 	updatedAt  time.Time
 }
@@ -92,6 +94,13 @@ func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("初始化响应上下文表失败: %w", err)
 	}
+	// 旧版本已建表时 CREATE IF NOT EXISTS 不会补列；model 用于 HTTP 续接帧补回。
+	if _, err := db.ExecContext(ctx,
+		`ALTER TABLE codex_response_contexts ADD COLUMN model TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		_ = db.Close()
+		return nil, fmt.Errorf("迁移响应上下文 model 列失败: %w", err)
+	}
 	store := &Store{
 		db:    db,
 		queue: make(chan writeOp, writeQueueSize),
@@ -119,12 +128,12 @@ func (store *Store) SaveItems(responseID string, items []json.RawMessage, update
 	store.enqueue(writeOp{kind: writeItems, responseID: responseID, items: items, updatedAt: updatedAt})
 }
 
-// SaveAccount 入队保存账号归属；队列满时丢弃。
-func (store *Store) SaveAccount(responseID, accountRef string, updatedAt time.Time) {
+// SaveBinding 入队保存账号归属与模型；队列满时丢弃。
+func (store *Store) SaveBinding(responseID, accountRef, model string, updatedAt time.Time) {
 	if store == nil || strings.TrimSpace(responseID) == "" || strings.TrimSpace(accountRef) == "" {
 		return
 	}
-	store.enqueue(writeOp{kind: writeAccount, responseID: responseID, accountRef: accountRef, updatedAt: updatedAt})
+	store.enqueue(writeOp{kind: writeAccount, responseID: responseID, accountRef: accountRef, model: model, updatedAt: updatedAt})
 }
 
 // Load 读取一条未过期的持久化记录。
@@ -133,12 +142,13 @@ func (store *Store) Load(ctx context.Context, responseID string) (codexcontext.R
 		return codexcontext.Record{}, false, nil
 	}
 	var accountRef string
+	var model string
 	var items []byte
 	var updatedAtMS int64
 	err := store.db.QueryRowContext(ctx,
-		`SELECT account_ref, items_json, updated_at_ms FROM codex_response_contexts WHERE response_id = ?`,
+		`SELECT account_ref, model, items_json, updated_at_ms FROM codex_response_contexts WHERE response_id = ?`,
 		responseID,
-	).Scan(&accountRef, &items, &updatedAtMS)
+	).Scan(&accountRef, &model, &items, &updatedAtMS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return codexcontext.Record{}, false, nil
 	}
@@ -149,7 +159,7 @@ func (store *Store) Load(ctx context.Context, responseID string) (codexcontext.R
 	if time.Since(updatedAt) > RecordTTL {
 		return codexcontext.Record{}, false, nil
 	}
-	record := codexcontext.Record{AccountRef: accountRef, UpdatedAt: updatedAt}
+	record := codexcontext.Record{AccountRef: accountRef, Model: model, UpdatedAt: updatedAt}
 	if len(items) > 0 {
 		if err := json.Unmarshal(items, &record.Items); err != nil {
 			return codexcontext.Record{}, false, nil
@@ -201,12 +211,13 @@ ON CONFLICT(response_id) DO UPDATE SET
 			op.responseID, encoded, int64(len(encoded)), nowMS)
 	case writeAccount:
 		_, _ = store.db.ExecContext(ctx, `
-INSERT INTO codex_response_contexts (response_id, account_ref, items_json, bytes, updated_at_ms)
-VALUES (?, ?, X'', 0, ?)
+INSERT INTO codex_response_contexts (response_id, account_ref, model, items_json, bytes, updated_at_ms)
+VALUES (?, ?, ?, X'', 0, ?)
 ON CONFLICT(response_id) DO UPDATE SET
     account_ref = excluded.account_ref,
+    model = CASE WHEN excluded.model <> '' THEN excluded.model ELSE model END,
     updated_at_ms = excluded.updated_at_ms`,
-			op.responseID, op.accountRef, nowMS)
+			op.responseID, op.accountRef, op.model, nowMS)
 	}
 }
 

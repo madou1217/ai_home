@@ -80,9 +80,11 @@ func readRequest(response http.ResponseWriter, request *http.Request) ([]byte, n
 	if err != nil {
 		return nil, metadata, err
 	}
-	if json.Unmarshal(body, &metadata) != nil || metadata.Model == "" {
+	if json.Unmarshal(body, &metadata) != nil {
 		return nil, metadata, errInvalidRequest
 	}
+	// model 允许为空：Codex 从 WS 掉到 HTTPS 时，续接帧常常省略 model，
+	// 交由 resolveContinuation 用持久化的响应上下文补回；无上下文时再拒绝。
 	return body, metadata, nil
 }
 

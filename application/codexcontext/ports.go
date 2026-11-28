@@ -17,6 +17,8 @@ type Record struct {
 	Items []json.RawMessage
 	// AccountRef 是交付该响应的账号引用；可能为空（仅保存了上下文）。
 	AccountRef string
+	// Model 是交付该响应的模型；HTTP 续接帧可能省略 model，用它补回。
+	Model string
 	// UpdatedAt 是最后一次写入时间。
 	UpdatedAt time.Time
 }
@@ -28,5 +30,5 @@ type Record struct {
 type Store interface {
 	Load(ctx context.Context, responseID string) (Record, bool, error)
 	SaveItems(responseID string, items []json.RawMessage, updatedAt time.Time)
-	SaveAccount(responseID, accountRef string, updatedAt time.Time)
+	SaveBinding(responseID, accountRef, model string, updatedAt time.Time)
 }

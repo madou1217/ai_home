@@ -93,6 +93,9 @@ type proxyServeOptions struct {
 	json           bool
 	// hotSwap 是运行期共享开关（默认关闭）；轮换时原地替换上游而不是重建入口。
 	hotSwap *atomic.Bool
+	// retryOnLoss 允许失败请求等待一次原地恢复（即使热替换关闭），
+	// 用于消掉 Server 重启后首条请求的 502。
+	retryOnLoss bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
@@ -301,6 +304,7 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	hotSwapAvailable := proxyHotSwapAvailable(options)
 	hotSwapEnabled.Store(hotSwapAvailable && settings.HotSwap)
 	options.hotSwap = hotSwapEnabled
+	options.retryOnLoss = hotSwapAvailable
 	controlHub := newProxyControlHub(homeDir, hotSwapEnabled, hotSwapAvailable)
 
 	unit, err := newServeEntryUnit(ctx, runtime, options)
@@ -338,6 +342,10 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	})
 
 	leaseErr := make(chan error, 1)
+	// leaseLost is a failure discovered by a live request, not by the periodic
+	// renewal. It gets an emergency in-place recovery even when hot-swap is off,
+	// so the request that discovered the loss can retry instead of returning 502.
+	leaseLost := make(chan error, 1)
 	leaseActive := true
 	lastRenewAt := time.Now().UnixMilli()
 	lastErr := ""
@@ -361,10 +369,15 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	}
 	publishStatus := func() { controlHub.setStatus(statusFor()) }
 	publishStatus()
-	if cleanup, controlErr := controlHub.serve(ctx); controlErr != nil {
-		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 代理控制通道不可用: %v\n", controlErr)
-	} else {
-		defer cleanup()
+	// One control file per AIH home: only the resident entry or the default
+	// 6152 entry publishes it. A temporary custom-port serve (e.g. 6156 for a
+	// specific app) must not steal the desk's control channel.
+	if options.exitWithParent || options.httpPort == 6152 {
+		if cleanup, controlErr := controlHub.serve(ctx); controlErr != nil {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 代理控制通道不可用: %v\n", controlErr)
+		} else {
+			defer cleanup()
+		}
 	}
 
 	var watcherCancel context.CancelFunc
@@ -382,11 +395,22 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			}
 			break
 		}
+		for {
+			select {
+			case <-leaseLost:
+				continue
+			default:
+			}
+			break
+		}
 		watcherCtx, cancel := context.WithCancel(ctx)
 		watcherCancel = cancel
 		go current.watchLeaseLoss(watcherCtx, func(lostErr error) {
+			// Dial failures are management-plane failures (the upstream stream is
+			// established by the local Server). Treat them as request-triggered
+			// recovery so the waiting request can retry instead of getting 502.
 			select {
-			case leaseErr <- lostErr:
+			case leaseLost <- lostErr:
 			default:
 			}
 		})
@@ -421,7 +445,7 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		startWatchers(lease)
 		publishStatus()
 		if !options.json {
-			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 上游已热替换：出口 %s（入口保持）。\n", lease.leaseName())
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 上游已原地恢复：出口 %s（入口保持）。\n", lease.leaseName())
 		}
 		return nil
 	}
@@ -536,6 +560,40 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 				action.reply <- proxyControlResult{status: controlHub.snapshot()}
 			default:
 				action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("未知代理控制命令")}
+			}
+		case lostErr := <-leaseLost:
+			leaseActive = false
+			lastErr = lostErr.Error()
+			publishStatus()
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 请求发现上游失效（%v），正在原地恢复…\n", lostErr)
+			if !hotSwapAvailable {
+				lease.finishRecovery(errors.New("当前入口不支持原地恢复"))
+				continue
+			}
+			// Emergency path: keep the listener, swap the lease in place and let
+			// the failed request retry. This is independent of the hot-swap
+			// policy; periodic renewals still rebuild when hot-swap is off.
+			if refreshErr := retryRecovery(ctx, 15, time.Second, refreshInPlace); refreshErr == nil {
+				lease.finishRecovery(nil)
+				continue
+			} else {
+				lease.finishRecovery(refreshErr)
+			}
+			// In-place recovery failed; fall back to a full rebuild so the entry
+			// does not stay dead until the next renewal.
+			stopWatchers()
+			_ = unit.Close()
+			var healErr error
+			if rotation != nil {
+				healErr = retryRecovery(ctx, 15, 2*time.Second, func() error {
+					_, rebuildErr := rebuildEntry(lostErr.Error())
+					return rebuildErr
+				})
+			} else {
+				healErr = retryRecovery(ctx, 15, 2*time.Second, rebuildSameSelection)
+			}
+			if healErr != nil {
+				return fmt.Errorf("出口恢复失败: %w", healErr)
 			}
 		case renewErr := <-leaseErr:
 			leaseActive = false

@@ -304,7 +304,7 @@ func runAppDeskInteractive(ctx context.Context, runtime commandRuntime, store *a
 					if result.status.HotSwap {
 						state.flash("⚡ 入口上游热替换已开启", ansiMagenta)
 					} else {
-						state.flash("热替换已关闭（手动恢复）", ansiAmber)
+						state.flash("热替换已关闭（周期/手动重建；请求内失效仍会原地重试）", ansiAmber)
 					}
 				}
 			}

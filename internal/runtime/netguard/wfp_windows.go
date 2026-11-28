@@ -395,6 +395,7 @@ func (guard *WFPGuard) Audit(context.Context) (Audit, error) {
 		Notes: []string{
 			"WFP ALE_AUTH_CONNECT blocks external destinations for the instance PID set",
 			"loopback is permitted for the instance proxy and AIH local services",
+			"Windows Dnscache resolves in svchost; per-PID blocking cannot prove DNS is proxy-side",
 		},
 	}, nil
 }

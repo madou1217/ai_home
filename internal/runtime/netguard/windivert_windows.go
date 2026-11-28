@@ -600,7 +600,7 @@ func (guard *WinDivertGuard) Status() GuardStatus {
 func (guard *WinDivertGuard) Audit(context.Context) (Audit, error) {
 	return Audit{
 		DNSMode: guard.options.Policy.DNS,
-		Notes:   []string{"P0 guard: non-loopback packets from the instance process tree are dropped"},
+		Notes:   []string{"P0 guard: non-loopback packets from the instance process tree are dropped", "Windows Dnscache resolves in svchost; per-PID blocking cannot prove DNS is proxy-side"},
 	}, nil
 }
 

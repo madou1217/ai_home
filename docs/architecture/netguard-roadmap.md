@@ -121,28 +121,32 @@
 - [x] 真机：Claude 2.1.332 / Codex 0.172.0 / Gemini 0.70.0 均可在 sandbox 内启动
 - [x] CLI 工具：`aih-netguard exec --proxy-url ... -- <command>`
 - [ ] 四个 CLI 真实 API 请求验收（含 AGY；当前只验证启动）
-- [ ] 多实例不同代理验收
+- [x] 多实例不同代理验收（真机：6152 AU / 6156 SG，两个 sandbox 实例出口不同；直连均被拒）
 - [ ] DNS 严格阻断（当前 DNS 经 mDNSResponder 仍可解析；Phase 5）
 - [ ] 与 Provider CLI 启动路径集成（Phase 8）
 
-### 3.2 GUI App
+### 3.2 GUI App 🚧
 
-- [ ] Electron/Chromium App 直接可执行 + sandbox 原型
-- [ ] AGY `open -a` 路径改造评估
+- [x] Chromium GUI 直接可执行 + sandbox 原型：Chrome 启动、建立到 6152 的连接；外层 sandbox 拒绝直连
+- [x] 需要 `--no-sandbox` 才能避免 Chromium 嵌套 sandbox 初始化失败（安全降级，需决策）
+- [ ] Vendor Electron App / AGY `open -a` 路径改造
 - [ ] 窗口/TCC/单实例/OAuth 深链/更新器验证
 - [ ] 无法满足时决策 Network Extension（签名扩展）
 - [ ] 系统 XPC/nsurlsessiond/更新器边界文档化
 
 ---
 
-## Phase 4 — Linux Guard
+## Phase 4 — Linux Guard 🚧
 
-- [ ] cgroup v2 实例树 + nftables TPROXY / netns 方案选型
-- [ ] 特权 helper 安装/权限/清理
-- [ ] per-instance 代理入口与 TCP 重定向
-- [ ] 外部 UDP/QUIC 阻断、DNS 策略
-- [ ] CLI strict 验收（四家）
-- [ ] GUI App 进程树验收
+- [x] cgroup v2 + nftables 方案选型与真机验证
+- [x] 特权 helper（sudo -n mkdir/tee/nft）与清理路径
+- [x] Linux Guard 代码：cgroupv2 level 2 匹配，loopback 放行、外部 drop
+- [x] 真机：目标进程外网 timeout、loopback 200、其他进程 301
+- [ ] per-instance 透明 TCP 重定向（当前为阻断；App 需使用代理）
+- [ ] 外部 UDP/QUIC/DNS 策略（cgroup 规则会 drop；系统 resolver 旁路待验证）
+- [ ] CLI strict 四家真实 API 验收
+- [ ] GUI App 进程树验收（cgroup 继承，理论上覆盖子进程）
+- [ ] 多实例不同代理验收
 - [ ] 与 Docker/Colima/VPN/Tailscale 规则冲突处理
 - [ ] 容器/VM 不在宿主进程树范围的文档化
 
@@ -215,14 +219,14 @@
 | 严格进程级网络控制（跨平台） | 中 | 15% | 🚧 Phase 1/2/3 |
 | Windows per-instance GUI（JP/SG） | P0 TCP 原型可运行 | 8% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+三 CLI 启动已验证 | 40% | 🚧 Phase 3 |
-| macOS GUI strict | 原型待做 | 0% | ⬜ Phase 3 |
-| Linux CLI/GUI strict | 方案已有 | 0% | ⬜ Phase 4 |
+| macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
+| Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
 | DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
 | LaunchProfile / preflight | 组件部分有 | 15% | ⬜ Phase 6 |
 | 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈19%** | 🚧 |
+| **总目标** | — | **≈22%** | 🚧 |
 
 ---
 
@@ -245,8 +249,8 @@
 
 ## 当前状态
 
-- 当前阶段：**Phase 2.1 WFP 受 WDK 阻塞；Phase 3.1 macOS CLI sandbox 已可用**
-- 已完成：Phase 0；Phase 1 契约代码；P0 IPv4 TCP 目标/非目标隔离；macOS CLI sandbox 包装器
-- 未开始：Phase 2.2 P1 透明 TCP、Phase 2.3 WFP、Phase 4–9
+- 当前阶段：**Windows WFP 被 WDK 阻塞；macOS CLI/Chromium GUI 原型、Linux cgroup 阻断均已真机通过**
+- 已完成：Phase 0；Phase 1 契约代码；P0 IPv4 TCP；macOS CLI sandbox；Linux cgroup 阻断
+- 未开始：Phase 2.2 P1 透明 TCP、Phase 2.3 WFP、Phase 3.2 vendor GUI、Phase 5–9
 - 最近更新：2026-11-28
-- 证据：Windows 目标 `DIRECT_ERROR`/`blocked=3`、非目标 `DIRECT_OK 200`；macOS sandbox 代理 204、`--noproxy '*'` 直连拒绝、dead proxy 失败关闭、Claude/Codex/Gemini `--version` 正常
+- 证据：Windows 目标 `DIRECT_ERROR`/`blocked=3`、非目标 `DIRECT_OK 200`；macOS 代理 204、`--noproxy '*'` 拒绝、双实例 AU/SG；Linux cgroup 目标 timeout、loopback 200、其他 301

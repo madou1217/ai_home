@@ -104,7 +104,9 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 		if decodeErr != nil {
 			return inputItemError(decodeErr, field, header.Type)
 		}
-		output.toolResults = append(output.toolResults, callID)
+		if callID != "" {
+			output.toolResults = append(output.toolResults, callID)
+		}
 		output.messages = append(output.messages, message)
 		return nil
 	case header.Type == "reasoning":
@@ -133,7 +135,9 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 		if decodeErr != nil {
 			return inputItemError(decodeErr, field, header.Type)
 		}
-		output.toolResults = append(output.toolResults, callID)
+		if callID != "" {
+			output.toolResults = append(output.toolResults, callID)
+		}
 		output.messages = append(output.messages, message)
 		return nil
 	case skippedInputItemTypes[header.Type]:
@@ -364,6 +368,15 @@ func decodeFunctionCallOutput(
 	contents, err := decodeMessageContents(wireOutput.Output, field+".output")
 	if err != nil {
 		return inference.Message{}, "", err
+	}
+	// Codex 的 goal_objective 等合成上下文项没有 call_id：它们不是真实工具
+	// 调用的回执，按普通用户上下文消息保留，不参与 call_id 配对。
+	if strings.TrimSpace(wireOutput.CallID) == "" {
+		message, messageErr := inference.NewMessage(inference.RoleUser, contents...)
+		if messageErr != nil {
+			return inference.Message{}, "", invalidField(field)
+		}
+		return message, "", nil
 	}
 	result, resultErr := inference.NewToolResultContent(wireOutput.CallID, false, contents...)
 	if resultErr != nil {

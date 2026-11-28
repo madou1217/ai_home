@@ -609,6 +609,15 @@ func (h *Handler) handleItemPreview(w http.ResponseWriter, r *http.Request, id s
 		writeError(w, http.StatusBadRequest, "clipboard_preview_not_file", "只有文件引用支持文档预览")
 		return
 	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("index")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid_index", "index 必须是非负整数")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"preview": clipboardpreview.DescribeAt(item.Files, parsed)})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"preview": clipboardpreview.Describe(item.Files)})
 }
 
@@ -631,23 +640,31 @@ func (h *Handler) handleItemFile(w http.ResponseWriter, r *http.Request, id stri
 		}
 		index = parsed
 	}
-	path, mime, ok := clipboardpreview.Streamable(item.Files, index)
+	filePath, mime, maxBytes, ok := clipboardpreview.StreamableBounded(item.Files, index)
 	if !ok {
 		writeError(w, http.StatusNotFound, "clipboard_file_unavailable", "文件不可用或类型不支持流式预览")
 		return
 	}
-	file, err := os.Open(path)
+	file, err := os.Open(filePath)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "clipboard_file_unavailable", "文件不可读")
 		return
 	}
 	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil || info.IsDir() {
+		writeError(w, http.StatusNotFound, "clipboard_file_unavailable", "文件不可读")
+		return
+	}
+	size := info.Size()
+	if size > maxBytes {
+		size = maxBytes
+	}
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Content-Disposition", "inline")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.CopyN(w, file, clipboardpreview.MaxFileBytes)
+	http.ServeContent(w, r, info.Name(), info.ModTime(), io.NewSectionReader(file, 0, size))
 }
 
 func (h *Handler) handleDeleteItem(w http.ResponseWriter, r *http.Request, id string) {

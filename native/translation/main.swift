@@ -269,6 +269,23 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     NSApp.setActivationPolicy(fullApp ? .regular : .accessory)
     installApplicationMenu()
     installClipboardStatusItem()
+    workspaceWindow.onOpenOrbit = { [weak self] in
+      self?.quickOrbit.show()
+    }
+    workspaceWindow.onQuickOrbitPositionChanged = { [weak self] nextPos in
+      guard let self else { return }
+      self.quickOrbitPosition = nextPos
+      self.updatePositionMenuChecks()
+      self.quickOrbit.configure(
+        origin: self.clipboardOrigin,
+        managementKey: self.clipboardKey,
+        enabled: self.clipboardEnabled,
+        position: nextPos
+      )
+    }
+    quickOrbit.onOpenWorkspace = { [weak self] in
+      self?.workspaceWindow.show()
+    }
     if fullApp {
       panel.configure([
         "target": "zh-Hans",
@@ -479,6 +496,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       if event.type == .keyDown && event.keyCode == 53 {
         if self?.launcherPanel.shouldLetEscapeThrough() == true { return event }
         if self?.launcherPanel.handleGlobalEscape() == true { return nil }
+        if LumenPreviewWindow.shared.isVisible {
+          LumenPreviewWindow.shared.closeAnimated()
+          return nil
+        }
         if self?.quickOrbit.isVisibleAndKey == true {
           self?.quickOrbit.hide()
           return nil

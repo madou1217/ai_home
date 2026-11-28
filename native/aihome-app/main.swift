@@ -3,14 +3,17 @@ import ApplicationServices
 import CoreGraphics
 
 // AI Home.app is the single macOS TCC owner. In service mode it supervises
-// aih-server (launchd starts it this way); when opened normally it shows a
-// one-window onboarding UI that requests Screen Recording and Accessibility
-// from a foreground app, so macOS can list and prompt for it directly.
+// aih-server (launchd starts it this way); with --lumen / --clipboard / --orbit
+// it opens the standalone native Paste Lumen V7 surfaces (App Management Window
+// and separate Orbit NSPanel) configured from local ~/.ai_home/aih.db; when
+// opened normally it shows the TCC onboarding window with direct Lumen access.
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 if let serviceIndex = arguments.firstIndex(of: "--service") {
   runService(Array(arguments[(serviceIndex + 1)...]))
+} else if arguments.contains("--lumen") || arguments.contains("--clipboard") || arguments.contains("--orbit") {
+  runStandaloneLumen(openOrbitFirst: arguments.contains("--orbit"))
 } else {
   runOnboarding()
 }
@@ -61,6 +64,73 @@ func runService(_ raw: [String]) -> Never {
   exit(process.terminationStatus)
 }
 
+func installStandardEditMenu() {
+  let menu = NSMenu()
+  let appItem = NSMenuItem()
+  let appMenu = NSMenu(title: "AI Home")
+  appMenu.addItem(withTitle: "退出 AI Home", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+  appItem.submenu = appMenu
+  menu.addItem(appItem)
+
+  let editItem = NSMenuItem()
+  let edit = NSMenu(title: "Edit")
+  for (title, action, key) in [
+    ("Undo", "undo:", "z"), ("Redo", "redo:", "Z"),
+    ("Cut", "cut:", "x"), ("Copy", "copy:", "c"),
+    ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")
+  ] {
+    edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
+  }
+  editItem.submenu = edit
+  menu.addItem(editItem)
+  NSApp.mainMenu = menu
+}
+
+func runStandaloneLumen(openOrbitFirst: Bool) -> Never {
+  let app = NSApplication.shared
+  app.setActivationPolicy(.regular)
+  let delegate = StandaloneLumenDelegate(openOrbitFirst: openOrbitFirst)
+  app.delegate = delegate
+  app.run()
+  exit(0)
+}
+
+final class StandaloneLumenDelegate: NSObject, NSApplicationDelegate {
+  private let openOrbitFirst: Bool
+  private let workspace = ClipboardWorkspaceWindow()
+  private let orbit = QuickOrbitWindow()
+
+  init(openOrbitFirst: Bool) {
+    self.openOrbitFirst = openOrbitFirst
+    super.init()
+  }
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    installStandardEditMenu()
+    let config = LumenLocalConfigLoader.resolve()
+    let pos = LumenClipboardStore.shared.settings.quickOrbitPosition
+    workspace.configure(origin: config.origin, managementKey: config.managementKey, enabled: true)
+    orbit.configure(origin: config.origin, managementKey: config.managementKey, enabled: true, position: pos)
+    workspace.onOpenOrbit = { [weak self] in self?.orbit.show() }
+    orbit.onOpenWorkspace = { [weak self] in self?.workspace.show() }
+
+    if openOrbitFirst {
+      orbit.show()
+    } else {
+      workspace.show()
+    }
+  }
+
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    workspace.show()
+    return true
+  }
+
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    !orbit.panel.isVisible
+  }
+}
+
 func runOnboarding() -> Never {
   let app = NSApplication.shared
   app.setActivationPolicy(.regular)
@@ -76,8 +146,24 @@ final class OnboardingDelegate: NSObject, NSApplicationDelegate {
   private var inputLabel: NSTextField!
   private var hint: NSTextField!
   private var timer: Timer?
+  private var didOpenLumen = false
+  private lazy var lumenWorkspace: ClipboardWorkspaceWindow = {
+    let win = ClipboardWorkspaceWindow()
+    let cfg = LumenLocalConfigLoader.resolve()
+    win.configure(origin: cfg.origin, managementKey: cfg.managementKey, enabled: true)
+    win.onOpenOrbit = { [weak self] in self?.lumenOrbit.show() }
+    return win
+  }()
+  private lazy var lumenOrbit: QuickOrbitWindow = {
+    let orb = QuickOrbitWindow()
+    let cfg = LumenLocalConfigLoader.resolve()
+    orb.configure(origin: cfg.origin, managementKey: cfg.managementKey, enabled: true, position: LumenClipboardStore.shared.settings.quickOrbitPosition)
+    orb.onOpenWorkspace = { [weak self] in self?.lumenWorkspace.show() }
+    return orb
+  }()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    installStandardEditMenu()
     window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 540, height: 380),
       styleMask: [.titled, .closable, .miniaturizable],
@@ -130,8 +216,13 @@ final class OnboardingDelegate: NSObject, NSApplicationDelegate {
     view.addSubview(hint)
 
     let recheck = button("重新检查", action: #selector(recheck), x: 28, y: 40)
-    recheck.frame = NSRect(x: 28, y: 40, width: 110, height: 32)
+    recheck.frame = NSRect(x: 28, y: 40, width: 100, height: 32)
     view.addSubview(recheck)
+
+    let openLumen = button("打开 Lumen 剪贴板", action: #selector(openLumenClipboard), x: 140, y: 40)
+    openLumen.frame = NSRect(x: 140, y: 40, width: 150, height: 32)
+    view.addSubview(openLumen)
+
     let done = button("完成", action: #selector(closeWindow), x: 420, y: 40)
     done.keyEquivalent = "\r"
     done.frame = NSRect(x: 420, y: 40, width: 92, height: 32)
@@ -154,7 +245,7 @@ final class OnboardingDelegate: NSObject, NSApplicationDelegate {
     inputLabel.stringValue = (input ? "✓ " : "○ ") + "辅助功能"
     inputLabel.textColor = input ? .systemGreen : .labelColor
     hint.stringValue = screen && input
-      ? "两项授权已就绪，可以关闭此窗口。"
+      ? "两项授权已就绪，可以关闭此窗口，或直接打开 Lumen 剪贴板。"
       : "授权后如果状态没有立刻变化，点“重新检查”，或重启 AI Home。"
   }
 
@@ -177,6 +268,11 @@ final class OnboardingDelegate: NSObject, NSApplicationDelegate {
     openPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
   }
 
+  @objc private func openLumenClipboard() {
+    didOpenLumen = true
+    lumenWorkspace.show()
+  }
+
   private func openPane(_ value: String) {
     if let url = URL(string: value) { NSWorkspace.shared.open(url) }
   }
@@ -188,5 +284,8 @@ final class OnboardingDelegate: NSObject, NSApplicationDelegate {
     NSApp.terminate(nil)
   }
 
-  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    if !didOpenLumen { return true }
+    return !lumenWorkspace.window.isVisible && !lumenOrbit.panel.isVisible
+  }
 }

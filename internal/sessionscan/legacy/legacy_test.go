@@ -42,6 +42,8 @@ func TestReadClaudeProjectsScansTitlesHistoryAndSkips(t *testing.T) {
 
 	writeFixture(t, filepath.Join(projectDir, "newer.jsonl"), fmt.Sprintf(
 		"{\"type\":\"assistant\",\"cwd\":%q,\"message\":{\"content\":\"ignored\"}}\n"+
+			"{\"type\":\"user\",\"isMeta\":true,\"message\":{\"content\":\"A session-scoped Stop hook is now active with condition: x\"}}\n"+
+			"{\"type\":\"user\",\"message\":{\"content\":\"A session-scoped Stop hook is now active with condition: x\"}}\n"+
 			"{\"type\":\"user\",\"message\":{\"content\":\"Caveat: synthetic\"}}\n"+
 			"{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Fix the parser\"},{\"type\":\"text\",\"text\":\"now\"}]}}\n",
 		workDir), time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC))

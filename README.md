@@ -540,7 +540,7 @@ aih ss                       # 所有工具的会话总览（--list 只预览）
 
 - **空闲回收**：打开 `aih ss` / `aih <cli> sessions` 时，以及 `aih server` 每 30 分钟，会回收空闲会话。空闲超过 1 天（`AIH_SESSION_IDLE_TTL_MINUTES`，默认 1440）直接释放；空闲会话最多保留 10 个（`AIH_SESSION_MAX_IDLE`），超出按最久未活动优先淘汰。有客户端附着的会话永不回收；「最近激活」取输出与附着/交互时间的较大值，所以差一分钟到期时被打开会重新计时。`AIH_SESSION_REAP=0` 关闭回收。
 - **跨 provider 续聊**：`aih resume [关键词]` 不指定 CLI，按标题过滤后直接续；`--provider` / `--account` 收窄范围，`--limit` 控制条数，`--json` 给脚本用。
-- **选择器标记**：`●` 表示正被别处占用，`○` 表示空闲。
+- **选择器标记**：`●` 运行中（本轮在跑或被客户端附着）、`◐` 等待输入、`○` 空闲（进程或 tmux pane 仍在）、`✔` 已结束（只能按 ID 续接）。原生会话关闭终端后仍会以「已结束」保留 24 小时；更早的历史用 `aih <cli> sessions --history`。列表按显示宽度裁列，`aih ss` 与 `aih <cli> sessions` 都可以直接上下选择、Enter 进入。
 - **长参数**：`-S`、`-R`、`-M` 是 aih 自己的开关，对应 `--session`、`--aih-resume`、`--aih-mirror`；它们不会吞掉原生的 `--resume` 等参数。
 - **续接与分叉**：`resume` 把「接着上次聊」翻译成各 provider 的原生恢复参数；`fork` 从上一段对话分叉出新会话、原对话不动（无分叉能力的 provider 会明确拒绝）。不带 ID 时用「最近一段」（cline 必须给 ID，kimi / kiro 的入口在 TUI 内）。对应关系见 `aih <cli> resume --help`。
 - **原生透传**：`aih <cli> -- <任意原生参数...>` 把 `--` 之后逐字交给原生 CLI，即使撞上 aih 的保留字（`ls`、`login`、`resume`…）也不会被拦截。

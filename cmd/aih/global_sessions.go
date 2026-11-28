@@ -13,6 +13,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
+	"github.com/madou1217/ai_home/internal/runtime/sessionproject"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
@@ -68,6 +69,17 @@ func runGlobalSessions(
 
 // collectGlobalRows 读取全部受管持久会话的实时行。
 func collectGlobalRows(ctx context.Context, runtime commandRuntime, allProjects ...bool) ([]persistent.SessionRow, error) {
+	return collectGlobalRowsMode(ctx, runtime, false, allProjects...)
+}
+
+// collectGlobalRowsMode 的 refresh=true 时跳过标题缓存，直接用原生会话库
+// 重新解析标题/原生 id；其余步骤与普通列表完全一致。
+func collectGlobalRowsMode(
+	ctx context.Context,
+	runtime commandRuntime,
+	refresh bool,
+	allProjects ...bool,
+) ([]persistent.SessionRow, error) {
 	store, err := globalSessionStore(runtime)
 	if err != nil {
 		return nil, err
@@ -76,11 +88,21 @@ func collectGlobalRows(ctx context.Context, runtime commandRuntime, allProjects 
 	if err != nil {
 		return nil, fmt.Errorf("读取持久会话失败: %w", err)
 	}
-	// 与 Node 共用标题缓存：先用未过期缓存补标题/原生会话 id，再把本次结果写回。
 	now := time.Now()
-	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(store.AIHomeDir, now))
-	appendNativeCodexRows(ctx, runtime, &rows)
+	if refresh {
+		resolveSessionTitles(ctx, runtime, rows)
+	} else {
+		// 与 Node 共用标题缓存：先用未过期缓存补标题/原生会话 id，再把本次结果写回。
+		persistent.ApplySessionCache(rows, persistent.ReadSessionCache(store.AIHomeDir, now))
+	}
+	// 原生进程行必须先于 Codex 写锁投影生成：前者能给出真实的运行/等待
+	// 状态，后者只补没有进程的 thread，避免同一个会话出现两行。
 	appendNativeProviderRows(ctx, runtime, &rows)
+	appendNativeCodexRows(ctx, runtime, &rows)
+	appendRecentNativeSessionRows(ctx, runtime, &rows, allProjectsRequested(allProjects...))
+	applyNativeTurnStates(store.AIHomeDir, rows)
+	ensureUniqueSessionTitles(rows)
+	sortSessionRowsForDisplay(rows)
 	_ = persistent.WriteSessionCache(store.AIHomeDir, rows, now)
 	return scopeGlobalSessionRows(rows, allProjects...)
 }
@@ -122,15 +144,18 @@ func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]
 			updated = time.Now().UnixMilli()
 		}
 		*rows = append(*rows, persistent.SessionRow{
-			Provider:         "codex",
-			RuntimeScope:     "native",
-			Socket:           "",
-			Name:             "codex-" + id[:8],
-			Path:             session.CWD,
-			StartPath:        session.CWD,
-			Title:            compactGlobalSessionTitle(session.Title),
-			NativeID:         id,
-			Live:             locked,
+			Provider:     "codex",
+			RuntimeScope: "native",
+			Socket:       "",
+			Name:         "codex-" + id[:8],
+			Path:         session.CWD,
+			StartPath:    session.CWD,
+			Title:        compactGlobalSessionTitle(session.Title),
+			NativeID:     id,
+			// 写锁只证明 thread 被 Codex app-server 打开过，不等于有交互
+			// CLI 在跑：0.171 的共享 app-server 会同时持有多个 thread 锁。
+			// 真正在跑的会话已由进程投影标记 Live，这里只补空闲行。
+			Live:             false,
 			CreatedAtMS:      updated,
 			LastActivityAtMS: updated,
 			LastActiveAtMS:   updated,
@@ -140,15 +165,8 @@ func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]
 	}
 }
 
-const maxGlobalSessionTitleRunes = 96
-
 func compactGlobalSessionTitle(value string) string {
-	compact := strings.TrimSpace(strings.Join(strings.Fields(value), " "))
-	runes := []rune(compact)
-	if len(runes) <= maxGlobalSessionTitleRunes {
-		return compact
-	}
-	return string(runes[:maxGlobalSessionTitleRunes-1]) + "…"
+	return compactSessionTitle(value)
 }
 
 func codexThreadLockHeld(hostHome, threadID string) bool {
@@ -157,6 +175,10 @@ func codexThreadLockHeld(hostHome, threadID string) bool {
 		return false
 	}
 	return len(lockHolderPIDs(lock)) > 0
+}
+
+func allProjectsRequested(values ...bool) bool {
+	return len(values) > 0 && values[0]
 }
 
 func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects ...bool) ([]persistent.SessionRow, error) {
@@ -181,28 +203,64 @@ func groupSessionsByProject(rows []persistent.SessionRow) []sessionGroup {
 	groups := make(map[string][]persistent.SessionRow)
 	order := make([]string, 0)
 	for _, row := range rows {
-		project := strings.TrimSpace(row.Path)
-		if project == "" {
-			project = strings.TrimSpace(row.StartPath)
-		}
-		if project == "" {
-			project = "-"
-		}
+		project := sessionProjectPath(row)
 		if _, exists := groups[project]; !exists {
 			order = append(order, project)
 		}
 		groups[project] = append(groups[project], row)
 	}
-	sort.Strings(order)
+	cwd, _ := os.Getwd()
+	sort.SliceStable(order, func(left, right int) bool {
+		leftHere := sessionproject.MatchesCwd(order[left], cwd)
+		rightHere := sessionproject.MatchesCwd(order[right], cwd)
+		if leftHere != rightHere {
+			return leftHere
+		}
+		return order[left] < order[right]
+	})
 	result := make([]sessionGroup, 0, len(order))
 	for _, project := range order {
 		groupRows := groups[project]
-		sort.SliceStable(groupRows, func(left, right int) bool {
-			return sessionActivityMillis(groupRows[left]) > sessionActivityMillis(groupRows[right])
-		})
+		sortSessionRowsForDisplay(groupRows)
 		result = append(result, sessionGroup{Project: project, Rows: groupRows})
 	}
 	return result
+}
+
+// sortSessionRowsForDisplay 先按项目聚在一起，组内运行中优先、再按最近活动。
+// 选择器和非交互列表共用，避免两处顺序不一致。
+func sortSessionRowsForDisplay(rows []persistent.SessionRow) {
+	if len(rows) < 2 {
+		return
+	}
+	cwd, _ := os.Getwd()
+	sort.SliceStable(rows, func(left, right int) bool {
+		leftProject, rightProject := sessionProjectPath(rows[left]), sessionProjectPath(rows[right])
+		if leftProject != rightProject {
+			leftHere := sessionproject.MatchesCwd(leftProject, cwd)
+			rightHere := sessionproject.MatchesCwd(rightProject, cwd)
+			if leftHere != rightHere {
+				return leftHere
+			}
+			return leftProject < rightProject
+		}
+		leftRank, rightRank := globalSessionStatusRank(rows[left]), globalSessionStatusRank(rows[right])
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return sessionActivityMillis(rows[left]) > sessionActivityMillis(rows[right])
+	})
+}
+
+func sessionProjectPath(row persistent.SessionRow) string {
+	project := strings.TrimSpace(row.Path)
+	if project == "" {
+		project = strings.TrimSpace(row.StartPath)
+	}
+	if project == "" {
+		return "-"
+	}
+	return project
 }
 
 func sessionActivityMillis(row persistent.SessionRow) int64 {
@@ -245,19 +303,60 @@ func writeGlobalSessionGroups(
 		}
 		_ = writer.Flush()
 	}
-	_, _ = fmt.Fprintln(output, "\n提示（● 运行中 / ○ 空闲）：Enter=进入，c=复制ID，y=复制命令，d=详情，x=关闭选中，X=关闭闲置。")
+	_, _ = fmt.Fprintln(output, "\n提示（● 运行中 / ◐ 等待输入 / ○ 空闲 / ✔ 已结束）：Enter=进入，c=复制ID，y=复制命令，d=详情，x=关闭选中，X=关闭闲置。")
+}
+
+// sessionStatus 把「进程是否存活」和「轮次是否在跑」收敛成一个状态。
+// working/waiting 来自 Provider hook；没有 hook 时按 tmux 附着情况退化。
+type sessionStatus struct {
+	Kind  string
+	Icon  string
+	Label string
+}
+
+func globalSessionState(row persistent.SessionRow) sessionStatus {
+	// tmux 会话即使没有客户端附着，pane 仍在，可以直接 attach；原生行
+	// 没有进程就是已结束，只能 resume。两者不能共用"空闲"。
+	alive := row.Live || strings.TrimSpace(row.Socket) != "" || row.PanePID > 0
+	if !alive {
+		return sessionStatus{Kind: "ended", Icon: "✔", Label: "已结束"}
+	}
+	switch strings.ToLower(strings.TrimSpace(row.TurnState)) {
+	case "working":
+		return sessionStatus{Kind: "running", Icon: "●", Label: "运行中"}
+	case "waiting":
+		return sessionStatus{Kind: "waiting", Icon: "◐", Label: "等待输入"}
+	case "completed", "idle":
+		return sessionStatus{Kind: "idle", Icon: "○", Label: "空闲"}
+	}
+	if row.Live {
+		return sessionStatus{Kind: "running", Icon: "●", Label: "运行中"}
+	}
+	return sessionStatus{Kind: "idle", Icon: "○", Label: "空闲"}
 }
 
 func globalSessionStatus(row persistent.SessionRow) string {
-	if row.Live {
-		return "● 运行中"
+	state := globalSessionState(row)
+	return state.Icon + " " + state.Label
+}
+
+func globalSessionStatusRank(row persistent.SessionRow) int {
+	switch globalSessionState(row).Kind {
+	case "running":
+		return 0
+	case "waiting":
+		return 1
+	default:
+		return 2
 	}
-	return "○ 空闲"
 }
 
 func globalSessionAccount(row persistent.SessionRow, labels map[string]string) string {
 	if label := strings.TrimSpace(labels[row.AccountRef]); label != "" {
 		return label
+	}
+	if id := strings.TrimSpace(row.AccountID); id != "" {
+		return "#" + id
 	}
 	if row.Gateway {
 		return "gateway"
@@ -269,12 +368,7 @@ func globalSessionAccount(row persistent.SessionRow, labels map[string]string) s
 }
 
 func globalSessionTitle(row persistent.SessionRow) string {
-	for _, candidate := range []string{row.Label, row.Title, row.WindowName} {
-		if title := strings.TrimSpace(candidate); title != "" {
-			return title
-		}
-	}
-	return "-"
+	return displaySessionTitle(row)
 }
 
 func globalSessionID(row persistent.SessionRow) string {

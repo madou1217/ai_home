@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 
@@ -113,51 +114,286 @@ func pickerResumeCommand(row persistent.SessionRow) string {
 	return "aih " + row.Provider + " resume " + identity
 }
 
-// renderPicker 输出整屏（调用方负责清屏与光标位置）。
+// renderPicker 输出整屏（兼容既有调用方与测试）。
 func renderPicker(
 	output io.Writer,
 	state *pickerState,
 	labels map[string]string,
 ) {
-	_, _ = fmt.Fprintf(output, "[aih] 活跃持久会话（%d）  ↑/↓ 选择 · Enter 进入 · d 详情 · c 复制ID · y 复制命令 · x 关闭 · X 关闲置 · q 退出\r\n", len(state.rows))
-	if len(state.rows) == 0 {
-		_, _ = fmt.Fprintln(output, "当前没有活跃的持久会话。")
-		return
-	}
-	for index, row := range state.rows {
-		marker := "  "
-		if index == state.selected {
-			marker = "> "
-		}
-		line := fmt.Sprintf(
-			"%s%s  %-12s %-16s %s",
-			marker,
-			globalSessionStatus(row),
-			row.Provider,
-			globalSessionAccount(row, labels),
-			globalSessionTitle(row),
-		)
+	for _, line := range buildPickerLines(state, labels, 100) {
 		_, _ = fmt.Fprintf(output, "%s\r\n", line)
+	}
+}
+
+// pickerColumnLayout 是选择器的固定列宽；标题列吃掉剩余宽度。
+type pickerColumnLayout struct {
+	status   int
+	provider int
+	account  int
+	title    int
+	id       int
+}
+
+func resolvePickerLayout(width int) pickerColumnLayout {
+	if width < 48 {
+		width = 48
+	}
+	if width > 240 {
+		width = 240
+	}
+	layout := pickerColumnLayout{status: 1, provider: 11, account: 12, id: 8}
+	// 先保标题；ID 是辅助列，宽度不够时先让位。
+	for {
+		fixed := 2 + layout.status + layout.provider + layout.account + layout.id + 4*2
+		layout.title = width - fixed
+		if layout.title >= 18 {
+			break
+		}
+		if layout.id > 0 {
+			layout.id = 0
+			continue
+		}
+		if layout.account > 6 {
+			layout.account = 6
+			continue
+		}
+		if layout.provider > 8 {
+			layout.provider = 8
+			continue
+		}
+		layout.title = 18
+		break
+	}
+	return layout
+}
+
+// buildPickerLines 生成一帧的纯文本行（颜色只包在单元格内部，宽度按
+// 可见字符计算，避免中文/ANSI 导致列错位）。
+func buildPickerLines(state *pickerState, labels map[string]string, width int) []string {
+	layout := resolvePickerLayout(width)
+	lines := make([]string, 0, len(state.rows)+8)
+	header := fmt.Sprintf("[aih] 活跃持久会话（%d）", len(state.rows))
+	legend := "  \x1b[32m●\x1b[0m 运行中  \x1b[33m◐\x1b[0m 等待输入  \x1b[90m○\x1b[0m 空闲  \x1b[90m✔\x1b[0m 已结束"
+	lines = append(lines, truncateDisplayPreservingANSI(header+legend, width))
+	hints := "↑/↓ 选择 · Enter 进入 · d 详情 · c 复制ID · y 复制命令 · x 关闭 · X 关闲置 · q 退出"
+	if displayWidth(hints) > width {
+		hints = "↑/↓ · Enter · d · c · y · x · X · q"
+	}
+	lines = append(lines, truncateDisplayPreservingANSI("\x1b[90m"+hints+"\x1b[0m", width))
+	if len(state.rows) == 0 {
+		lines = append(lines, "当前没有活跃的持久会话。")
+		return lines
+	}
+
+	projectCounts := make(map[string]int, len(state.rows))
+	for _, row := range state.rows {
+		projectCounts[sessionProjectPath(row)]++
+	}
+	currentProject := ""
+	for index, row := range state.rows {
+		project := sessionProjectPath(row)
+		if project != currentProject {
+			if currentProject != "" {
+				lines = append(lines, "")
+			}
+			lines = append(lines, formatPickerProjectHeader(project, projectCounts[project], width))
+			currentProject = project
+		}
+		lines = append(lines, formatPickerRow(row, index == state.selected, labels, layout, width))
 	}
 	if state.detail {
 		if row := state.current(); row != nil {
-			_, _ = fmt.Fprintln(output, "\r\n详情：")
-			_, _ = fmt.Fprintf(output, "  provider: %s\r\n", row.Provider)
-			_, _ = fmt.Fprintf(output, "  账号: %s\r\n", globalSessionAccount(*row, labels))
-			_, _ = fmt.Fprintf(output, "  状态: %s\r\n", globalSessionStatus(*row))
-			_, _ = fmt.Fprintf(output, "  路径: %s\r\n", row.Path)
-			_, _ = fmt.Fprintf(output, "  运行时: socket=%s pane=%s\r\n", row.Socket, globalSessionID(*row))
+			lines = append(lines, "", "\x1b[1m详情\x1b[0m")
+			lines = append(lines, "  provider: "+row.Provider)
+			lines = append(lines, "  账号: "+globalSessionAccount(*row, labels))
+			lines = append(lines, "  状态: "+globalSessionStatus(*row))
+			lines = append(lines, "  路径: "+row.Path)
+			lines = append(lines, fmt.Sprintf("  运行时: socket=%s pane=%s", row.Socket, globalSessionID(*row)))
 			native := strings.TrimSpace(row.NativeID)
 			if native == "" {
 				native = "(未知)"
 			}
-			_, _ = fmt.Fprintf(output, "  原生会话 id: %s\r\n", native)
-			_, _ = fmt.Fprintln(output, "  再按 d 返回列表")
+			lines = append(lines, "  原生会话 id: "+native, "  再按 d 返回列表")
 		}
 	}
 	if state.toast != "" {
-		_, _ = fmt.Fprintf(output, "\r\n%s\r\n", state.toast)
+		lines = append(lines, "", state.toast)
 	}
+	return lines
+}
+
+func formatPickerProjectHeader(project string, count int, width int) string {
+	label := "▸ " + project
+	if count > 0 {
+		label += fmt.Sprintf("  (%d)", count)
+	}
+	return "\x1b[36m" + truncateDisplay(label, width) + "\x1b[0m"
+}
+
+func formatPickerRow(
+	row persistent.SessionRow,
+	selected bool,
+	labels map[string]string,
+	layout pickerColumnLayout,
+	width int,
+) string {
+	marker := "  "
+	if selected {
+		marker = "\x1b[36m> \x1b[0m"
+	}
+	status := globalSessionState(row)
+	statusCell := statusIcon(status) + strings.Repeat(" ", maxInt(0, layout.status-displayWidth(status.Icon)))
+	provider := padDisplay(truncateDisplay(row.Provider, layout.provider), layout.provider)
+	account := ""
+	if layout.account > 0 {
+		account = padDisplay(truncateDisplay(globalSessionAccount(row, labels), layout.account), layout.account)
+	}
+	title := padDisplay(truncateDisplay(globalSessionTitle(row), layout.title), layout.title)
+	if selected {
+		title = "\x1b[1m" + title + "\x1b[0m"
+	}
+	line := marker + statusCell + " " + provider
+	if layout.account > 0 {
+		line += " " + account
+	}
+	line += " " + title
+	if layout.id > 0 {
+		line += "  " + padDisplay(truncateDisplay(shortSessionID(row.NativeID), layout.id), layout.id)
+	}
+	return truncateDisplayPreservingANSI(line, width)
+}
+
+func statusIcon(status sessionStatus) string {
+	color := "90"
+	switch status.Kind {
+	case "running":
+		color = "32"
+	case "waiting":
+		color = "33"
+	}
+	return "\x1b[" + color + "m" + status.Icon + "\x1b[0m"
+}
+
+// truncateDisplay 按终端显示宽度截断（中文按两列），末尾补 …。
+func truncateDisplay(text string, width int) string {
+	value := strings.Join(strings.Fields(text), " ")
+	if width <= 0 || value == "" {
+		return ""
+	}
+	if displayWidth(value) <= width {
+		return value
+	}
+	if width == 1 {
+		return "…"
+	}
+	var builder strings.Builder
+	used := 0
+	for _, char := range value {
+		next := displayRuneWidth(char)
+		if used+next > width-1 {
+			break
+		}
+		builder.WriteRune(char)
+		used += next
+	}
+	return builder.String() + "…"
+}
+
+// truncateDisplayPreservingANSI 只用于已经带颜色的整行：ANSI 转义序列
+// 不占显示宽度，截断时原样保留。
+func truncateDisplayPreservingANSI(text string, width int) string {
+	if displayWidth(stripANSI(text)) <= width {
+		return text
+	}
+	var builder strings.Builder
+	used := 0
+	for index := 0; index < len(text); {
+		if text[index] == 0x1b && index+1 < len(text) && text[index+1] == '[' {
+			end := index + 2
+			for end < len(text) && !(text[end] >= 'A' && text[end] <= 'Z') && !(text[end] >= 'a' && text[end] <= 'z') {
+				end++
+			}
+			if end < len(text) {
+				end++
+			}
+			builder.WriteString(text[index:end])
+			index = end
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(text[index:])
+		next := displayRuneWidth(r)
+		if used+next > width-1 {
+			break
+		}
+		builder.WriteString(text[index : index+size])
+		used += next
+		index += size
+	}
+	builder.WriteString("…\x1b[0m")
+	return builder.String()
+}
+
+func padDisplay(text string, width int) string {
+	padding := width - displayWidth(text)
+	if padding <= 0 {
+		return text
+	}
+	return text + strings.Repeat(" ", padding)
+}
+
+func displayWidth(text string) int {
+	width := 0
+	for _, char := range stripANSI(text) {
+		width += displayRuneWidth(char)
+	}
+	return width
+}
+
+func displayRuneWidth(char rune) int {
+	switch {
+	case char < 0x1100:
+		return 1
+	case char <= 0x115f:
+		return 2
+	case char == 0x2329 || char == 0x232a:
+		return 2
+	case char >= 0x2e80 && char <= 0xa4cf && char != 0x303f:
+		return 2
+	case char >= 0xac00 && char <= 0xd7a3:
+		return 2
+	case char >= 0xf900 && char <= 0xfaff:
+		return 2
+	case char >= 0xfe30 && char <= 0xfe6f:
+		return 2
+	case char >= 0xff00 && char <= 0xff60:
+		return 2
+	case char >= 0xffe0 && char <= 0xffe6:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func stripANSI(text string) string {
+	if !strings.Contains(text, "\x1b[") {
+		return text
+	}
+	var builder strings.Builder
+	for index := 0; index < len(text); {
+		if text[index] == 0x1b && index+1 < len(text) && text[index+1] == '[' {
+			index += 2
+			for index < len(text) && !(text[index] >= 'A' && text[index] <= 'Z') && !(text[index] >= 'a' && text[index] <= 'z') {
+				index++
+			}
+			if index < len(text) {
+				index++
+			}
+			continue
+		}
+		builder.WriteByte(text[index])
+		index++
+	}
+	return builder.String()
 }
 
 // pickerSessions 是选择器需要的存储端口（便于单测注入）。
@@ -171,15 +407,12 @@ func runSessionPicker(
 	ctx context.Context,
 	runtime commandRuntime,
 	sessions pickerSessions,
+	rows []persistent.SessionRow,
 	labels map[string]string,
 ) error {
 	file, ok := runtime.stdin.(*os.File)
 	if !ok || !term.IsTerminal(int(file.Fd())) {
 		return fmt.Errorf("%w: 交互选择需要真实终端", errInvalidCommand)
-	}
-	rows, err := sessions.Rows(ctx)
-	if err != nil {
-		return err
 	}
 	state := newPickerState(rows)
 	previous, err := term.MakeRaw(int(file.Fd()))
@@ -189,20 +422,45 @@ func runSessionPicker(
 	restore := func() { _ = term.Restore(int(file.Fd()), previous) }
 	defer restore()
 	_, _ = io.WriteString(runtime.stdout, "\x1b[?25l")
-	defer func() { _, _ = io.WriteString(runtime.stdout, "\x1b[?25h\x1b[2J\x1b[H") }()
+	defer func() { _, _ = io.WriteString(runtime.stdout, "\x1b[?25h\r\n") }()
+
+	width := terminalWidth(runtime.stdout)
+	previousLines := []string(nil)
+	firstFrame := true
+	draw := func() {
+		lines := buildPickerLines(state, labels, width)
+		if firstFrame {
+			_, _ = io.WriteString(runtime.stdout, "\x1b[2J\x1b[H")
+			firstFrame = false
+		}
+		for index, line := range lines {
+			if index < len(previousLines) && previousLines[index] == line {
+				continue
+			}
+			_, _ = fmt.Fprintf(runtime.stdout, "\x1b[%d;1H%s\x1b[K", index+1, line)
+		}
+		if len(lines) < len(previousLines) {
+			_, _ = fmt.Fprintf(runtime.stdout, "\x1b[%d;1H\x1b[J", len(lines)+1)
+		}
+		previousLines = append(previousLines[:0], lines...)
+	}
 
 	buffer := make([]byte, 8)
 	for {
-		_, _ = io.WriteString(runtime.stdout, "\x1b[2J\x1b[H")
-		renderPicker(runtime.stdout, state, labels)
+		draw()
 		count, readErr := file.Read(buffer)
 		if readErr != nil {
 			return readErr
 		}
 		key := parsePickerKey(buffer[:count])
+		selectedKey := ""
+		if current := state.current(); current != nil {
+			selectedKey = sessionRowKey(*current)
+		}
 		action := state.handleKey(key)
 		switch action {
 		case pickerQuit:
+			_, _ = io.WriteString(runtime.stdout, "\r\n")
 			return nil
 		case pickerAttach:
 			row := state.current()
@@ -239,12 +497,12 @@ func runSessionPicker(
 			}
 			if refreshed, refreshErr := sessions.Rows(ctx); refreshErr == nil {
 				state.rows = refreshed
-				state.move(0)
+				state.selectByKey(selectedKey)
 			}
 		case pickerCloseIdle:
 			closed := 0
 			for _, row := range append([]persistent.SessionRow(nil), state.rows...) {
-				if row.Live {
+				if row.Live || row.NativeOnly {
 					continue
 				}
 				if closeErr := sessions.Close(ctx, row); closeErr == nil {
@@ -254,10 +512,35 @@ func runSessionPicker(
 			state.toast = fmt.Sprintf("已关闭 %d 个空闲会话", closed)
 			if refreshed, refreshErr := sessions.Rows(ctx); refreshErr == nil {
 				state.rows = refreshed
-				state.move(0)
+				state.selectByKey(selectedKey)
 			}
 		}
 	}
+}
+
+func terminalWidth(writer io.Writer) int {
+	if file, ok := writer.(*os.File); ok {
+		if columns, _, err := term.GetSize(int(file.Fd())); err == nil && columns > 0 {
+			return columns
+		}
+	}
+	return 100
+}
+
+func sessionRowKey(row persistent.SessionRow) string {
+	return strings.ToLower(strings.TrimSpace(row.Provider)) + "\x00" + strings.TrimSpace(row.NativeID) + "\x00" + strings.TrimSpace(row.Name)
+}
+
+func (state *pickerState) selectByKey(key string) {
+	if key != "" {
+		for index := range state.rows {
+			if sessionRowKey(state.rows[index]) == key {
+				state.selected = index
+				return
+			}
+		}
+	}
+	state.move(0)
 }
 
 // parsePickerKey 把原始字节解析成具名按键（方向键为 ESC [ A/B）。

@@ -49,7 +49,13 @@ type SessionRow struct {
 	// NativeID 是该会话对应的 Provider 原生会话 id（能直接 resume）；未知为空。
 	NativeID string
 	// NativeOnly 表示这条记录来自 Provider 原生会话库，没有可 attach 的 tmux pane。
-	NativeOnly       bool
+	NativeOnly bool
+	// TurnState 是 Provider hook 上报的轮次状态（working/waiting/completed/idle）；
+	// tmux 行没有 hook 时为空，状态只按附着与否判断。
+	TurnState string
+	// AccountID 是 Provider CLI 的数字账号位（例如 aih claude 24 的 24）；
+	// 原生进程没有 AccountRef 时用它显示可读的 #24。
+	AccountID        string
 	WindowName       string
 	Command          string
 	PanePID          int

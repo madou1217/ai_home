@@ -103,9 +103,9 @@ func readCodexStateThreadRows(ctx context.Context, db *sql.DB, columns map[strin
 		if titleText == "" {
 			titleText = strings.TrimSpace(firstUser.String)
 		}
-		if titleText == "" {
-			continue
-		}
+		// 标题为空不等于会话不存在：新建会话、后台 thread 和刚恢复的
+		// 会话都可能在首个用户消息落库前就要出现在 ss 里。这里保留
+		// 空标题，由显示层回退到会话 id/项目名。
 		updated := updatedAtMS.Int64
 		if updated == 0 {
 			updated = updatedAt.Int64 * 1000

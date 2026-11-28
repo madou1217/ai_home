@@ -27,6 +27,7 @@ func runProviderSessionsList(
 	runtime commandRuntime,
 ) error {
 	filterRef := ""
+	filterID := ""
 	allProjects := false
 	options := make([]string, 0, len(arguments))
 	for _, argument := range arguments {
@@ -56,6 +57,7 @@ func runProviderSessionsList(
 			return err
 		}
 		filterRef = view.AccountRef.String()
+		filterID = strconv.FormatInt(view.CLIAccountID.Int64(), 10)
 	}
 	aiHomeDir, err := resolveAIHomeDir(runtime)
 	if err != nil {
@@ -76,33 +78,77 @@ func runProviderSessionsList(
 		Platform:  goruntime.GOOS,
 		Env:       os.Getenv,
 	}
-	rows, err := store.CollectSessions(ctx)
+	source := providerSessionSource{
+		runtime:     runtime,
+		store:       store,
+		aiHomeDir:   aiHomeDir,
+		providerID:  providerID,
+		filterRef:   filterRef,
+		filterID:    filterID,
+		allProjects: allProjects,
+	}
+	rows, err := source.Rows(ctx)
 	if err != nil {
-		return fmt.Errorf("读取持久会话失败: %w", err)
+		return err
+	}
+	labels := sessionAccountLabels(ctx, providerID, runtime)
+	if !terminalWriterIsTTY(runtime.stdin) || !terminalWriterIsTTY(runtime.stdout) {
+		writeSessionRows(runtime.stdout, providerID, rows, labels)
+		return nil
+	}
+	return runSessionPicker(ctx, runtime, source, rows, labels)
+}
+
+// providerSessionSource 是 aih <p> sessions 的采集/关闭端口；列表和交互
+// 选择器共用同一份数据，关闭后刷新也走同一套投影。
+type providerSessionSource struct {
+	runtime     commandRuntime
+	store       *persistent.TmuxSessionStore
+	aiHomeDir   string
+	providerID  string
+	filterRef   string
+	filterID    string
+	allProjects bool
+}
+
+func (source providerSessionSource) Rows(ctx context.Context) ([]persistent.SessionRow, error) {
+	rows, err := source.store.CollectSessions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("读取持久会话失败: %w", err)
 	}
 	// 原生启动没有 tmux pane；只读 tmux 会让 aih <p> sessions|ss 恒为空。
-	appendNativeCodexRows(ctx, runtime, &rows)
-	appendNativeProviderRows(ctx, runtime, &rows)
+	appendNativeProviderRows(ctx, source.runtime, &rows)
+	appendNativeCodexRows(ctx, source.runtime, &rows)
+	appendRecentNativeSessionRows(ctx, source.runtime, &rows, source.allProjects)
+	applyNativeTurnStates(source.aiHomeDir, rows)
+	ensureUniqueSessionTitles(rows)
 	selected := make([]persistent.SessionRow, 0, len(rows))
 	for _, row := range rows {
-		if row.Provider != providerID {
+		if row.Provider != source.providerID {
 			continue
 		}
-		if filterRef != "" && row.AccountRef != filterRef {
+		if source.filterRef != "" && row.AccountRef != source.filterRef &&
+			(source.filterID == "" || row.AccountID != source.filterID) {
 			continue
 		}
 		selected = append(selected, row)
 	}
-	if !allProjects {
+	if !source.allProjects {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
-			return cwdErr
+			return nil, cwdErr
 		}
 		selected = persistent.FilterSessionsByCwd(selected, cwd)
 	}
-	labels := sessionAccountLabels(ctx, providerID, runtime)
-	writeSessionRows(runtime.stdout, providerID, selected, labels)
-	return nil
+	sortSessionRowsForDisplay(selected)
+	return selected, nil
+}
+
+func (source providerSessionSource) Close(ctx context.Context, row persistent.SessionRow) error {
+	if row.NativeOnly {
+		return fmt.Errorf("原生会话不能从 aih %s sessions 关闭；退出该 Provider 进程后再刷新", source.providerID)
+	}
+	return source.store.CloseSession(ctx, row)
 }
 
 // sessionAccountLabels 读取 #<id> 与显示名；管理面不可用时退化为空表，
@@ -158,31 +204,16 @@ func writeSessionRows(
 	writer := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(writer, "状态\t账号\t会话名称\t会话ID\t项目\t最近活动")
 	for _, row := range rows {
-		status := "✔ 已结束"
-		if row.Live {
-			status = "● 运行中"
-		}
+		status := globalSessionStatus(row)
 		account := strings.TrimSpace(labels[row.AccountRef])
+		if account == "" && strings.TrimSpace(row.AccountID) != "" {
+			account = "#" + strings.TrimSpace(row.AccountID)
+		}
 		if account == "" {
 			account = shortAccountRef(row.AccountRef)
 		}
-		title := strings.TrimSpace(row.Label)
-		if title == "" {
-			title = strings.TrimSpace(row.Title)
-		}
-		if title == "" {
-			title = strings.TrimSpace(row.WindowName)
-		}
-		if title == "" {
-			title = "-"
-		}
-		project := strings.TrimSpace(row.Path)
-		if project == "" {
-			project = strings.TrimSpace(row.StartPath)
-		}
-		if project == "" {
-			project = "-"
-		}
+		title := displaySessionTitle(row)
+		project := sessionProjectPath(row)
 		sessionID := strings.TrimSpace(row.Name)
 		if row.NativeOnly {
 			if native := strings.TrimSpace(row.NativeID); native != "" {

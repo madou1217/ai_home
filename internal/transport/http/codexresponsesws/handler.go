@@ -225,7 +225,7 @@ func (handler *Handler) ServeHTTP(
 	controller := http.NewResponseController(response)
 	_ = controller.SetReadDeadline(time.Time{})
 	_ = controller.SetWriteDeadline(time.Time{})
-	client, err := websocket.Accept(
+	rawClient, err := websocket.Accept(
 		response,
 		request,
 		&websocket.AcceptOptions{
@@ -235,10 +235,13 @@ func (handler *Handler) ServeHTTP(
 	if err != nil {
 		return
 	}
-	client.SetReadLimit(MaxMessageBytes)
+	rawClient.SetReadLimit(MaxMessageBytes)
 	// 把 aih request id 绑在客户端连接上：后续任何 WS 错误帧都能带回同一个 ID。
-	wrappedClient := requestIDConnection{Connection: client, requestID: requestid.FromContext(request.Context())}
-	session := newManagedSession(wrappedClient, request.Context())
+	var client responseswebsocket.Connection = requestIDConnection{
+		Connection: rawClient,
+		requestID:  requestid.FromContext(request.Context()),
+	}
+	session := newManagedSession(client, request.Context())
 	if !handler.sessions.Add(session) {
 		_ = client.Close(websocket.StatusServiceRestart, "server closing")
 		return

@@ -178,8 +178,9 @@ type functionCallOutputDTO struct {
 	ID string `json:"id"`
 	// CallID 是被结果精确引用的调用 ID。
 	CallID string `json:"call_id"`
-	// Name 是 Codex 客户端附带的工具名提示，Canonical 用 call_id 配对，丢弃。
-	Name string `json:"name"`
+	// Name/Namespace 是 Codex 客户端附带的工具身份提示，Canonical 用 call_id 配对，丢弃。
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 	// Output 是字符串或多模态内容块数组。
 	Output json.RawMessage `json:"output"`
 	// Status 是历史工具结果状态。

@@ -110,8 +110,8 @@ function getAvailabilityMeta(availability: SessionAvailability): {
       };
     case 'unavailable':
       return {
-        label: '标识保留',
-        ledClass: 'hud-led hud-led--warn',
+        label: '会话在线',
+        ledClass: 'hud-led hud-led--info',
         toneClass: 'office-tone--unavailable',
       };
     case 'exited':

@@ -126,11 +126,11 @@ function getAvailabilityMeta(availability?: SessionAvailability): AvailabilityMe
       };
     case 'unavailable':
       return {
-        label: '原标识已保留',
-        ledClass: 'hud-led--warn',
-        tone: 'warn',
-        title: '原会话暂未确认可接入',
-        description: '原会话标识与工作目录已完整保留，刷新后会重新核对；绝不会自动重启或替换为新终端。',
+        label: '会话在线',
+        ledClass: 'hud-led--info',
+        tone: 'muted',
+        title: '已保存的原会话',
+        description: '会话标识与工作目录保留在办公室；终端附着需服务端目录证实对应的 tmux 会话。',
       };
     case 'exited':
       return {

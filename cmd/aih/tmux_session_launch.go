@@ -64,6 +64,7 @@ func maybeRunInTmux(
 			Socket:       socket,
 			Session:      name,
 			CWD:          cwd,
+			Label:        category,
 			CreatedAt:    time.Now(),
 		}); writeErr != nil {
 			return false, fmt.Errorf("登记 tmux 会话失败: %w", writeErr)

@@ -111,6 +111,47 @@ func bindTmuxNativeStates(aiHomeDir string, rows []persistent.SessionRow) {
 	}
 }
 
+// applyBoundNativeTitles 用 Provider 会话库给已绑定原生 id 的 tmux 行补真实
+// 标题；tmux pane title 往往只是 hostname，不能当作会话名。
+func applyBoundNativeTitles(ctx context.Context, runtime commandRuntime, rows []persistent.SessionRow) {
+	if len(rows) == 0 {
+		return
+	}
+	aiHomeDir, err := resolveAIHomeDir(runtime)
+	if err != nil || aiHomeDir == "" {
+		return
+	}
+	hostHomeDir := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_HOST_HOME"))
+	if hostHomeDir == "" {
+		hostHomeDir, _ = runtime.userHomeDir()
+	}
+	byProvider := make(map[string]bool)
+	for _, row := range rows {
+		if strings.TrimSpace(row.Socket) != "" && strings.TrimSpace(row.NativeID) != "" {
+			byProvider[strings.ToLower(strings.TrimSpace(row.Provider))] = true
+		}
+	}
+	for providerID := range byProvider {
+		index := nativeCandidatesForProvider(ctx, providerID, aiHomeDir, hostHomeDir)
+		for rowIndex := range rows {
+			row := &rows[rowIndex]
+			if !strings.EqualFold(strings.TrimSpace(row.Provider), providerID) || strings.TrimSpace(row.Socket) == "" || strings.TrimSpace(row.NativeID) == "" {
+				continue
+			}
+			for _, candidates := range index {
+				for _, candidate := range candidates {
+					if strings.TrimSpace(candidate.ID) != strings.TrimSpace(row.NativeID) {
+						continue
+					}
+					if title := usableSessionTitle(candidate.Title); title != "" {
+						row.Label = title
+					}
+				}
+			}
+		}
+	}
+}
+
 // appendNativeProviderRows 把存活的 Provider 原生会话补进 ss 行集。只在
 // 已有行没有同一 NativeID 时追加，避免和 Codex 锁投影或 tmux 行重复。
 func appendNativeProviderRows(ctx context.Context, runtime commandRuntime, rows *[]persistent.SessionRow) {

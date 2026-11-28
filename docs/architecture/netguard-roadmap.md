@@ -74,6 +74,8 @@
 - [ ] 启动 suspended / Job Object：消除初始进程跟踪竞态（当前 250ms watcher）
 - [ ] DNS 经 Dnscache 的归因（Windows DNS 客户端在 svchost 中发包，按 PID 阻断无法覆盖；Phase 5 处理）
 
+**WinDivert 透明重定向终止依据**：官方文档明确 “Windows considers any packet originating from, and destined to, the current machine to be a loopback packet” 且 “WinDivert considers loopback packets to be outbound only, and will not capture loopback packets on the inbound path”。因此改写后的包投递给本机 relay 无法形成可用的双向 NAT；4 种回注路径全部真机证伪。透明重定向只能走 WFP `ALE_CONNECT_REDIRECT`。
+
 **WinDivert 结论**：已从“IPv4 TCP 原型”升级为 Windows 的**可用严格后端**（IPv4 TCP+UDP、子进程、loopback 放行、fail closed，真机通过）。仍缺 IPv6 真机验证、ICMP/raw、启动竞态与 DNS/Dnscache；WFP callout（已编译/签名/安装）在内核归因与 IPv6/ICMP 上更完整，待 test signing 重启后加载对比。
 
 ### 2.1a WFP 前置条件（构建链已通，加载待重启）

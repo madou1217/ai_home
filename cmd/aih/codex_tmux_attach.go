@@ -35,8 +35,12 @@ func attachCodexTmuxIfRunning(ctx context.Context, runtime commandRuntime, threa
 	if err := exec.CommandContext(ctx, tmuxPath, "-L", socket, "has-session", "-t", "="+name).Run(); err != nil {
 		return false, nil
 	}
-	if output, err := exec.CommandContext(ctx, tmuxPath, "-L", socket, "display-message", "-p", "-t", "="+name, "#{pane_dead}").Output(); err == nil && strings.TrimSpace(string(output)) == "1" {
-		return false, nil
+	if output, err := exec.CommandContext(ctx, tmuxPath, "-L", socket, "list-panes", "-t", "="+name, "-F", "#{pane_dead}").Output(); err == nil {
+		for _, field := range strings.Fields(string(output)) {
+			if field == "1" {
+				return false, nil
+			}
+		}
 	}
 	_, _ = fmt.Fprintf(runtime.stderr, "[aih] thread %s 已在 tmux 会话 %s/%s 中运行，正在 attach\n", threadID, socket, name)
 	command := exec.CommandContext(ctx, tmuxPath, "-L", socket, "attach-session", "-t", "="+name)

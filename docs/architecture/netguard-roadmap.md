@@ -165,7 +165,7 @@
 - [ ] per-instance 透明 TCP 重定向（当前为阻断；App 需使用代理）
 - [ ] 外部 UDP/QUIC/DNS 策略（cgroup 规则会 drop；系统 resolver 旁路待验证）
 - [ ] CLI strict 四家真实 API 验收
-- [ ] GUI App 进程树验收（cgroup 继承，理论上覆盖子进程）
+- [x] 进程树验收：AWS 真机用子进程继承 cgroup，DNS/网络策略生效（GUI 显示未测，无桌面会话）
 - [ ] 多实例不同代理验收
 - [ ] 与 Docker/Colima/VPN/Tailscale 规则冲突处理
 - [ ] 容器/VM 不在宿主进程树范围的文档化

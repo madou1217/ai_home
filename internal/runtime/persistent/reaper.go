@@ -55,10 +55,13 @@ type SessionRow struct {
 	TurnState string
 	// AccountID 是 Provider CLI 的数字账号位（例如 aih claude 24 的 24）；
 	// 原生进程没有 AccountRef 时用它显示可读的 #24。
-	AccountID        string
-	WindowName       string
-	Command          string
-	PanePID          int
+	AccountID  string
+	WindowName string
+	Command    string
+	PanePID    int
+	// PaneDead 表示 tmux pane 已退出但 session 记录还在；它不是空闲可进入，
+	// 而是只能 resume 的已结束会话。
+	PaneDead         bool
 	Live             bool
 	CreatedAtMS      int64
 	LastActivityAtMS int64

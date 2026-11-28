@@ -317,6 +317,9 @@ type sessionStatus struct {
 func globalSessionState(row persistent.SessionRow) sessionStatus {
 	// tmux 会话即使没有客户端附着，pane 仍在，可以直接 attach；原生行
 	// 没有进程就是已结束，只能 resume。两者不能共用"空闲"。
+	if row.PaneDead {
+		return sessionStatus{Kind: "ended", Icon: "✔", Label: "已结束"}
+	}
 	alive := row.Live || strings.TrimSpace(row.Socket) != "" || row.PanePID > 0
 	if !alive {
 		return sessionStatus{Kind: "ended", Icon: "✔", Label: "已结束"}

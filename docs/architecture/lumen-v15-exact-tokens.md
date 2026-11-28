@@ -160,3 +160,70 @@ overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 
 The earlier auto-extracted App values are indicative only; phase B must repeat
 this same selector-by-selector curation before touching the Library UI.
+## Library (App Management Window) — macOS content tokens
+
+Per-platform overrides win: `body[data-platform=mac]` values are the macOS
+content baseline. Generic light/dark values follow for reference.
+
+```css
+/* macOS content baseline */
+--a-bg: #f8f9fc; --a-panel: #edf0f6; --a-ink: #202634; --a-muted: #7a8190;
+--a-line: #e2e6ee; --a-accent: #5273cf;
+--side-w: 192px; --detail-w: clamp(330px, 48%, 620px);
+grid-template-rows: 48px minmax(0, 1fr);   /* title row 48 */
+border-radius: 15px;
+box-shadow: 0 32px 90px #17243e60, 0 0 0 1px #ffffff8a;
+background: var(--a-bg); color: var(--a-ink); font-size: 13px;
+font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+
+/* dark macOS */
+--a-bg: #171b25; --a-panel: #202531; --a-ink: #e9edf7; --a-muted: #8d98aa;
+--a-line: #303746; --a-accent: #92a7ff;
+box-shadow: 0 32px 90px #080d1b99, 0 0 0 1px #ffffff25;
+```
+
+Sidebar:
+
+```css
+padding: 23px 15px 15px 17px;
+background: linear-gradient(155deg, #ecf1fa, #f6f8fc 70%);
+/* dark */ background: linear-gradient(145deg, #18263a, #121b2a);
+display: flex; flex-direction: column; min-height: 0;
+```
+
+Nav:
+
+```css
+.nav { display: flex; flex-direction: column; gap: 3px; margin-bottom: 25px; }
+.nav button { height: 39px; gap: 10px; padding: 0 10px; border-radius: 9px;
+              font-size: 12px; color: #65738a; text-align: left; }
+.nav button.on { background: #dfe7fa; color: #3f65c5; font-weight: 650;
+                 box-shadow: inset 0 1px 0 #fff9; }
+.dark .nav button.on { background: #263e64; color: #c0d2ff; box-shadow: none; }
+.navlabel { font-size: 10px; color: #8a98ad; font-weight: 600;
+            padding: 0 10px 8px; letter-spacing: .08em; text-transform: uppercase; }
+```
+
+History rows (final values after later overrides):
+
+```css
+.native-row { height: 52px; gap: 7px; padding: 6px 9px; border-radius: 8px;
+              border: 1px solid transparent; color: var(--a-ink);
+              transition: background .16s, border-color .16s; }
+.native-row.selected { background: linear-gradient(105deg, #8295e529, #8194e119);
+                       border-color: #8194e145; }
+/* dark */ .native-row.selected { background: linear-gradient(105deg, #8295e52e, #8194e118); }
+```
+
+Header / search / inspector:
+
+```css
+.app-top { padding: 23px 27px 18px; gap: 12px; }
+.native-search { height: 32px; padding: 6px 8px; border-radius: 8px;
+                 width: clamp(140px, 19vw, 285px);
+                 background: var(--a-panel); border: 1px solid var(--a-line); }
+/* native-mode inspector (no card chrome) */
+.inspector { background: var(--a-bg); border: 0; border-radius: 0; padding: 0;
+             overflow: auto; min-height: 260px; }
+.splitter { width: 5px; background: var(--a-line); cursor: col-resize; }
+```

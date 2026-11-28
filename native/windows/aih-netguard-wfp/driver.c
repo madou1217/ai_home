@@ -45,6 +45,11 @@ typedef const STRING *PCUTF8_STRING;
 typedef struct _AIHNG_STATUS {
     ULONG Count;
     ULONG Blocked;
+    ULONG RemoteType;
+    ULONG RemoteAddr;
+    ULONG LocalType;
+    ULONG LocalAddr;
+    ULONG LastPid;
 } AIHNG_STATUS;
 
 static const GUID AIHNG_PROVIDER_KEY =
@@ -66,6 +71,11 @@ static KSPIN_LOCK g_PidLock;
 static ULONG g_PidCount = 0;
 static ULONG g_Pids[AIHNG_MAX_PIDS];
 static volatile LONG g_Blocked = 0;
+static volatile ULONG g_DbgRemoteType = 0;
+static volatile ULONG g_DbgRemoteAddr = 0;
+static volatile ULONG g_DbgLocalType = 0;
+static volatile ULONG g_DbgLocalAddr = 0;
+static volatile ULONG g_DbgLastPid = 0;
 
 static BOOLEAN
 AihngIsProtected(_In_ UINT32 ProcessId)
@@ -86,20 +96,23 @@ AihngIsProtected(_In_ UINT32 ProcessId)
 }
 
 static BOOLEAN
-AihngIsLoopbackRemote(_In_ const FWPS_INCOMING_VALUES0 *inFixedValues)
+AihngIsLoopbackRemote(_In_ const FWPS_INCOMING_VALUES0 *inFixedValues, _In_ ULONG family)
 {
-    if (RtlEqualMemory(&inFixedValues->layerId, &FWPM_LAYER_ALE_AUTH_CONNECT_V4,
-                       sizeof(GUID))) {
+    if (family == 4) {
         const FWPS_INCOMING_VALUE0 *remote =
             &inFixedValues->incomingValue[FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_REMOTE_ADDRESS];
         const FWPS_INCOMING_VALUE0 *local =
             &inFixedValues->incomingValue[FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_LOCAL_ADDRESS];
         UINT32 addresses[2] = {0, 0};
+        g_DbgRemoteType = remote->value.type;
+        g_DbgLocalType = local->value.type;
         if (remote->value.type == FWP_UINT32) {
             addresses[0] = remote->value.uint32;
+            g_DbgRemoteAddr = remote->value.uint32;
         }
         if (local->value.type == FWP_UINT32) {
             addresses[1] = local->value.uint32;
+            g_DbgLocalAddr = local->value.uint32;
         }
         for (UINT32 index = 0; index < 2; index++) {
             UINT32 address = addresses[index];
@@ -110,8 +123,7 @@ AihngIsLoopbackRemote(_In_ const FWPS_INCOMING_VALUES0 *inFixedValues)
         }
         return FALSE;
     }
-    if (RtlEqualMemory(&inFixedValues->layerId, &FWPM_LAYER_ALE_AUTH_CONNECT_V6,
-                       sizeof(GUID))) {
+    if (family == 6) {
         const FWPS_INCOMING_VALUE0 *value =
             &inFixedValues->incomingValue[FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_REMOTE_ADDRESS];
         if (value->value.type == FWP_BYTE_ARRAY16_TYPE) {
@@ -132,7 +144,8 @@ AihngIsLoopbackRemote(_In_ const FWPS_INCOMING_VALUES0 *inFixedValues)
 }
 
 static VOID NTAPI
-AihngClassifyConnect(
+AihngClassifyConnectCommon(
+    _In_ ULONG family,
     _In_ const FWPS_INCOMING_VALUES0 *inFixedValues,
     _In_ const FWPS_INCOMING_METADATA_VALUES0 *inMetaValues,
     _Inout_opt_ void *layerData,
@@ -150,10 +163,11 @@ AihngClassifyConnect(
     }
     if ((inMetaValues->currentMetadataValues & FWPS_METADATA_FIELD_PROCESS_ID) != 0 &&
         AihngIsProtected((UINT32)inMetaValues->processId)) {
+        g_DbgLastPid = (ULONG)inMetaValues->processId;
         /* Loopback is the only allowed exit: the instance's own proxy
          * listener (and AIH's local gateway/OAuth callbacks) live there.
          * External destinations never are. */
-        if (AihngIsLoopbackRemote(inFixedValues)) {
+        if (AihngIsLoopbackRemote(inFixedValues, family)) {
             classifyOut->actionType = FWP_ACTION_PERMIT;
             return;
         }
@@ -163,6 +177,30 @@ AihngClassifyConnect(
         return;
     }
     classifyOut->actionType = FWP_ACTION_PERMIT;
+}
+
+static VOID NTAPI
+AihngClassifyConnectV4(
+    _In_ const FWPS_INCOMING_VALUES0 *inFixedValues,
+    _In_ const FWPS_INCOMING_METADATA_VALUES0 *inMetaValues,
+    _Inout_opt_ void *layerData,
+    _In_ const FWPS_FILTER0 *filter,
+    _In_ UINT64 flowContext,
+    _Inout_ FWPS_CLASSIFY_OUT0 *classifyOut)
+{
+    AihngClassifyConnectCommon(4, inFixedValues, inMetaValues, layerData, filter, flowContext, classifyOut);
+}
+
+static VOID NTAPI
+AihngClassifyConnectV6(
+    _In_ const FWPS_INCOMING_VALUES0 *inFixedValues,
+    _In_ const FWPS_INCOMING_METADATA_VALUES0 *inMetaValues,
+    _Inout_opt_ void *layerData,
+    _In_ const FWPS_FILTER0 *filter,
+    _In_ UINT64 flowContext,
+    _Inout_ FWPS_CLASSIFY_OUT0 *classifyOut)
+{
+    AihngClassifyConnectCommon(6, inFixedValues, inMetaValues, layerData, filter, flowContext, classifyOut);
 }
 
 static NTSTATUS NTAPI
@@ -216,7 +254,7 @@ AihngRegisterWfp(_In_ PDEVICE_OBJECT DeviceObject)
 
     RtlZeroMemory(&calloutV4, sizeof(calloutV4));
     calloutV4.calloutKey = AIHNG_CALLOUT_V4_KEY;
-    calloutV4.classifyFn = AihngClassifyConnect;
+    calloutV4.classifyFn = AihngClassifyConnectV4;
     calloutV4.notifyFn = AihngNotify;
     status = FwpsCalloutRegister0(DeviceObject, &calloutV4, &g_CalloutIdV4);
     if (!NT_SUCCESS(status)) {
@@ -224,7 +262,7 @@ AihngRegisterWfp(_In_ PDEVICE_OBJECT DeviceObject)
     }
     RtlZeroMemory(&calloutV6, sizeof(calloutV6));
     calloutV6.calloutKey = AIHNG_CALLOUT_V6_KEY;
-    calloutV6.classifyFn = AihngClassifyConnect;
+    calloutV6.classifyFn = AihngClassifyConnectV6;
     calloutV6.notifyFn = AihngNotify;
     status = FwpsCalloutRegister0(DeviceObject, &calloutV6, &g_CalloutIdV6);
     if (!NT_SUCCESS(status)) {
@@ -256,6 +294,7 @@ AihngRegisterWfp(_In_ PDEVICE_OBJECT DeviceObject)
     filter.subLayerKey = AIHNG_SUBLAYER_KEY;
     filter.weight.type = FWP_EMPTY;
     filter.providerKey = (GUID *)&AIHNG_PROVIDER_KEY;
+    filter.context = 4;
     status = FwpmFilterAdd0(g_EngineHandle, &filter, NULL, &g_FilterIdV4);
     if (!NT_SUCCESS(status)) {
         return status;
@@ -263,6 +302,7 @@ AihngRegisterWfp(_In_ PDEVICE_OBJECT DeviceObject)
     filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
     filter.displayData.name = L"AIH NetGuard Filter V6";
     filter.action.calloutKey = AIHNG_CALLOUT_V6_KEY;
+    filter.context = 6;
     status = FwpmFilterAdd0(g_EngineHandle, &filter, NULL, &g_FilterIdV6);
     return status;
 }
@@ -345,6 +385,11 @@ AihngDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP Irp)
             result->Count = g_PidCount;
             KeReleaseSpinLock(&g_PidLock, irql);
             result->Blocked = (ULONG)InterlockedCompareExchange(&g_Blocked, 0, 0);
+            result->RemoteType = g_DbgRemoteType;
+            result->RemoteAddr = g_DbgRemoteAddr;
+            result->LocalType = g_DbgLocalType;
+            result->LocalAddr = g_DbgLocalAddr;
+            result->LastPid = g_DbgLastPid;
             information = sizeof(AIHNG_STATUS);
         }
         break;

@@ -25,6 +25,7 @@ import {
   extractProxyPort,
   sanitizeProxyUrl,
   type AppDeskInstance,
+  type AppDeskLaunchProfile,
   type AppDeskProxyStatus,
   type AppDeskView,
   type LocalApp
@@ -215,6 +216,7 @@ export default function AppDeskPanel() {
   const [launchProxyUrl, setLaunchProxyUrl] = useState('');
   const [launchSelector, setLaunchSelector] = useState('');
   const [launching, setLaunching] = useState(false);
+  const [rememberedProfile, setRememberedProfile] = useState<AppDeskLaunchProfile | null>(null);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [reconnectBanner, setReconnectBanner] = useState<ReconnectBanner | null>(null);
@@ -389,6 +391,49 @@ export default function AppDeskPanel() {
     () => appCatalog.find((item) => item.id === launchAppId),
     [appCatalog, launchAppId]
   );
+  useEffect(() => {
+    if (!launchOpen || !launchAppId) {
+      setRememberedProfile(null);
+      return;
+    }
+    let cancelled = false;
+    void appDeskAPI.getProfile(launchAppId)
+      .then((profile) => {
+        if (cancelled) return;
+        setRememberedProfile(profile);
+        const spec = profile?.policy?.proxy;
+        if (!spec) return;
+        switch (spec.kind) {
+          case 'selector':
+            if (spec.selector) {
+              setLaunchProxyMode('selector');
+              setLaunchSelector(spec.selector);
+            }
+            break;
+          case 'url':
+            if (spec.url) {
+              setLaunchProxyMode('custom');
+              setLaunchProxyUrl(spec.url);
+            }
+            break;
+          case 'local':
+            setLaunchProxyMode('default');
+            break;
+          case 'direct':
+            setLaunchProxyMode('direct');
+            break;
+          default:
+            break;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRememberedProfile(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [launchOpen, launchAppId]);
+
   const launchCustomUrl = launchProxyUrl.trim();
   const launchSelectorValue = launchSelector.trim();
   const launchSelectorValid = launchProxyMode !== 'selector'
@@ -1308,6 +1353,20 @@ export default function AppDeskPanel() {
             />
           </label>
           {selectedApp ? <p className="app-desk-launch-hint">{selectedApp.path}</p> : null}
+          {rememberedProfile?.policy?.proxy ? (
+            <p className="app-desk-launch-hint">
+              已记住上次：
+              {rememberedProfile.policy.proxy.kind === 'selector'
+                ? `节点/地区 ${rememberedProfile.policy.proxy.selector || '—'}`
+                : rememberedProfile.policy.proxy.kind === 'url'
+                  ? `自定义 ${sanitizeProxyUrl(rememberedProfile.policy.proxy.url)}`
+                  : rememberedProfile.policy.proxy.kind === 'local'
+                    ? '本机代理'
+                    : '直连'}
+              {rememberedProfile.lastRegion ? ` · ${rememberedProfile.lastRegion}` : ''}
+              （启动成功后自动更新）
+            </p>
+          ) : null}
 
           <div className="app-desk-launch-field">
             <span className="app-desk-launch-label">代理参数</span>

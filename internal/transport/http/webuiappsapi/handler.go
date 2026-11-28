@@ -19,6 +19,8 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyserve"
 	"github.com/madou1217/ai_home/internal/runtime/appsessions"
+	"github.com/madou1217/ai_home/internal/runtime/launchprofile"
+	"github.com/madou1217/ai_home/internal/runtime/netguard"
 	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
 	"github.com/madou1217/ai_home/internal/runtime/proxyendpoints"
 )
@@ -42,6 +44,10 @@ const (
 	DeskKillPath         = DeskPath + "/kill"
 	DeskHistoryPath      = DeskPath + "/history"
 	DeskHistoryClearPath = DeskHistoryPath + "/clear"
+	// ProfilePath reads the remembered launch configuration for one app.
+	//
+	//	GET /v1/management/webui/apps/profile?id=<appId>
+	ProfilePath = Path + "/profile"
 
 	maxBodyBytes = 16 * 1024
 )
@@ -89,6 +95,7 @@ type Handler struct {
 	launcher     ProxyLauncher
 	proxyEntries ProxyEntries
 	aiHomeDir    string
+	profiles     *launchprofile.Store
 }
 
 // NewHandler 创建 Handler。
@@ -96,13 +103,17 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Catalog == nil || dependencies.Launcher == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{
+	handler := &Handler{
 		authorizer:   dependencies.Authorizer,
 		catalog:      dependencies.Catalog,
 		launcher:     dependencies.Launcher,
 		proxyEntries: dependencies.ProxyEntries,
 		aiHomeDir:    dependencies.AIHomeDir,
-	}, nil
+	}
+	if strings.TrimSpace(dependencies.AIHomeDir) != "" {
+		handler.profiles = launchprofile.New(dependencies.AIHomeDir)
+	}
+	return handler, nil
 }
 
 // ServeHTTP 处理列表与启动。
@@ -154,6 +165,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			return
 		}
 		handler.history(response, request)
+	case ProfilePath:
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
+			return
+		}
+		handler.profile(response, request)
 	case DeskHistoryClearPath:
 		if request.Method != http.MethodPost {
 			response.Header().Set("Allow", http.MethodPost)
@@ -191,6 +209,8 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		Proxy         bool   `json:"proxy"`
 		ProxyURL      string `json:"proxyUrl"`
 		ProxySelector string `json:"proxySelector"`
+		NetworkMode   string `json:"networkMode"`
+		Remember      *bool  `json:"remember"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes))
 	decoder.DisallowUnknownFields()
@@ -216,6 +236,13 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 	customURL := strings.TrimSpace(payload.ProxyURL)
 	if selector != "" && customURL != "" {
 		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload", "message": "proxySelector 与 proxyUrl 只能指定一个"})
+		return
+	}
+	networkMode := strings.TrimSpace(payload.NetworkMode)
+	switch netguard.Mode(networkMode) {
+	case "", netguard.ModeDirect, netguard.ModeCooperative, netguard.ModeStrict:
+	default:
+		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload", "message": "networkMode 必须是 direct / cooperative / strict_proxy"})
 		return
 	}
 	entry := appproxyserve.Entry{}
@@ -271,7 +298,8 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "record_failed", "message": recordErr.Error()})
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{
+	profile, profileErr := handler.rememberProfile(request, app, entry, proxyURL, selector, customURL, payload.Proxy, networkMode, payload.Remember)
+	responsePayload := map[string]any{
 		"ok":            true,
 		"app":           viewFor(app),
 		"proxyUrl":      proxyURL,
@@ -281,7 +309,88 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		"proxyRegion":   entry.Region,
 		"proxyPid":      entry.PID,
 		"instance":      instance,
+	}
+	if profileErr != nil {
+		responsePayload["profileError"] = profileErr.Error()
+	} else if profile != nil {
+		responsePayload["profile"] = profile
+	}
+	writeJSON(response, http.StatusOK, responsePayload)
+}
+
+func (handler *Handler) profile(response http.ResponseWriter, request *http.Request) {
+	if handler.profiles == nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "profile_store_unavailable"})
+		return
+	}
+	appID := strings.TrimSpace(request.URL.Query().Get("id"))
+	if appID == "" {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload", "message": "缺少 id"})
+		return
+	}
+	target := netguard.Target{
+		Provider:     appID,
+		Surface:      "desktop",
+		AccountRef:   strings.TrimSpace(request.URL.Query().Get("accountRef")),
+		InstanceSlot: strings.TrimSpace(request.URL.Query().Get("instanceSlot")),
+	}
+	profile, found, err := handler.profiles.Get(target)
+	if err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "profile_read_failed", "message": err.Error()})
+		return
+	}
+	if !found {
+		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "profile": nil})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "profile": profile})
+}
+
+func (handler *Handler) rememberProfile(
+	request *http.Request,
+	app launcher.App,
+	entry appproxyserve.Entry,
+	proxyURL, selector, customURL string,
+	proxyRequested bool,
+	networkMode string,
+	remember *bool,
+) (*launchprofile.Profile, error) {
+	if remember != nil && !*remember {
+		return nil, nil
+	}
+	if handler.profiles == nil {
+		return nil, nil
+	}
+	spec := netguard.ProxySpec{Kind: netguard.ProxyDirect}
+	switch {
+	case selector != "":
+		spec = netguard.ProxySpec{Kind: netguard.ProxySelector, Selector: selector}
+	case customURL != "":
+		spec = netguard.ProxySpec{Kind: netguard.ProxyURL, URL: customURL}
+	case proxyRequested:
+		spec = netguard.ProxySpec{Kind: netguard.ProxyLocal}
+	}
+	if _, err := spec.Normalize(); err != nil {
+		return nil, err
+	}
+	mode := netguard.Mode(networkMode)
+	if mode == "" {
+		if proxyURL != "" {
+			mode = netguard.ModeCooperative
+		} else {
+			mode = netguard.ModeDirect
+		}
+	}
+	profile, err := handler.profiles.Put(launchprofile.Profile{
+		Target:     netguard.Target{Provider: app.ID, Surface: "desktop"},
+		Policy:     netguard.Policy{Mode: mode, Proxy: spec, DNS: netguard.DNSProxy},
+		LastProxy:  proxyURL,
+		LastRegion: entry.Region,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &profile, nil
 }
 
 func (handler *Handler) desk(response http.ResponseWriter, request *http.Request) {

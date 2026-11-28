@@ -180,12 +180,15 @@
 
 ## Phase 6 — LaunchProfile 与 preflight
 
-- [ ] LaunchProfile 持久化（按 provider/surface/account/instanceSlot）
-- [ ] 记忆 ProxySpec（国家/城市/池/节点/URL），不保存凭据
+- [x] LaunchProfile 持久化（按 provider/surface/account/instanceSlot）→ `<aiHome>/run/launch-profiles.json`，原子写、0600
+- [x] 记忆 ProxySpec（direct/local/selector/URL）+ 最近解析入口与地区，不保存凭据
+- [x] App Desk 启动成功后自动写入；`GET /v1/management/webui/apps/profile?id=` 读取
+- [x] WebUI 启动弹窗预填上次代理（真机：Calculator 显示“已记住上次：直连”并选中直连）
 - [ ] 打开前 preflight：selector 有效、候选可出网、入口可绑定、账号凭据有效、Guard 可用
 - [ ] 失败交互：更换代理 / 继续但不隔离 / 取消
 - [ ] 节点失效时提示“范围内换节点”，不静默换出口
-- [ ] WebUI/CLI 编辑与重置 LaunchProfile
+- [ ] WebUI/CLI 编辑与重置 LaunchProfile（当前仅启动成功自动更新）
+- [ ] Provider desktop/CLI 启动路径写入同一 Profile（Phase 7/8）
 
 ---
 
@@ -237,11 +240,11 @@
 | macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
 | DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
-| LaunchProfile / preflight | 组件部分有 | 15% | ⬜ Phase 6 |
+| LaunchProfile / preflight | App Desk 持久化+预填真机通过 | 35% | 🚧 Phase 6 |
 | 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈28%** | 🚧 |
+| **总目标** | — | **≈30%** | 🚧 |
 
 ---
 

@@ -73,6 +73,25 @@ export interface LocalApp {
   proxyLabel: string;
 }
 
+/** 记住的上次启动配置（GET /v1/management/webui/apps/profile）。 */
+export interface AppDeskLaunchProfile {
+  target: {
+    provider: string;
+    surface?: string;
+    accountRef?: string;
+    instanceSlot?: string;
+  };
+  policy: {
+    mode: string;
+    proxy: { kind: string; selector?: string; url?: string };
+    dns?: string;
+  };
+  lastProxy?: string;
+  lastRegion?: string;
+  lastSuccess?: number;
+  updatedAt?: number;
+}
+
 export interface LocalAppLaunchInput {
   id?: string;
   query?: string;
@@ -350,6 +369,14 @@ export const appDeskAPI = {
   },
 
   /** 本机应用目录（与 alt+space / aih app 同源）。 */
+  async getProfile(id: string): Promise<AppDeskLaunchProfile | null> {
+    const data = await requestApps<{ ok: boolean; profile?: AppDeskLaunchProfile | null }>(
+      'GET',
+      `/profile?id=${encodeURIComponent(id)}`
+    );
+    return data.profile ?? null;
+  },
+
   async listApps(): Promise<LocalApp[]> {
     const data = await requestApps<{ ok: boolean; apps?: LocalApp[] }>('GET', '');
     return Array.isArray(data.apps) ? data.apps : [];

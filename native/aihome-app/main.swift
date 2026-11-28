@@ -98,7 +98,7 @@ func runStandaloneLumen(openOrbitFirst: Bool) -> Never {
 final class StandaloneLumenDelegate: NSObject, NSApplicationDelegate {
   private let openOrbitFirst: Bool
   private let workspace = ClipboardWorkspaceWindow()
-  private let orbit = QuickOrbitWindow()
+  private let orbit = V15OrbitController()
 
   init(openOrbitFirst: Bool) {
     self.openOrbitFirst = openOrbitFirst
@@ -113,6 +113,9 @@ final class StandaloneLumenDelegate: NSObject, NSApplicationDelegate {
     orbit.configure(origin: config.origin, managementKey: config.managementKey, enabled: true, position: pos)
     workspace.onOpenOrbit = { [weak self] in self?.orbit.show() }
     orbit.onOpenWorkspace = { [weak self] in self?.workspace.show() }
+    orbit.onOpenWorkspaceWithSelection = { [weak self] itemID in
+      self?.workspace.show(selectingItemID: itemID)
+    }
 
     if openOrbitFirst {
       orbit.show()
@@ -154,11 +157,14 @@ final class OnboardingDelegate: NSObject, NSApplicationDelegate {
     win.onOpenOrbit = { [weak self] in self?.lumenOrbit.show() }
     return win
   }()
-  private lazy var lumenOrbit: QuickOrbitWindow = {
-    let orb = QuickOrbitWindow()
+  private lazy var lumenOrbit: V15OrbitController = {
+    let orb = V15OrbitController()
     let cfg = LumenLocalConfigLoader.resolve()
     orb.configure(origin: cfg.origin, managementKey: cfg.managementKey, enabled: true, position: LumenClipboardStore.shared.settings.quickOrbitPosition)
     orb.onOpenWorkspace = { [weak self] in self?.lumenWorkspace.show() }
+    orb.onOpenWorkspaceWithSelection = { [weak self] itemID in
+      self?.lumenWorkspace.show(selectingItemID: itemID)
+    }
     return orb
   }()
 

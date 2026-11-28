@@ -29,6 +29,13 @@ swiftc -O -target "$TARGET" -o "$APP/Contents/MacOS/ai-home" \
   "$ROOT/native/clipboard/LumenOrbitViewport.swift" \
   "$ROOT/native/clipboard/LumenOrbitDisplayCoordinator.swift" \
   "$ROOT/native/clipboard/QuickOrbitWindow.swift" \
+  "$ROOT/native/clipboard/v15/V15Tokens.swift" \
+  "$ROOT/native/clipboard/v15/V15Glyphs.swift" \
+  "$ROOT/native/clipboard/v15/V15Materials.swift" \
+  "$ROOT/native/clipboard/v15/V15OpticalDots.swift" \
+  "$ROOT/native/clipboard/v15/V15OrbitParticles.swift" \
+  "$ROOT/native/clipboard/v15/V15OrbitRail.swift" \
+  "$ROOT/native/clipboard/v15/V15OrbitController.swift" \
   "$ROOT/native/aihome-app/main.swift" \
   -framework AppKit -framework ApplicationServices -framework CoreGraphics \
   -framework QuartzCore -framework PDFKit -framework AVFoundation -framework AVKit \

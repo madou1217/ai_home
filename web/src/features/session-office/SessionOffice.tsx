@@ -28,6 +28,7 @@ interface SessionItem extends GlobalSessionRow {
   projectPath: string;
   projectName: string;
   lastActive: number;
+  latestMessage: string;
 }
 
 function resolveState(row: GlobalSessionRow): { state: SessionState; label: string } {
@@ -52,6 +53,8 @@ function toItem(row: GlobalSessionRow): SessionItem {
   const sessionKey = String(row.Socket || '').trim() && String(row.Name || '').trim()
     ? `tmux:${row.Socket}:${row.Name}`
     : nativeId || `${row.Provider}:${row.Name}`;
+  const message = String(row.LastMessage || '').trim();
+  const role = String(row.LastMessageRole || '').trim();
   return {
     ...row,
     key: sessionKey,
@@ -65,7 +68,8 @@ function toItem(row: GlobalSessionRow): SessionItem {
         : '-',
     projectPath: String(row.Path || row.StartPath || '').trim(),
     projectName: projectNameOf(row.Path || row.StartPath || ''),
-    lastActive: Number(row.LastActiveAtMS || row.LastActivityAtMS || row.CreatedAtMS || 0),
+    lastActive: Number(row.LastMessageAtMS || row.LastActiveAtMS || row.LastActivityAtMS || row.CreatedAtMS || 0),
+    latestMessage: message ? (role ? `${role} · ${message}` : message) : '',
   };
 }
 
@@ -149,6 +153,7 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
           item.projectName,
           item.projectPath,
           item.AccountRef,
+          item.latestMessage,
         ].join(' ').toLowerCase();
         return haystack.includes(normalizedQuery);
       })
@@ -278,6 +283,11 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
                           </span>
                           <span>{formatTime(item.lastActive)}</span>
                         </div>
+                        {item.latestMessage ? (
+                          <div className="session-list-row-latest" title={item.latestMessage}>
+                            {item.latestMessage}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="session-list-row-actions">
                         <Button

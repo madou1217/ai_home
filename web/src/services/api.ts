@@ -2788,6 +2788,9 @@ export interface GlobalSessionRow {
   NativeOnly: boolean;
   TurnState: string;
   AccountID: string;
+  LastMessage: string;
+  LastMessageRole: string;
+  LastMessageAtMS: number;
   WindowName: string;
   Command: string;
   PanePID: number;

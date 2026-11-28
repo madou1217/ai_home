@@ -287,6 +287,15 @@
   white-space: nowrap;
 }
 
+.session-list-row-latest {
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .session-list-row-actions {
   display: flex;
   flex: 0 0 auto;

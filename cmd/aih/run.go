@@ -470,6 +470,9 @@ func isRegisteredProvider(providerID string) bool {
 // runProviderLaunch composes the same native/relay execution path for both the
 // explicit escape and normal parsed commands; it never dispatches management verbs.
 func runProviderLaunch(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	if handled, err := maybeRunInTmux(ctx, runtime, providerID, append([]string{providerID}, arguments...)); handled {
+		return err
+	}
 	arguments, wantDesktop := stripDesktopFlag(arguments)
 	// 显式 --desktop：任何声明了桌面客户端的 Provider 都走 open-app。
 	if wantDesktop {

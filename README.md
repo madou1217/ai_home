@@ -549,7 +549,7 @@ aih ss                       # 所有工具的会话总览（--list 只预览）
 - **长参数**：`-S`、`-R`、`-M` 是 aih 自己的开关，对应 `--session`、`--aih-resume`、`--aih-mirror`；它们不会吞掉原生的 `--resume` 等参数。
 - **续接与分叉**：`resume` 把「接着上次聊」翻译成各 provider 的原生恢复参数；`fork` 从上一段对话分叉出新会话、原对话不动（无分叉能力的 provider 会明确拒绝）。不带 ID 时用「最近一段」（cline 必须给 ID，kimi / kiro 的入口在 TUI 内）。对应关系见 `aih <cli> resume --help`。
 - **原生透传**：`aih <cli> -- <任意原生参数...>` 把 `--` 之后逐字交给原生 CLI，即使撞上 aih 的保留字（`ls`、`login`、`resume`…）也不会被拦截。
-- **socket 命名**：每个账号一个 tmux server，socket 为 `aih-<provider>-<accountRef>`；AIH Server 的会话用 `aih-<provider>-gateway`。
+- **socket 命名**：交互式 provider/harness 启动时注册到持久会话表，socket 为 `aih-tmux-<provider>`；`aih ss` 通过持久注册表发现并 attach。`aih ss` 本身只读，不会创建 tmux 会话。
 
 tmux 常用操作（指挥键 `Ctrl-b`：先按 `Ctrl-b` 松开，再按下一个键）：
 

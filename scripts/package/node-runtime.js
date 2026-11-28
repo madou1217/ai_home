@@ -269,11 +269,35 @@ async function ensureNodeRuntime(options = {}) {
 }
 
 /** 把运行时复制进 bundle 的 runtime/ 目录（保留可执行位）。 */
+// runtimeCopyFilter 把 pruneRuntime 的删除规则前移成“不复制”。
+//
+// 宿主的 Node 安装目录可能带着整套全局 CLI（实测 1.7 GB / 8 万个文件），
+// 原来先整套复制再删掉其中 90%，光这一步就要 33 秒。按保留白名单边遍历边跳过，
+// 复制量降到 ~126 MB / 2300 个文件。pruneRuntime 仍保留为兜底，规则不一致时
+// 会继续删除，不会让不该带的文件混进包里。
+function runtimeCopyFilter(target) {
+  const removedAtRoot = new Set(['include', 'share', 'CHANGELOG.md', 'CHANGELOG_V8.md']);
+  const windows = isWindows(target);
+  return (relative) => {
+    const parts = relative.split('/');
+    if (parts.length === 1 && removedAtRoot.has(parts[0])) return false;
+    if (windows) {
+      // Windows 发行包是扁平结构，只保留 npm/corepack 两个全局包。
+      if (parts[0] === 'node_modules' && parts.length === 2 && parts[1] !== 'npm' && parts[1] !== 'corepack') return false;
+      return true;
+    }
+    // 非 Windows：bin 下只留 node，lib/node_modules 下只留 npm。
+    if (parts[0] === 'bin' && parts.length === 2 && parts[1] !== 'node') return false;
+    if (parts[0] === 'lib' && parts[1] === 'node_modules' && parts.length === 3 && parts[2] !== 'npm') return false;
+    return true;
+  };
+}
+
 function copyRuntimeIntoBundle(runtimeRoot, bundleRoot, target) {
   const destination = path.join(bundleRoot, 'runtime');
   removeIfExists(destination);
   ensureDir(destination);
-  copyTree(runtimeRoot, destination, { dereference: true });
+  copyTree(runtimeRoot, destination, { dereference: true, filter: runtimeCopyFilter(target) });
   pruneRuntime(destination, target);
   removeIfExists(path.join(destination, '.aih-runtime.json'));
   const node = path.join(destination, isWindows(target) ? 'node.exe' : path.join('bin', 'node'));

@@ -9,18 +9,21 @@ function ensureDir(dir) {
   return dir;
 }
 
-function copyTree(source, destination, options = {}) {
+function copyTree(source, destination, options = {}, relative = '') {
   const stat = fs.statSync(source);
   if (stat.isSymbolicLink() && options.dereference !== false) {
     // fs.cp 的 dereference 只对递归复制生效；单文件符号链接要自己解引用。
     const real = fs.realpathSync(source);
-    return copyTree(real, destination, options);
+    return copyTree(real, destination, options, relative);
   }
   if (stat.isDirectory()) {
     fs.mkdirSync(destination, { recursive: true });
     for (const entry of fs.readdirSync(source)) {
       if (entry === '.DS_Store' || entry.startsWith('._')) continue;
-      copyTree(path.join(source, entry), path.join(destination, entry), options);
+      const childRelative = relative ? relative + '/' + entry : entry;
+      // filter 让“先整套复制、再删掉大部分”的调用方改成边遍历边跳过。
+      if (typeof options.filter === 'function' && !options.filter(childRelative, fs.lstatSync(path.join(source, entry)))) continue;
+      copyTree(path.join(source, entry), path.join(destination, entry), options, childRelative);
     }
     return destination;
   }

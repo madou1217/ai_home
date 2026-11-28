@@ -86,24 +86,27 @@ final class ShortcutRegistry {
       return registrationError == nil
     }
 
-    let handler: (NSEvent) -> Void = { [weak self] event in
-      guard let self = self else { return }
+    let handler: (NSEvent) -> Bool = { [weak self] event in
+      guard let self = self else { return false }
       guard let descriptor = self.descriptors.first(where: { descriptor in
         descriptor.enabled && !self.isConflicted(descriptor) && self.matches(event, descriptor: descriptor)
-      }) else { return }
+      }) else { return false }
       descriptor.action()
+      return true
     }
-    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown], handler: handler) {
+    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown], handler: { event in
+      _ = handler(event)
+    }) {
       monitors.append(monitor)
     } else {
       registrationError = "无法注册全局快捷键；辅助功能助手仍在运行"
       status(registrationError!)
     }
     // Global monitors do not receive events from this helper itself. The local
-    // monitor covers the full-app settings shell without changing host events.
+    // monitor covers the full-app settings shell and swallows matched events to
+    // avoid duplicate window-level handling or system beeps.
     if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown], handler: { event in
-      handler(event)
-      return event
+      return handler(event) ? nil : event
     }) {
       monitors.append(monitor)
     } else if registrationError == nil {

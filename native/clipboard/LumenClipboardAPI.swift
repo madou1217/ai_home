@@ -785,10 +785,10 @@ final class LumenClipboardStore {
     restoredOrderHints.removeValue(forKey: captured.id)
     items.removeAll { $0.id == captured.id }
     items.insert(captured, at: 0)
-    notify(.itemsUpdated)
     if !existedAtHead || !alreadyExisted {
       notify(.itemsCaptured([captured]))
     }
+    notify(.itemsUpdated)
     refreshStatus()
   }
 
@@ -832,10 +832,10 @@ final class LumenClipboardStore {
         self.hasLoadedInitialItems = true
         self.connected = true
         self.lastError = nil
-        self.notify(.itemsUpdated)
         if !newlyCaptured.isEmpty {
           self.notify(.itemsCaptured(newlyCaptured))
         }
+        self.notify(.itemsUpdated)
       case .failure(let error):
         self.lastError = error.localizedDescription
         self.notify(.error(error.localizedDescription))
@@ -1171,8 +1171,8 @@ final class LumenClipboardStore {
         if entry.item.pinned && !restored.pinned {
           self.setPinned(id: restored.id, pinned: true)
         }
-        self.notify(.itemsUpdated)
         self.notify(.itemRestored(restored, logicalIndex: targetIdx))
+        self.notify(.itemsUpdated)
         self.refreshStatus()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
           self?.recentlyRestoredIDs.remove(restored.id)

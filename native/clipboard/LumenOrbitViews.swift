@@ -4,7 +4,7 @@ import Foundation
 import PDFKit
 import QuartzCore
 
-/// Non-activating borderless floating NSPanel dedicated to the Orbit screen-edge rail.
+/// Non-activating borderless floating NSPanel dedicated to an Orbit screen-edge viewport.
 final class LumenOrbitHostPanel: NSPanel {
   var onKeyEvent: ((NSEvent) -> Bool)?
   var onCancel: (() -> Void)?
@@ -196,7 +196,6 @@ private final class LumenOrbitSheenOverlayView: NSView {
     guard let ctx = NSGraphicsContext.current?.cgContext else { return }
     let space = CGColorSpaceCreateDeviceRGB()
 
-    // Base translucent spectral wash
     if let bg = CGGradient(
       colorsSpace: space,
       colors: [palette.orbitBackdropTop.cgColor, palette.orbitBackdropBottom.cgColor] as CFArray,
@@ -205,7 +204,6 @@ private final class LumenOrbitSheenOverlayView: NSView {
       ctx.drawLinearGradient(bg, start: CGPoint(x: 0, y: bounds.maxY), end: CGPoint(x: 0, y: 0), options: [])
     }
 
-    // Pointer-following luminous radial sheen
     if glowEnabled {
       let mx = pointerLocation == .zero ? bounds.midX : pointerLocation.x
       let spotCenter = edgePosition == "bottom"
@@ -219,7 +217,6 @@ private final class LumenOrbitSheenOverlayView: NSView {
       }
     }
 
-    // Reflective 1.5pt glass edge line along the exposed screen-edge boundary
     ctx.setFillColor(palette.orbitTopSheen.withAlphaComponent(glowEnabled ? 0.88 : 0.35).cgColor)
     switch edgePosition {
     case "left":
@@ -232,14 +229,24 @@ private final class LumenOrbitSheenOverlayView: NSView {
   }
 }
 
-/// Horizontal/vertical wheel-friendly smooth rail scroll view (supports vertical mouse-wheel -> horizontal scroll + drag pan).
+/// Horizontal/vertical wheel-friendly smooth rail scroll view:
+/// - Shift + wheel routes to Optical Dots category switching (§3.3, A06).
+/// - Normal wheel scrolls horizontally along the continuous card rail.
+/// - Drag panning and animated focus centering update shared `scrollOffset`.
 final class LumenOrbitRailScrollView: NSScrollView {
   var isHorizontalRail = true
+  var onShiftWheel: ((NSEvent) -> Void)?
+  var onScrollOffsetChanged: ((CGFloat) -> Void)?
+
   private var dragOriginWindow: NSPoint?
   private var dragStartClipOrigin: NSPoint = .zero
   private(set) var didDragPan = false
 
   override func scrollWheel(with event: NSEvent) {
+    if event.modifierFlags.contains(.shift), let onShiftWheel {
+      onShiftWheel(event)
+      return
+    }
     guard isHorizontalRail else {
       super.scrollWheel(with: event)
       return
@@ -251,6 +258,7 @@ final class LumenOrbitRailScrollView: NSScrollView {
       return
     }
     super.scrollWheel(with: event)
+    onScrollOffsetChanged?(contentView.bounds.origin.x)
   }
 
   func scrollHorizontalClamped(to rawX: CGFloat) {
@@ -259,6 +267,7 @@ final class LumenOrbitRailScrollView: NSScrollView {
     let clamped = max(0, min(maxX, rawX))
     contentView.scroll(to: NSPoint(x: clamped, y: contentView.bounds.origin.y))
     reflectScrolledClipView(contentView)
+    onScrollOffsetChanged?(clamped)
   }
 
   func scrollToRectAnimated(_ rect: NSRect, animated: Bool) {
@@ -282,15 +291,19 @@ final class LumenOrbitRailScrollView: NSScrollView {
     }
     guard target != visible.origin else { return }
     if animated && LumenMotion.isEnabled {
-      NSAnimationContext.runAnimationGroup { ctx in
+      NSAnimationContext.runAnimationGroup({ ctx in
         ctx.duration = 0.24
         ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.85, 0.25, 1)
         self.contentView.animator().setBoundsOrigin(target)
-      }
-      reflectScrolledClipView(contentView)
+      }, completionHandler: { [weak self] in
+        guard let self else { return }
+        self.reflectScrolledClipView(self.contentView)
+        self.onScrollOffsetChanged?(self.contentView.bounds.origin.x)
+      })
     } else {
       contentView.scroll(to: target)
       reflectScrolledClipView(contentView)
+      onScrollOffsetChanged?(target.x)
     }
   }
 
@@ -336,99 +349,79 @@ final class LumenOrbitRailScrollView: NSScrollView {
   }
 }
 
-/// Individual clipboard card inside the Orbit rail with hover/focus elevation,
-/// quick-paste numeric key badge (1-9), and circular top-right removal button.
-final class LumenOrbitCardView: NSView {
-  enum VisualState: Equatable {
-    case idle
-    case near
-    case hovered
-    case selected
-  }
+// MARK: - V15 Orbit Remove Affordance (§19.1, A38, A48, A68, A69)
 
-  let item: LumenClipboardItem
-  var quickKeyIndex: Int? {
-    didSet { updateQuickKeyBadge() }
-  }
-  var visualState: VisualState = .idle {
-    didSet {
-      if visualState != oldValue {
-        updateVisualState(animated: LumenMotion.isEnabled)
-      }
-    }
-  }
+/// Independent 28×28 DIP hit target hosting a 22×22 DIP circular optical surface
+/// and a 13×13 DIP self-drawn round-cap X glyph.
+/// Sibling of the card surface inside the shared lift container so it moves in lockstep
+/// with the card lift (0 / -2 / -5 / -7 DIP) without independent drift.
+final class LumenOrbitRemoveButton: NSView {
+  var onRemove: (() -> Void)?
 
-  var onSelectAndPaste: ((String) -> Void)?
-  var onHoverFocus: ((String) -> Void)?
-  var onRemoveRequested: ((String) -> Void)?
-  var onContextMenuRequested: ((String, NSEvent) -> Void)?
-
-  private let cardLayer = CAGradientLayer()
-  private let shineLayer = CAGradientLayer()
-  private let sourceBadge = NSView()
-  private let sourceIcon = NSImageView()
-  private let sourceLabel = NSTextField(labelWithString: "")
-  private let timeLabel = NSTextField(labelWithString: "")
-  private let removeButton = NSButton()
-  private let titleLabel = NSTextField(labelWithString: "")
-  private let bodyHost = NSView()
-  private let footIcon = NSImageView()
-  private let footLabel = NSTextField(labelWithString: "")
-  private let pinIcon = NSImageView()
-  private let keyBadge = NSTextField(labelWithString: "")
-
+  private let surfaceLayer = CAGradientLayer()
+  private let glyphView = NSImageView()
   private var trackingArea: NSTrackingArea?
-  private var isPointerInside = false
   private var palette: LumenPalette = .light
-  private var glowEnabled = true
+  private var isRevealed = false
+  private var isButtonHovered = false
+  private var isPressed = false
+  private var fadeWork: DispatchWorkItem?
+  private var scaleWork: DispatchWorkItem?
 
-  init(item: LumenClipboardItem, keyIndex: Int?, palette: LumenPalette, glowEnabled: Bool) {
-    self.item = item
-    self.quickKeyIndex = keyIndex
-    self.palette = palette
-    self.glowEnabled = glowEnabled
-    super.init(frame: .zero)
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
     wantsLayer = true
-    layer?.cornerRadius = 18
-    layer?.cornerCurve = .continuous
     layer?.masksToBounds = false
-    layer?.shadowColor = NSColor(srgbRed: 0.04, green: 0.11, blue: 0.22, alpha: 1).cgColor
-    layer?.shadowOpacity = 0.22
-    layer?.shadowRadius = 12
-    layer?.shadowOffset = NSSize(width: 0, height: -5)
+    alphaValue = 0
 
-    cardLayer.cornerRadius = 18
-    cardLayer.cornerCurve = .continuous
-    cardLayer.masksToBounds = true
-    cardLayer.startPoint = CGPoint(x: 0, y: 1)
-    cardLayer.endPoint = CGPoint(x: 1, y: 0)
-    layer?.addSublayer(cardLayer)
+    surfaceLayer.cornerRadius = LumenV15Tokens.orbitCloseSurfaceSize / 2
+    surfaceLayer.startPoint = CGPoint(x: 0.15, y: 1.0)
+    surfaceLayer.endPoint = CGPoint(x: 0.85, y: 0.0)
+    surfaceLayer.borderWidth = 0.65
+    surfaceLayer.shadowOpacity = 0.22
+    surfaceLayer.shadowRadius = 4
+    surfaceLayer.shadowOffset = NSSize(width: 0, height: -1)
+    layer?.addSublayer(surfaceLayer)
 
-    shineLayer.cornerRadius = 18
-    shineLayer.cornerCurve = .continuous
-    shineLayer.startPoint = CGPoint(x: 0, y: 1)
-    shineLayer.endPoint = CGPoint(x: 0.85, y: 0.2)
-    shineLayer.colors = [
-      NSColor.white.withAlphaComponent(0.28).cgColor,
-      NSColor.clear.cgColor
-    ]
-    shineLayer.opacity = 0
-    layer?.addSublayer(shineLayer)
+    glyphView.wantsLayer = true
+    glyphView.imageScaling = .scaleProportionallyDown
+    glyphView.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(glyphView)
 
-    buildContent()
-    applyTheme(palette, glowEnabled: glowEnabled)
-    updateQuickKeyBadge()
-    updateVisualState(animated: false)
+    NSLayoutConstraint.activate([
+      glyphView.centerXAnchor.constraint(equalTo: centerXAnchor),
+      glyphView.centerYAnchor.constraint(equalTo: centerYAnchor),
+      glyphView.widthAnchor.constraint(equalToConstant: LumenV15Tokens.orbitCloseGlyphSize),
+      glyphView.heightAnchor.constraint(equalToConstant: LumenV15Tokens.orbitCloseGlyphSize)
+    ])
+
+    setAccessibilityRole(.button)
+    setAccessibilityLabel("移除记录")
+    toolTip = "移除记录 (Delete)"
+    applyVisualAppearance(animated: false)
   }
 
   required init?(coder: NSCoder) { nil }
 
+  deinit {
+    fadeWork?.cancel()
+    scaleWork?.cancel()
+  }
+
+  var isInteractive: Bool { isRevealed }
+
+  func configureAccessibility(itemTitle: String) {
+    setAccessibilityLabel("移除 \(itemTitle)")
+  }
+
   override func layout() {
     super.layout()
+    let inset = LumenV15Tokens.orbitCloseSurfaceInset
+    let circleRect = bounds.insetBy(dx: inset, dy: inset)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    cardLayer.frame = bounds
-    shineLayer.frame = bounds
+    surfaceLayer.frame = circleRect
+    surfaceLayer.cornerRadius = min(circleRect.width, circleRect.height) / 2
     CATransaction.commit()
   }
 
@@ -445,21 +438,431 @@ final class LumenOrbitCardView: NSView {
     trackingArea = area
   }
 
+  func applyTheme(_ next: LumenPalette) {
+    palette = next
+    applyVisualAppearance(animated: false)
+  }
+
+  /// Choreographed §19.1 reveal/hide:
+  /// - Enter: opacity fades in after 145ms (100ms), scale enters after 85ms (240ms) from 0.80 → 1.0.
+  /// - Leave: immediately fades out (100ms, delay 0ms) & scales down to 0.80 so header time can return +100ms later.
+  func setRevealed(_ revealed: Bool, animated: Bool) {
+    guard revealed != isRevealed else { return }
+    isRevealed = revealed
+    fadeWork?.cancel()
+    scaleWork?.cancel()
+    if !revealed {
+      isButtonHovered = false
+      isPressed = false
+    }
+
+    guard animated && LumenMotion.isEnabled else {
+      alphaValue = revealed ? 1.0 : 0.0
+      applyScaleAndGlyphTransform(animated: false)
+      applyVisualAppearance(animated: false)
+      return
+    }
+
+    if revealed {
+      setCenteredScale(0.80, animated: false)
+      let fWork = DispatchWorkItem { [weak self] in
+        guard let self, self.isRevealed else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+          ctx.duration = LumenV15Tokens.orbitCloseFadeDuration
+          self.animator().alphaValue = 1.0
+        }
+      }
+      fadeWork = fWork
+      DispatchQueue.main.asyncAfter(deadline: .now() + LumenV15Tokens.orbitCloseFadeDelay, execute: fWork)
+
+      let sWork = DispatchWorkItem { [weak self] in
+        guard let self, self.isRevealed else { return }
+        self.applyScaleAndGlyphTransform(animated: true)
+      }
+      scaleWork = sWork
+      DispatchQueue.main.asyncAfter(deadline: .now() + LumenV15Tokens.orbitCloseScaleDelay, execute: sWork)
+    } else {
+      NSAnimationContext.runAnimationGroup { ctx in
+        ctx.duration = LumenV15Tokens.orbitCloseFadeDuration
+        self.animator().alphaValue = 0.0
+      }
+      applyScaleAndGlyphTransform(animated: true)
+      applyVisualAppearance(animated: true)
+    }
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    guard isRevealed else { return }
+    isButtonHovered = true
+    applyVisualAppearance(animated: true)
+    applyScaleAndGlyphTransform(animated: true)
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    isButtonHovered = false
+    isPressed = false
+    applyVisualAppearance(animated: true)
+    applyScaleAndGlyphTransform(animated: true)
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    guard isRevealed else { return }
+    isPressed = true
+    applyScaleAndGlyphTransform(animated: true)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    guard isRevealed else { return }
+    let wasPressed = isPressed
+    isPressed = false
+    let local = convert(event.locationInWindow, from: nil)
+    applyScaleAndGlyphTransform(animated: true)
+    if wasPressed && bounds.contains(local) {
+      onRemove?()
+    }
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    guard isRevealed else { return false }
+    onRemove?()
+    return true
+  }
+
+  private func applyVisualAppearance(animated: Bool) {
+    let isDark = palette.isDark
+    let glyphColor: NSColor
+    if isButtonHovered {
+      glyphColor = isDark
+        ? NSColor(srgbRed: 1.0, green: 0.878, blue: 0.902, alpha: 1.0) // #FFE0E6
+        : NSColor(srgbRed: 0.651, green: 0.243, blue: 0.333, alpha: 1.0) // #A63E55
+    } else {
+      glyphColor = isDark
+        ? NSColor(srgbRed: 0.851, green: 0.898, blue: 0.965, alpha: 1.0) // #D9E5F6
+        : NSColor(srgbRed: 0.325, green: 0.392, blue: 0.482, alpha: 1.0) // #53647B
+    }
+    glyphView.image = LumenVectorGlyphs.actionImage(
+      .orbitRemoveX,
+      size: LumenV15Tokens.orbitCloseGlyphSize,
+      color: glyphColor,
+      strokeWidth: 1.9
+    )
+
+    CATransaction.begin()
+    CATransaction.setDisableActions(!(animated && LumenMotion.isEnabled))
+    CATransaction.setAnimationDuration(0.18)
+    if isButtonHovered {
+      if isDark {
+        surfaceLayer.colors = [
+          NSColor(srgbRed: 0.392, green: 0.267, blue: 0.329, alpha: 0.96).cgColor,
+          NSColor(srgbRed: 0.392, green: 0.267, blue: 0.329, alpha: 0.96).cgColor
+        ]
+        surfaceLayer.borderColor = NSColor(srgbRed: 0.906, green: 0.651, blue: 0.710, alpha: 0.55).cgColor
+      } else {
+        surfaceLayer.colors = [
+          NSColor(srgbRed: 1.0, green: 0.945, blue: 0.953, alpha: 0.98).cgColor,
+          NSColor(srgbRed: 1.0, green: 0.945, blue: 0.953, alpha: 0.98).cgColor
+        ]
+        surfaceLayer.borderColor = NSColor.white.cgColor
+        surfaceLayer.shadowColor = NSColor(srgbRed: 0.725, green: 0.412, blue: 0.506, alpha: 1.0).cgColor
+        surfaceLayer.shadowRadius = 6
+      }
+    } else {
+      if isDark {
+        surfaceLayer.colors = [
+          NSColor(srgbRed: 0.325, green: 0.388, blue: 0.482, alpha: 0.95).cgColor,
+          NSColor(srgbRed: 0.224, green: 0.286, blue: 0.376, alpha: 0.95).cgColor
+        ]
+        surfaceLayer.borderColor = NSColor(srgbRed: 0.757, green: 0.831, blue: 0.937, alpha: 0.33).cgColor
+        surfaceLayer.shadowColor = NSColor(srgbRed: 0.031, green: 0.059, blue: 0.145, alpha: 1.0).cgColor
+        surfaceLayer.shadowRadius = 4
+      } else {
+        surfaceLayer.colors = [
+          NSColor(srgbRed: 0.976, green: 0.984, blue: 1.0, alpha: 1.0).cgColor,
+          NSColor(srgbRed: 0.894, green: 0.922, blue: 0.965, alpha: 0.94).cgColor
+        ]
+        surfaceLayer.borderColor = NSColor.white.withAlphaComponent(0.94).cgColor
+        surfaceLayer.shadowColor = NSColor(srgbRed: 0.141, green: 0.231, blue: 0.361, alpha: 1.0).cgColor
+        surfaceLayer.shadowRadius = 4
+      }
+    }
+    CATransaction.commit()
+  }
+
+  private func applyScaleAndGlyphTransform(animated: Bool) {
+    let targetScale: CGFloat
+    if !isRevealed {
+      targetScale = 0.80
+    } else if isPressed {
+      targetScale = 0.88
+    } else if isButtonHovered {
+      targetScale = 1.08
+    } else {
+      targetScale = 1.0
+    }
+    setCenteredScale(targetScale, animated: animated)
+
+    // Rotate X 90° and tighten to 0.95 on button hover (§19.1)
+    if let gl = glyphView.layer {
+      let cx = glyphView.bounds.midX
+      let cy = glyphView.bounds.midY
+      var t = CATransform3DIdentity
+      if isButtonHovered {
+        t = CATransform3DTranslate(t, cx, cy, 0)
+        t = CATransform3DRotate(t, .pi / 2, 0, 0, 1)
+        t = CATransform3DScale(t, 0.95, 0.95, 1)
+        t = CATransform3DTranslate(t, -cx, -cy, 0)
+      }
+      if animated && LumenMotion.isEnabled {
+        let current = gl.presentation()?.transform ?? gl.transform
+        let anim = CABasicAnimation(keyPath: "transform")
+        anim.fromValue = NSValue(caTransform3D: current)
+        anim.toValue = NSValue(caTransform3D: t)
+        anim.duration = 0.28
+        anim.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
+        gl.transform = t
+        gl.add(anim, forKey: "xRotate")
+      } else {
+        gl.removeAnimation(forKey: "xRotate")
+        gl.transform = t
+      }
+    }
+  }
+
+  private func setCenteredScale(_ scale: CGFloat, animated: Bool) {
+    guard let l = self.layer else { return }
+    let cx = bounds.midX
+    let cy = bounds.midY
+    var t = CATransform3DIdentity
+    if scale != 1.0 {
+      t = CATransform3DTranslate(t, cx, cy, 0)
+      t = CATransform3DScale(t, scale, scale, 1)
+      t = CATransform3DTranslate(t, -cx, -cy, 0)
+    }
+    if animated && LumenMotion.isEnabled {
+      let current = l.presentation()?.transform ?? l.transform
+      let anim = CABasicAnimation(keyPath: "transform")
+      anim.fromValue = NSValue(caTransform3D: current)
+      anim.toValue = NSValue(caTransform3D: t)
+      anim.duration = LumenV15Tokens.orbitCloseScaleDuration
+      anim.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
+      l.transform = t
+      l.add(anim, forKey: "btnScale")
+    } else {
+      l.removeAnimation(forKey: "btnScale")
+      l.transform = t
+    }
+  }
+}
+
+// MARK: - V15 Content-First Orbit Card (§18.2, §18.3, §19.1, A38, A48, A68, A69)
+
+/// Individual V15 Orbit card slot with one shared lift coordinate system for both
+/// the 16-corner card surface and the sibling 28×28 remove button.
+final class LumenOrbitCardView: NSView {
+  enum VisualState: Equatable {
+    case idle
+    case near
+    case hovered
+    case selected
+  }
+
+  let item: LumenClipboardItem
+  let identity: LumenContentIdentity
+
+  var quickKeyIndex: Int? {
+    didSet { updateQuickKeyBadge() }
+  }
+
+  var visualState: VisualState = .idle {
+    didSet {
+      if visualState != oldValue {
+        updateVisualState(animated: LumenMotion.isEnabled)
+      }
+    }
+  }
+
+  var isKeyboardFocused: Bool = false {
+    didSet {
+      if isKeyboardFocused != oldValue {
+        updateHeaderChoreography(animated: LumenMotion.isEnabled)
+      }
+    }
+  }
+
+  var onSelectAndPaste: ((String) -> Void)?
+  var onHoverFocus: ((String) -> Void)?
+  var onHoverExit: ((String) -> Void)?
+  var onRemoveRequested: ((String) -> Void)?
+  var onContextMenuRequested: ((String, NSEvent) -> Void)?
+
+  /// Clean card view without the floating remove button, used for texture-driven soft dissolution.
+  var snapshotTargetView: NSView { cardSurface }
+
+  private let liftContainer = NSView()
+  private let cardSurface = NSView()
+  private let cardLayer = CAGradientLayer()
+  private let shineLayer = CAGradientLayer()
+
+  // Header (34 DIP, type glyph + type label + tabular time)
+  private let headerView = NSView()
+  private let typeGlyphView = LumenIdentityGlyphView(size: 18)
+  private let typeLabel = NSTextField(labelWithString: "")
+  private let timeLabel = NSTextField(labelWithString: "")
+  private var headerTrailingConstraint: NSLayoutConstraint?
+  private var timeReturnWork: DispatchWorkItem?
+  private var isTimeYielded = false
+
+  // Sibling remove affordance in the same liftContainer
+  private let removeButton = LumenOrbitRemoveButton()
+
+  // Content-first body
+  private let bodyHost = NSView()
+
+  // Footer (source app icon + name + pin + quick key)
+  private let footerView = NSView()
+  private let sourceIconView = NSImageView()
+  private let sourceFallbackBadge = NSView()
+  private let sourceFallbackLetter = NSTextField(labelWithString: "")
+  private let sourceLabel = NSTextField(labelWithString: "")
+  private let pinIcon = NSImageView()
+  private let keyBadge = NSTextField(labelWithString: "")
+
+  private var trackingArea: NSTrackingArea?
+  private(set) var isPointerInside = false
+  private var currentLiftY: CGFloat = 0
+  private var palette: LumenPalette = .light
+  private var glowEnabled = true
+
+  // Non-flipped wrapper guarantees +Y lift translation ALWAYS moves visually upward.
+  override var isFlipped: Bool { false }
+
+  init(item: LumenClipboardItem, keyIndex: Int?, palette: LumenPalette, glowEnabled: Bool) {
+    self.item = item
+    self.identity = item.contentIdentity
+    self.quickKeyIndex = keyIndex
+    self.palette = palette
+    self.glowEnabled = glowEnabled
+    super.init(frame: .zero)
+
+    wantsLayer = true
+    layer?.masksToBounds = false
+
+    liftContainer.wantsLayer = true
+    liftContainer.layer?.masksToBounds = false
+    liftContainer.translatesAutoresizingMaskIntoConstraints = false
+
+    cardSurface.wantsLayer = true
+    cardSurface.layer?.cornerRadius = LumenV15Tokens.orbitCardCorner
+    cardSurface.layer?.cornerCurve = .continuous
+    cardSurface.layer?.masksToBounds = false
+    cardSurface.layer?.shadowColor = NSColor(srgbRed: 0.04, green: 0.11, blue: 0.22, alpha: 1).cgColor
+    cardSurface.layer?.shadowOpacity = 0.20
+    cardSurface.layer?.shadowRadius = 11
+    cardSurface.layer?.shadowOffset = NSSize(width: 0, height: -5)
+    cardSurface.translatesAutoresizingMaskIntoConstraints = false
+
+    cardLayer.cornerRadius = LumenV15Tokens.orbitCardCorner
+    cardLayer.cornerCurve = .continuous
+    cardLayer.masksToBounds = true
+    cardLayer.startPoint = CGPoint(x: 0, y: 1)
+    cardLayer.endPoint = CGPoint(x: 1, y: 0)
+    cardSurface.layer?.addSublayer(cardLayer)
+
+    shineLayer.cornerRadius = LumenV15Tokens.orbitCardCorner
+    shineLayer.cornerCurve = .continuous
+    shineLayer.startPoint = CGPoint(x: 0, y: 1)
+    shineLayer.endPoint = CGPoint(x: 0.85, y: 0.2)
+    shineLayer.colors = [
+      NSColor.white.withAlphaComponent(0.28).cgColor,
+      NSColor.clear.cgColor
+    ]
+    shineLayer.opacity = 0
+    cardSurface.layer?.addSublayer(shineLayer)
+
+    removeButton.translatesAutoresizingMaskIntoConstraints = false
+    removeButton.configureAccessibility(itemTitle: item.displayTitle)
+    removeButton.onRemove = { [weak self] in
+      guard let self else { return }
+      self.onRemoveRequested?(self.item.id)
+    }
+
+    addSubview(liftContainer)
+    liftContainer.addSubview(cardSurface)
+    liftContainer.addSubview(removeButton)
+
+    NSLayoutConstraint.activate([
+      liftContainer.topAnchor.constraint(equalTo: topAnchor),
+      liftContainer.leadingAnchor.constraint(equalTo: leadingAnchor),
+      liftContainer.trailingAnchor.constraint(equalTo: trailingAnchor),
+      liftContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+      cardSurface.topAnchor.constraint(equalTo: liftContainer.topAnchor),
+      cardSurface.leadingAnchor.constraint(equalTo: liftContainer.leadingAnchor),
+      cardSurface.trailingAnchor.constraint(equalTo: liftContainer.trailingAnchor),
+      cardSurface.bottomAnchor.constraint(equalTo: liftContainer.bottomAnchor),
+
+      // §19.1 exact anchor: 28×28 hit rect at top +4, right -7 relative to card border
+      removeButton.topAnchor.constraint(equalTo: liftContainer.topAnchor, constant: LumenV15Tokens.orbitCloseAnchorTop),
+      removeButton.trailingAnchor.constraint(equalTo: liftContainer.trailingAnchor, constant: -LumenV15Tokens.orbitCloseAnchorTrailing),
+      removeButton.widthAnchor.constraint(equalToConstant: LumenV15Tokens.orbitCloseHitSize),
+      removeButton.heightAnchor.constraint(equalToConstant: LumenV15Tokens.orbitCloseHitSize)
+    ])
+
+    buildCardContent()
+    applyTheme(palette, glowEnabled: glowEnabled)
+    updateQuickKeyBadge()
+    updateVisualState(animated: false)
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  deinit {
+    timeReturnWork?.cancel()
+  }
+
+  override func layout() {
+    super.layout()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    cardLayer.frame = cardSurface.bounds
+    shineLayer.frame = cardSurface.bounds
+    CATransaction.commit()
+  }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let existing = trackingArea { removeTrackingArea(existing) }
+    // Cover lifted upper area too so moving pointer to X never causes hover drop-out (§19.1)
+    let hitBounds = bounds.insetBy(dx: -2, dy: -10)
+    let area = NSTrackingArea(
+      rect: hitBounds,
+      options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+      owner: self,
+      userInfo: nil
+    )
+    addTrackingArea(area)
+    trackingArea = area
+  }
+
   override func mouseEntered(with event: NSEvent) {
     isPointerInside = true
-    updateRemoveButtonVisibility(animated: true)
+    updateHeaderChoreography(animated: true)
     onHoverFocus?(item.id)
   }
 
   override func mouseExited(with event: NSEvent) {
     isPointerInside = false
-    updateRemoveButtonVisibility(animated: true)
+    updateHeaderChoreography(animated: true)
+    onHoverExit?(item.id)
   }
 
+  /// Strictly isolates X remove hit testing from card paste click (§3.4, §19.1, A38, A68).
   override func hitTest(_ point: NSPoint) -> NSView? {
     let local = convert(point, from: superview)
-    guard bounds.contains(local) else { return nil }
-    if !removeButton.isHidden && removeButton.frame.insetBy(dx: -4, dy: -4).contains(local) {
+    // Account for liftContainer vertical translation (+currentLiftY in non-flipped coords)
+    let liftedLocal = NSPoint(x: local.x, y: local.y - currentLiftY)
+    guard bounds.contains(liftedLocal) else { return nil }
+    if removeButton.isInteractive && removeButton.frame.contains(liftedLocal) {
       return removeButton
     }
     return self
@@ -477,10 +880,11 @@ final class LumenOrbitCardView: NSView {
     let wasDrag = (enclosingScrollView as? LumenOrbitRailScrollView)?.endRailDrag() ?? false
     if wasDrag { return }
     let pt = convert(event.locationInWindow, from: nil)
-    if !removeButton.isHidden && removeButton.frame.insetBy(dx: -4, dy: -4).contains(pt) {
+    let lifted = NSPoint(x: pt.x, y: pt.y - currentLiftY)
+    if removeButton.isInteractive && removeButton.frame.contains(lifted) {
       return
     }
-    if bounds.contains(pt) {
+    if bounds.contains(lifted) {
       onSelectAndPaste?(item.id)
     }
   }
@@ -489,114 +893,141 @@ final class LumenOrbitCardView: NSView {
     onContextMenuRequested?(item.id, event)
   }
 
-  private func buildContent() {
-    let cat = item.displayCategory
+  // MARK: Card Content Construction
 
-    sourceBadge.wantsLayer = true
-    sourceBadge.layer?.cornerRadius = 7
-    sourceBadge.translatesAutoresizingMaskIntoConstraints = false
-    sourceIcon.image = LumenIcons.symbol(cat.symbolName, size: 11, weight: .semibold)
-    sourceIcon.contentTintColor = .white
-    sourceIcon.translatesAutoresizingMaskIntoConstraints = false
-    sourceBadge.addSubview(sourceIcon)
+  private func buildCardContent() {
+    headerView.translatesAutoresizingMaskIntoConstraints = false
 
-    sourceLabel.stringValue = item.sourceLabel
-    sourceLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
-    sourceLabel.lineBreakMode = .byTruncatingTail
-    sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+    typeGlyphView.translatesAutoresizingMaskIntoConstraints = false
+
+    typeLabel.stringValue = identity.displayName
+    typeLabel.font = .systemFont(ofSize: 11, weight: .medium)
+    typeLabel.lineBreakMode = .byTruncatingTail
+    typeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    typeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    typeLabel.translatesAutoresizingMaskIntoConstraints = false
 
     timeLabel.stringValue = item.relativeTime
-    timeLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+    timeLabel.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
     timeLabel.alignment = .right
+    timeLabel.lineBreakMode = .byClipping
+    timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+    timeLabel.setContentHuggingPriority(.required, for: .horizontal)
     timeLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    removeButton.isBordered = false
-    removeButton.wantsLayer = true
-    removeButton.image = LumenIcons.symbol("xmark", size: 10.5, weight: .bold, description: "移除记录")
-    removeButton.toolTip = "移除记录 (Delete)"
-    removeButton.target = self
-    removeButton.action = #selector(removeButtonClicked)
-    removeButton.layer?.cornerRadius = 12
-    removeButton.layer?.borderWidth = 1
-    removeButton.alphaValue = 0
-    removeButton.isHidden = true
-    removeButton.translatesAutoresizingMaskIntoConstraints = false
-
-    titleLabel.stringValue = item.displayTitle
-    titleLabel.font = .systemFont(ofSize: 13.5, weight: .semibold)
-    titleLabel.lineBreakMode = .byTruncatingTail
-    titleLabel.translatesAutoresizingMaskIntoConstraints = false
+    headerView.addSubview(typeGlyphView)
+    headerView.addSubview(typeLabel)
+    headerView.addSubview(timeLabel)
 
     bodyHost.wantsLayer = true
-    bodyHost.layer?.cornerRadius = 10
     bodyHost.layer?.masksToBounds = true
     bodyHost.translatesAutoresizingMaskIntoConstraints = false
 
-    footIcon.image = LumenIcons.symbol(cat.symbolName, size: 11, weight: .medium)
-    footIcon.translatesAutoresizingMaskIntoConstraints = false
+    footerView.translatesAutoresizingMaskIntoConstraints = false
 
-    footLabel.stringValue = cat.label
-    footLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
-    footLabel.translatesAutoresizingMaskIntoConstraints = false
+    sourceIconView.imageScaling = .scaleProportionallyDown
+    sourceIconView.translatesAutoresizingMaskIntoConstraints = false
 
-    pinIcon.image = LumenIcons.symbol("pin.fill", size: 11)
+    sourceFallbackBadge.wantsLayer = true
+    sourceFallbackBadge.layer?.cornerRadius = 5
+    sourceFallbackBadge.translatesAutoresizingMaskIntoConstraints = false
+    sourceFallbackLetter.stringValue = String(item.sourceLabel.prefix(1)).uppercased()
+    sourceFallbackLetter.font = .systemFont(ofSize: 9, weight: .bold)
+    sourceFallbackLetter.textColor = .white
+    sourceFallbackLetter.alignment = .center
+    sourceFallbackLetter.translatesAutoresizingMaskIntoConstraints = false
+    sourceFallbackBadge.addSubview(sourceFallbackLetter)
+
+    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+      sourceIconView.image = appIcon
+      sourceIconView.isHidden = false
+      sourceFallbackBadge.isHidden = true
+    } else {
+      sourceIconView.isHidden = true
+      sourceFallbackBadge.isHidden = false
+    }
+
+    sourceLabel.stringValue = item.sourceLabel
+    sourceLabel.font = .systemFont(ofSize: 11, weight: .regular)
+    sourceLabel.lineBreakMode = .byTruncatingTail
+    sourceLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+
     pinIcon.isHidden = !item.pinned
     pinIcon.translatesAutoresizingMaskIntoConstraints = false
 
-    keyBadge.font = .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
-    keyBadge.alignment = .center
-    keyBadge.wantsLayer = true
-    keyBadge.layer?.cornerRadius = 5
+    keyBadge.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+    keyBadge.alignment = .right
     keyBadge.translatesAutoresizingMaskIntoConstraints = false
 
-    for v in [sourceBadge, sourceLabel, timeLabel, removeButton, titleLabel, bodyHost, footIcon, footLabel, pinIcon, keyBadge] {
-      addSubview(v)
-    }
+    footerView.addSubview(sourceIconView)
+    footerView.addSubview(sourceFallbackBadge)
+    footerView.addSubview(sourceLabel)
+    footerView.addSubview(pinIcon)
+    footerView.addSubview(keyBadge)
+
+    cardSurface.addSubview(headerView)
+    cardSurface.addSubview(bodyHost)
+    cardSurface.addSubview(footerView)
+
+    let timeTrail = timeLabel.trailingAnchor.constraint(
+      equalTo: headerView.trailingAnchor,
+      constant: -LumenV15Tokens.orbitHeaderInsetIdle
+    )
+    headerTrailingConstraint = timeTrail
 
     NSLayoutConstraint.activate([
-      sourceBadge.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-      sourceBadge.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-      sourceBadge.widthAnchor.constraint(equalToConstant: 22),
-      sourceBadge.heightAnchor.constraint(equalToConstant: 22),
-      sourceIcon.centerXAnchor.constraint(equalTo: sourceBadge.centerXAnchor),
-      sourceIcon.centerYAnchor.constraint(equalTo: sourceBadge.centerYAnchor),
+      // §19.1 Header: 34 DIP, vertically centered
+      headerView.topAnchor.constraint(equalTo: cardSurface.topAnchor, constant: 1),
+      headerView.leadingAnchor.constraint(equalTo: cardSurface.leadingAnchor),
+      headerView.trailingAnchor.constraint(equalTo: cardSurface.trailingAnchor),
+      headerView.heightAnchor.constraint(equalToConstant: LumenV15Tokens.orbitHeaderHeight),
 
-      sourceLabel.leadingAnchor.constraint(equalTo: sourceBadge.trailingAnchor, constant: 7),
-      sourceLabel.centerYAnchor.constraint(equalTo: sourceBadge.centerYAnchor),
-      sourceLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -6),
+      typeGlyphView.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: LumenV15Tokens.orbitHeaderInsetIdle),
+      typeGlyphView.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+      typeGlyphView.widthAnchor.constraint(equalToConstant: 18),
+      typeGlyphView.heightAnchor.constraint(equalToConstant: 18),
 
-      timeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-      timeLabel.centerYAnchor.constraint(equalTo: sourceBadge.centerYAnchor),
+      typeLabel.leadingAnchor.constraint(equalTo: typeGlyphView.trailingAnchor, constant: 6),
+      typeLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+      typeLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -6),
 
-      removeButton.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-      removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-      removeButton.widthAnchor.constraint(equalToConstant: 24),
-      removeButton.heightAnchor.constraint(equalToConstant: 24),
+      timeTrail,
+      timeLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 
-      titleLabel.topAnchor.constraint(equalTo: sourceBadge.bottomAnchor, constant: 8),
-      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-      titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+      // Body (content-first)
+      bodyHost.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 2),
+      bodyHost.leadingAnchor.constraint(equalTo: cardSurface.leadingAnchor, constant: 12),
+      bodyHost.trailingAnchor.constraint(equalTo: cardSurface.trailingAnchor, constant: -12),
+      bodyHost.bottomAnchor.constraint(equalTo: footerView.topAnchor, constant: -4),
 
-      bodyHost.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
-      bodyHost.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-      bodyHost.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-      bodyHost.bottomAnchor.constraint(equalTo: footLabel.topAnchor, constant: -9),
+      // Footer (30 DIP)
+      footerView.leadingAnchor.constraint(equalTo: cardSurface.leadingAnchor),
+      footerView.trailingAnchor.constraint(equalTo: cardSurface.trailingAnchor),
+      footerView.bottomAnchor.constraint(equalTo: cardSurface.bottomAnchor, constant: -2),
+      footerView.heightAnchor.constraint(equalToConstant: 30),
 
-      footIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-      footIcon.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -11),
-      footIcon.widthAnchor.constraint(equalToConstant: 12),
-      footIcon.heightAnchor.constraint(equalToConstant: 12),
+      sourceIconView.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 12),
+      sourceIconView.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
+      sourceIconView.widthAnchor.constraint(equalToConstant: 16),
+      sourceIconView.heightAnchor.constraint(equalToConstant: 16),
 
-      footLabel.leadingAnchor.constraint(equalTo: footIcon.trailingAnchor, constant: 5),
-      footLabel.centerYAnchor.constraint(equalTo: footIcon.centerYAnchor),
+      sourceFallbackBadge.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 12),
+      sourceFallbackBadge.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
+      sourceFallbackBadge.widthAnchor.constraint(equalToConstant: 16),
+      sourceFallbackBadge.heightAnchor.constraint(equalToConstant: 16),
+      sourceFallbackLetter.centerXAnchor.constraint(equalTo: sourceFallbackBadge.centerXAnchor),
+      sourceFallbackLetter.centerYAnchor.constraint(equalTo: sourceFallbackBadge.centerYAnchor),
 
-      keyBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -11),
-      keyBadge.centerYAnchor.constraint(equalTo: footIcon.centerYAnchor),
-      keyBadge.widthAnchor.constraint(equalToConstant: 20),
-      keyBadge.heightAnchor.constraint(equalToConstant: 19),
+      sourceLabel.leadingAnchor.constraint(equalTo: sourceFallbackBadge.trailingAnchor, constant: 6),
+      sourceLabel.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
+      sourceLabel.trailingAnchor.constraint(lessThanOrEqualTo: pinIcon.leadingAnchor, constant: -6),
+
+      keyBadge.trailingAnchor.constraint(equalTo: footerView.trailingAnchor, constant: -12),
+      keyBadge.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
 
       pinIcon.trailingAnchor.constraint(equalTo: keyBadge.leadingAnchor, constant: -6),
-      pinIcon.centerYAnchor.constraint(equalTo: footIcon.centerYAnchor),
+      pinIcon.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
       pinIcon.widthAnchor.constraint(equalToConstant: 12),
       pinIcon.heightAnchor.constraint(equalToConstant: 12)
     ])
@@ -606,160 +1037,402 @@ final class LumenOrbitCardView: NSView {
 
   private func populateBody() {
     bodyHost.subviews.forEach { $0.removeFromSuperview() }
-    let kind = LumenPreviewItem.classify(item: item)
-    switch kind {
+    bodyHost.layer?.backgroundColor = NSColor.clear.cgColor
+    bodyHost.layer?.cornerRadius = 0
+
+    switch identity.family {
     case .color:
-      if let swatch = LumenClassifier.parseHexColor(item.effectiveText) {
-        bodyHost.layer?.backgroundColor = swatch.cgColor
-        let hex = NSTextField(labelWithString: item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
-        hex.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
-        hex.textColor = .white
-        hex.translatesAutoresizingMaskIntoConstraints = false
-        bodyHost.addSubview(hex)
-        NSLayoutConstraint.activate([
-          hex.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor, constant: 10),
-          hex.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -8)
-        ])
-      }
+      let swatch = NSView()
+      swatch.wantsLayer = true
+      swatch.layer?.cornerRadius = 9
+      swatch.layer?.cornerCurve = .continuous
+      let parsed = LumenColorMath.parseAnyColor(item.effectiveText) ?? palette.accent
+      swatch.layer?.backgroundColor = parsed.cgColor
+      swatch.translatesAutoresizingMaskIntoConstraints = false
+
+      let hexLbl = NSTextField(labelWithString: item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
+      hexLbl.font = .monospacedSystemFont(ofSize: 13.5, weight: .semibold)
+      hexLbl.textColor = .white
+      hexLbl.translatesAutoresizingMaskIntoConstraints = false
+
+      let tagLbl = NSTextField(labelWithString: "HEX")
+      tagLbl.font = .monospacedSystemFont(ofSize: 9, weight: .medium)
+      tagLbl.textColor = NSColor.white.withAlphaComponent(0.82)
+      tagLbl.translatesAutoresizingMaskIntoConstraints = false
+
+      swatch.addSubview(hexLbl)
+      swatch.addSubview(tagLbl)
+      bodyHost.addSubview(swatch)
+
+      NSLayoutConstraint.activate([
+        swatch.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        swatch.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        swatch.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        swatch.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -2),
+        hexLbl.leadingAnchor.constraint(equalTo: swatch.leadingAnchor, constant: 10),
+        hexLbl.bottomAnchor.constraint(equalTo: swatch.bottomAnchor, constant: -9),
+        tagLbl.trailingAnchor.constraint(equalTo: swatch.trailingAnchor, constant: -10),
+        tagLbl.bottomAnchor.constraint(equalTo: swatch.bottomAnchor, constant: -10)
+      ])
+
     case .image:
-      bodyHost.layer?.backgroundColor = palette.surfaceElevated.cgColor
-      let iv = NSImageView(image: item.decodedThumbnailImage() ?? LumenIcons.symbol("photo", size: 28))
+      let visual = NSView()
+      visual.wantsLayer = true
+      visual.layer?.cornerRadius = 9
+      visual.layer?.cornerCurve = .continuous
+      visual.layer?.masksToBounds = true
+      visual.layer?.backgroundColor = palette.surfaceElevated.cgColor
+      visual.translatesAutoresizingMaskIntoConstraints = false
+
+      let iv = NSImageView()
       iv.imageScaling = .scaleProportionallyUpOrDown
+      if let thumb = item.decodedThumbnailImage() {
+        iv.image = thumb
+      } else {
+        iv.image = LumenVectorGlyphs.identityImage(for: identity, size: 36, isDark: palette.isDark)
+        iv.imageScaling = .scaleNone
+      }
       iv.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(iv)
+      visual.addSubview(iv)
+
+      let caption = makeBodyTitleLabel(item.displayTitle)
+      bodyHost.addSubview(visual)
+      bodyHost.addSubview(caption)
+
       NSLayoutConstraint.activate([
-        iv.topAnchor.constraint(equalTo: bodyHost.topAnchor),
-        iv.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
-        iv.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
-        iv.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor)
+        visual.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        visual.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        visual.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        visual.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -6),
+        iv.topAnchor.constraint(equalTo: visual.topAnchor),
+        iv.leadingAnchor.constraint(equalTo: visual.leadingAnchor),
+        iv.trailingAnchor.constraint(equalTo: visual.trailingAnchor),
+        iv.bottomAnchor.constraint(equalTo: visual.bottomAnchor),
+        caption.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        caption.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        caption.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -1)
       ])
-    case .code(let lang):
-      bodyHost.layer?.backgroundColor = palette.codeBackground.cgColor
-      let lbl = NSTextField(wrappingLabelWithString: "")
-      lbl.attributedStringValue = LumenSyntaxHighlighter.highlight(String(item.effectiveText.prefix(260)), language: lang, fontSize: 10, darkCanvas: true)
-      lbl.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(lbl)
+
+    case .code:
+      let title = makeBodyTitleLabel(item.displayTitle)
+      let codeBox = NSView()
+      codeBox.wantsLayer = true
+      codeBox.layer?.cornerRadius = 8
+      codeBox.layer?.cornerCurve = .continuous
+      codeBox.layer?.masksToBounds = true
+      codeBox.layer?.backgroundColor = palette.codeBackground.cgColor
+      codeBox.translatesAutoresizingMaskIntoConstraints = false
+
+      let snippet = item.effectiveText.split(separator: "\n", omittingEmptySubsequences: false).prefix(8).joined(separator: "\n")
+      let codeLbl = NSTextField(wrappingLabelWithString: "")
+      codeLbl.attributedStringValue = LumenSyntaxHighlighter.highlight(
+        String(snippet.prefix(280)),
+        language: identity.language ?? "unknown",
+        fontSize: 10.5,
+        darkCanvas: true,
+        lineHeightMultiple: 1.5
+      )
+      codeLbl.translatesAutoresizingMaskIntoConstraints = false
+      codeBox.addSubview(codeLbl)
+
+      bodyHost.addSubview(title)
+      bodyHost.addSubview(codeBox)
+
       NSLayoutConstraint.activate([
-        lbl.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 7),
-        lbl.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor, constant: 8),
-        lbl.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor, constant: -8),
-        lbl.bottomAnchor.constraint(lessThanOrEqualTo: bodyHost.bottomAnchor, constant: -6)
+        title.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        title.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        title.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        codeBox.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 5),
+        codeBox.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        codeBox.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        codeBox.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -1),
+        codeLbl.topAnchor.constraint(equalTo: codeBox.topAnchor, constant: 8),
+        codeLbl.leadingAnchor.constraint(equalTo: codeBox.leadingAnchor, constant: 8),
+        codeLbl.trailingAnchor.constraint(equalTo: codeBox.trailingAnchor, constant: -8),
+        codeLbl.bottomAnchor.constraint(lessThanOrEqualTo: codeBox.bottomAnchor, constant: -6)
       ])
+
+    case .link:
+      let raw = item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines)
+      let parsedURL = URL(string: raw)
+      let host = parsedURL?.host ?? raw
+      let initialChar = String((host.replacingOccurrences(of: "www.", with: "")).prefix(1)).uppercased()
+
+      let markLabel = NSTextField(labelWithString: initialChar.isEmpty ? "L" : initialChar)
+      markLabel.font = .systemFont(ofSize: 24, weight: .bold)
+      markLabel.textColor = identity.tintColor(isDark: palette.isDark)
+      markLabel.translatesAutoresizingMaskIntoConstraints = false
+
+      let extIcon = NSImageView(image: LumenVectorGlyphs.actionImage(.externalLink, size: 17, color: palette.muted.withAlphaComponent(0.7)))
+      extIcon.translatesAutoresizingMaskIntoConstraints = false
+
+      let markRow = NSStackView(views: [markLabel, extIcon])
+      markRow.orientation = .horizontal
+      markRow.alignment = .centerY
+      markRow.spacing = 6
+      markRow.translatesAutoresizingMaskIntoConstraints = false
+
+      let titleLbl = makeBodyTitleLabel(item.displayTitle)
+      titleLbl.maximumNumberOfLines = 2
+
+      let hostLbl = NSTextField(labelWithString: host)
+      hostLbl.font = .systemFont(ofSize: 10.5)
+      hostLbl.textColor = palette.muted
+      hostLbl.lineBreakMode = .byTruncatingMiddle
+      hostLbl.translatesAutoresizingMaskIntoConstraints = false
+
+      let pathLbl = NSTextField(wrappingLabelWithString: raw.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression))
+      pathLbl.font = .systemFont(ofSize: 11)
+      pathLbl.textColor = palette.muted.withAlphaComponent(0.85)
+      pathLbl.maximumNumberOfLines = 2
+      pathLbl.lineBreakMode = .byTruncatingTail
+      pathLbl.translatesAutoresizingMaskIntoConstraints = false
+
+      let stack = NSStackView(views: [markRow, titleLbl, hostLbl, pathLbl])
+      stack.orientation = .vertical
+      stack.alignment = .leading
+      stack.spacing = 4
+      stack.translatesAutoresizingMaskIntoConstraints = false
+      bodyHost.addSubview(stack)
+
+      NSLayoutConstraint.activate([
+        stack.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 4),
+        stack.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        stack.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        stack.bottomAnchor.constraint(lessThanOrEqualTo: bodyHost.bottomAnchor, constant: -2)
+      ])
+
     case .audio, .video:
+      let visual = NSView()
+      visual.wantsLayer = true
+      visual.layer?.cornerRadius = 9
+      visual.layer?.cornerCurve = .continuous
+      visual.layer?.masksToBounds = true
+      visual.translatesAutoresizingMaskIntoConstraints = false
+
       let cover = LumenAlbumCoverView()
       cover.seedIndex = abs(item.id.hashValue) % 3
-      cover.badgeText = kind == .audio ? "AUDIO" : "VIDEO"
+      cover.badgeText = identity.family == .audio ? "AUDIO" : "VIDEO"
       cover.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(cover)
-      NSLayoutConstraint.activate([
-        cover.topAnchor.constraint(equalTo: bodyHost.topAnchor),
-        cover.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
-        cover.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
-        cover.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor)
+      visual.addSubview(cover)
+
+      var constraints: [NSLayoutConstraint] = [
+        cover.topAnchor.constraint(equalTo: visual.topAnchor),
+        cover.leadingAnchor.constraint(equalTo: visual.leadingAnchor),
+        cover.trailingAnchor.constraint(equalTo: visual.trailingAnchor),
+        cover.bottomAnchor.constraint(equalTo: visual.bottomAnchor)
+      ]
+
+      if identity.family == .video {
+        let playBadge = NSView()
+        playBadge.wantsLayer = true
+        playBadge.layer?.cornerRadius = 15
+        playBadge.layer?.backgroundColor = NSColor(srgbRed: 0.106, green: 0.176, blue: 0.294, alpha: 0.62).cgColor
+        playBadge.translatesAutoresizingMaskIntoConstraints = false
+        let playGlyph = NSImageView(image: LumenVectorGlyphs.identityImage(for: identity, size: 16, isDark: true, overrideColor: .white))
+        playGlyph.translatesAutoresizingMaskIntoConstraints = false
+        playBadge.addSubview(playGlyph)
+        visual.addSubview(playBadge)
+        constraints.append(contentsOf: [
+          playBadge.centerXAnchor.constraint(equalTo: visual.centerXAnchor),
+          playBadge.centerYAnchor.constraint(equalTo: visual.centerYAnchor),
+          playBadge.widthAnchor.constraint(equalToConstant: 30),
+          playBadge.heightAnchor.constraint(equalToConstant: 30),
+          playGlyph.centerXAnchor.constraint(equalTo: playBadge.centerXAnchor),
+          playGlyph.centerYAnchor.constraint(equalTo: playBadge.centerYAnchor)
+        ])
+      }
+
+      let caption = makeBodyTitleLabel(item.displayTitle)
+      bodyHost.addSubview(visual)
+      bodyHost.addSubview(caption)
+
+      constraints.append(contentsOf: [
+        visual.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        visual.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        visual.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        visual.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -6),
+        caption.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        caption.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        caption.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -1)
       ])
-    case .pdf:
-      bodyHost.layer?.backgroundColor = palette.surfaceElevated.withAlphaComponent(0.65).cgColor
+      NSLayoutConstraint.activate(constraints)
+
+    case .collection where identity.subtype == "musicgroup":
+      let visual = NSView()
+      visual.wantsLayer = true
+      visual.layer?.cornerRadius = 9
+      visual.layer?.cornerCurve = .continuous
+      visual.layer?.masksToBounds = true
+      visual.layer?.backgroundColor = identity.tintColor(isDark: palette.isDark).withAlphaComponent(0.14).cgColor
+      visual.translatesAutoresizingMaskIntoConstraints = false
+
+      // Fanned 3-cover stack for audio collection (§7.1, §18.2)
+      let coverCount = min(3, max(2, item.files.count))
+      for i in 0..<coverCount {
+        let mini = LumenAlbumCoverView()
+        mini.seedIndex = (abs(item.id.hashValue) + i) % 3
+        mini.badgeText = ""
+        mini.layer?.cornerRadius = 7
+        mini.translatesAutoresizingMaskIntoConstraints = false
+        visual.addSubview(mini)
+        let offsetX = CGFloat(i - 1) * 26
+        let offsetY: CGFloat = (i == 1) ? -4 : 3
+        NSLayoutConstraint.activate([
+          mini.centerXAnchor.constraint(equalTo: visual.centerXAnchor, constant: offsetX),
+          mini.centerYAnchor.constraint(equalTo: visual.centerYAnchor, constant: offsetY),
+          mini.widthAnchor.constraint(equalToConstant: 62),
+          mini.heightAnchor.constraint(equalToConstant: 62)
+        ])
+      }
+
+      let caption = makeBodyTitleLabel(item.displayTitle)
+      bodyHost.addSubview(visual)
+      bodyHost.addSubview(caption)
+
+      NSLayoutConstraint.activate([
+        visual.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        visual.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        visual.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        visual.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -6),
+        caption.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        caption.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        caption.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -1)
+      ])
+
+    case .document where identity.subtype == "pdf":
+      let visual = NSView()
+      visual.wantsLayer = true
+      visual.layer?.cornerRadius = 9
+      visual.layer?.cornerCurve = .continuous
+      visual.layer?.masksToBounds = true
+      visual.layer?.backgroundColor = (palette.isDark ? NSColor.white.withAlphaComponent(0.08) : NSColor(srgbRed: 0.765, green: 0.816, blue: 0.894, alpha: 0.28)).cgColor
+      visual.translatesAutoresizingMaskIntoConstraints = false
+
       let iv = NSImageView()
       iv.imageScaling = .scaleProportionallyUpOrDown
       if let path = item.primaryFilePath, let doc = PDFDocument(url: URL(fileURLWithPath: path)), let page = doc.page(at: 0) {
         iv.image = page.thumbnail(of: NSSize(width: 140, height: 180), for: .cropBox)
       } else {
-        iv.image = LumenIcons.symbol("doc.richtext", size: 30)
-        iv.contentTintColor = palette.accent
+        iv.image = LumenVectorGlyphs.identityImage(for: identity, size: 42, isDark: palette.isDark)
+        iv.imageScaling = .scaleNone
       }
       iv.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(iv)
+      visual.addSubview(iv)
+
+      let caption = makeBodyTitleLabel(item.displayTitle)
+      bodyHost.addSubview(visual)
+      bodyHost.addSubview(caption)
+
       NSLayoutConstraint.activate([
-        iv.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 4),
-        iv.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -4),
-        iv.centerXAnchor.constraint(equalTo: bodyHost.centerXAnchor),
-        iv.widthAnchor.constraint(lessThanOrEqualTo: bodyHost.widthAnchor, constant: -8)
+        visual.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        visual.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        visual.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        visual.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -6),
+        iv.topAnchor.constraint(equalTo: visual.topAnchor, constant: 5),
+        iv.bottomAnchor.constraint(equalTo: visual.bottomAnchor, constant: -5),
+        iv.centerXAnchor.constraint(equalTo: visual.centerXAnchor),
+        iv.widthAnchor.constraint(lessThanOrEqualTo: visual.widthAnchor, constant: -12),
+        caption.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        caption.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        caption.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -1)
       ])
-    case .file, .collection, .office:
-      bodyHost.layer?.backgroundColor = (palette.isDark ? NSColor.white.withAlphaComponent(0.08) : NSColor.white.withAlphaComponent(0.55)).cgColor
-      let icon = NSImageView(image: item.primaryFilePath.flatMap { FileManager.default.fileExists(atPath: $0) ? NSWorkspace.shared.icon(forFile: $0) : nil } ?? LumenIcons.symbol("doc.fill", size: 26))
-      icon.translatesAutoresizingMaskIntoConstraints = false
-      let name = NSTextField(labelWithString: item.displayTitle)
-      name.font = .systemFont(ofSize: 11.5, weight: .semibold)
-      name.textColor = palette.ink
-      name.lineBreakMode = .byTruncatingMiddle
-      let size = NSTextField(labelWithString: "\(kind.displayLabel) · \(item.formattedSize)")
-      size.font = .systemFont(ofSize: 10)
-      size.textColor = palette.muted
-      let textStack = NSStackView(views: [name, size])
-      textStack.orientation = .vertical
-      textStack.alignment = .leading
-      textStack.spacing = 2
-      let row = NSStackView(views: [icon, textStack])
-      row.orientation = .horizontal
-      row.alignment = .centerY
-      row.spacing = 8
-      row.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(row)
+
+    case .document, .archive, .collection, .file:
+      let visual = NSView()
+      visual.wantsLayer = true
+      visual.layer?.cornerRadius = 9
+      visual.layer?.cornerCurve = .continuous
+      visual.layer?.backgroundColor = identity.tintColor(isDark: palette.isDark).withAlphaComponent(palette.isDark ? 0.14 : 0.09).cgColor
+      visual.translatesAutoresizingMaskIntoConstraints = false
+
+      let glyph = LumenIdentityGlyphView(size: 42)
+      glyph.configure(identity: identity, isDark: palette.isDark, size: 42)
+      glyph.translatesAutoresizingMaskIntoConstraints = false
+
+      let sizeLbl = NSTextField(labelWithString: item.formattedSize)
+      sizeLbl.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
+      sizeLbl.textColor = palette.muted
+      sizeLbl.translatesAutoresizingMaskIntoConstraints = false
+
+      let stack = NSStackView(views: [glyph, sizeLbl])
+      stack.orientation = .vertical
+      stack.alignment = .centerX
+      stack.spacing = 6
+      stack.translatesAutoresizingMaskIntoConstraints = false
+      visual.addSubview(stack)
+
+      let caption = makeBodyTitleLabel(item.displayTitle)
+      bodyHost.addSubview(visual)
+      bodyHost.addSubview(caption)
+
       NSLayoutConstraint.activate([
-        icon.widthAnchor.constraint(equalToConstant: 34),
-        icon.heightAnchor.constraint(equalToConstant: 34),
-        row.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor, constant: 10),
-        row.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor, constant: -10),
-        row.centerYAnchor.constraint(equalTo: bodyHost.centerYAnchor)
+        visual.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        visual.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        visual.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        visual.bottomAnchor.constraint(equalTo: caption.topAnchor, constant: -6),
+        glyph.widthAnchor.constraint(equalToConstant: 42),
+        glyph.heightAnchor.constraint(equalToConstant: 42),
+        stack.centerXAnchor.constraint(equalTo: visual.centerXAnchor),
+        stack.centerYAnchor.constraint(equalTo: visual.centerYAnchor),
+        caption.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
+        caption.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
+        caption.bottomAnchor.constraint(equalTo: bodyHost.bottomAnchor, constant: -1)
       ])
-    case .link:
-      bodyHost.layer?.backgroundColor = (palette.isDark ? NSColor.white.withAlphaComponent(0.08) : NSColor.white.withAlphaComponent(0.55)).cgColor
-      let icon = NSImageView(image: LumenIcons.symbol("link", size: 18, weight: .medium))
-      icon.contentTintColor = palette.categoryTint(.link)
-      let urlLabel = NSTextField(wrappingLabelWithString: item.effectiveText.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression))
-      urlLabel.font = .systemFont(ofSize: 11)
-      urlLabel.textColor = palette.muted
-      urlLabel.maximumNumberOfLines = 3
-      urlLabel.lineBreakMode = .byTruncatingTail
-      let st = NSStackView(views: [icon, urlLabel])
-      st.orientation = .vertical
-      st.alignment = .leading
-      st.spacing = 6
-      st.translatesAutoresizingMaskIntoConstraints = false
-      bodyHost.addSubview(st)
-      NSLayoutConstraint.activate([
-        st.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor, constant: 10),
-        st.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor, constant: -10),
-        st.centerYAnchor.constraint(equalTo: bodyHost.centerYAnchor)
-      ])
-    default:
-      let excerpt = NSTextField(wrappingLabelWithString: String(item.effectiveText.prefix(240)))
-      excerpt.font = .systemFont(ofSize: 11.5)
-      excerpt.textColor = palette.isDark ? NSColor(srgbRed: 0.78, green: 0.84, blue: 0.92, alpha: 1) : NSColor(srgbRed: 0.30, green: 0.36, blue: 0.46, alpha: 1)
-      excerpt.maximumNumberOfLines = 5
-      excerpt.lineBreakMode = .byTruncatingTail
+
+    case .text:
+      // Content-first text body: 13pt, line-height 1.56, no redundant title header (§18.3)
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.lineHeightMultiple = 1.48
+      paragraph.lineBreakMode = .byTruncatingTail
+      let excerpt = NSTextField(wrappingLabelWithString: "")
+      excerpt.attributedStringValue = NSAttributedString(
+        string: String(item.effectiveText.prefix(280)),
+        attributes: [
+          .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+          .foregroundColor: palette.isDark ? NSColor(srgbRed: 0.90, green: 0.94, blue: 1.0, alpha: 0.95) : NSColor(srgbRed: 0.125, green: 0.196, blue: 0.294, alpha: 1.0),
+          .paragraphStyle: paragraph
+        ]
+      )
+      excerpt.maximumNumberOfLines = 6
       excerpt.translatesAutoresizingMaskIntoConstraints = false
       bodyHost.addSubview(excerpt)
       NSLayoutConstraint.activate([
-        excerpt.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 2),
+        excerpt.topAnchor.constraint(equalTo: bodyHost.topAnchor, constant: 4),
         excerpt.leadingAnchor.constraint(equalTo: bodyHost.leadingAnchor),
         excerpt.trailingAnchor.constraint(equalTo: bodyHost.trailingAnchor),
-        excerpt.bottomAnchor.constraint(lessThanOrEqualTo: bodyHost.bottomAnchor)
+        excerpt.bottomAnchor.constraint(lessThanOrEqualTo: bodyHost.bottomAnchor, constant: -2)
       ])
     }
+  }
+
+  private func makeBodyTitleLabel(_ text: String) -> NSTextField {
+    let lbl = NSTextField(labelWithString: text)
+    lbl.font = .systemFont(ofSize: 12.5, weight: .semibold)
+    lbl.textColor = palette.ink
+    lbl.lineBreakMode = .byTruncatingTail
+    lbl.translatesAutoresizingMaskIntoConstraints = false
+    return lbl
   }
 
   func applyTheme(_ next: LumenPalette, glowEnabled nextGlow: Bool) {
     palette = next
     glowEnabled = nextGlow
     cardLayer.colors = [next.orbitCardTop.cgColor, next.orbitCardBottom.cgColor]
-    sourceBadge.layer?.backgroundColor = next.sourceBadgeColor(for: item.sourceLabel).cgColor
-    sourceLabel.textColor = next.muted
-    timeLabel.textColor = next.muted
-    titleLabel.textColor = next.ink
-    footIcon.contentTintColor = next.muted
-    footLabel.textColor = next.muted
-    pinIcon.contentTintColor = next.accent
+    typeGlyphView.configure(identity: identity, isDark: next.isDark, size: 18)
 
-    removeButton.layer?.backgroundColor = (next.isDark
-      ? NSColor(srgbRed: 0.19, green: 0.28, blue: 0.40, alpha: 0.95)
-      : NSColor(srgbRed: 0.93, green: 0.96, blue: 1.0, alpha: 0.95)).cgColor
-    removeButton.layer?.borderColor = (next.isDark
-      ? NSColor(srgbRed: 0.71, green: 0.85, blue: 1.0, alpha: 0.55)
-      : NSColor.white).cgColor
-    removeButton.contentTintColor = next.isDark ? .white : NSColor(srgbRed: 0.33, green: 0.40, blue: 0.50, alpha: 1)
+    let metaInk = next.isDark
+      ? NSColor(srgbRed: 0.706, green: 0.776, blue: 0.867, alpha: 1.0) // #B4C6DD
+      : NSColor(srgbRed: 0.322, green: 0.412, blue: 0.518, alpha: 1.0) // #526984
+    typeLabel.textColor = metaInk
+    timeLabel.textColor = next.isDark ? metaInk : NSColor(srgbRed: 0.369, green: 0.443, blue: 0.541, alpha: 1.0)
+    sourceFallbackBadge.layer?.backgroundColor = next.sourceBadgeColor(for: item.sourceLabel).cgColor
+    sourceLabel.textColor = metaInk
+    pinIcon.image = LumenVectorGlyphs.actionImage(.pinFilled, size: 12, color: next.accent)
+    keyBadge.textColor = metaInk.withAlphaComponent(0.78)
+    removeButton.applyTheme(next)
 
+    populateBody()
     updateVisualState(animated: false)
   }
 
@@ -768,124 +1441,97 @@ final class LumenOrbitCardView: NSView {
       keyBadge.isHidden = false
       keyBadge.stringValue = "\(idx + 1)"
     } else {
+      keyBadge.stringValue = ""
       keyBadge.isHidden = true
     }
   }
 
-  private func updateRemoveButtonVisibility(animated: Bool) {
-    let show = isPointerInside || visualState == .selected
-    if show { removeButton.isHidden = false }
-    NSAnimationContext.runAnimationGroup({ ctx in
-      ctx.duration = (animated && LumenMotion.isEnabled) ? 0.16 : 0.01
-      self.removeButton.animator().alphaValue = show ? 1 : 0
-      self.timeLabel.animator().alphaValue = show ? 0 : 1
-    }, completionHandler: { [weak self] in
-      guard let self else { return }
-      if !show { self.removeButton.isHidden = true }
-    })
+  /// §19.1 Header Choreography:
+  /// - Enter: time yields 12 → 43 DIP (210ms, delay 0ms), remove X fades in after 145ms.
+  /// - Leave: remove X exits immediately (delay 0ms), time returns 43 → 12 DIP after 100ms delay.
+  /// - Time label NEVER changes opacity or truncates.
+  private func updateHeaderChoreography(animated: Bool) {
+    let shouldYield = isPointerInside || isKeyboardFocused
+    guard shouldYield != isTimeYielded else { return }
+    isTimeYielded = shouldYield
+    timeReturnWork?.cancel()
+
+    if shouldYield {
+      animateHeaderTrailing(to: -LumenV15Tokens.orbitHeaderInsetHover, animated: animated)
+      removeButton.setRevealed(true, animated: animated)
+    } else {
+      removeButton.setRevealed(false, animated: animated)
+      if animated && LumenMotion.isEnabled {
+        let work = DispatchWorkItem { [weak self] in
+          guard let self, !self.isTimeYielded else { return }
+          self.animateHeaderTrailing(to: -LumenV15Tokens.orbitHeaderInsetIdle, animated: true)
+        }
+        timeReturnWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + LumenV15Tokens.orbitTimeReturnDelay, execute: work)
+      } else {
+        animateHeaderTrailing(to: -LumenV15Tokens.orbitHeaderInsetIdle, animated: false)
+      }
+    }
   }
 
+  private func animateHeaderTrailing(to constant: CGFloat, animated: Bool) {
+    guard let constraint = headerTrailingConstraint else { return }
+    if animated && LumenMotion.isEnabled {
+      NSAnimationContext.runAnimationGroup { ctx in
+        ctx.duration = LumenV15Tokens.orbitTimeYieldDuration
+        ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.8, 0.22, 1.0)
+        ctx.allowsImplicitAnimation = true
+        constraint.animator().constant = constant
+      }
+    } else {
+      constraint.constant = constant
+    }
+  }
+
+  /// Unified §19.1 lift curve (320ms, cubic-bezier(.2,.9,.25,1.2)) shared by card & X button.
   private func updateVisualState(animated: Bool) {
     let isSelected = visualState == .selected
     let targetLiftY: CGFloat
     switch visualState {
-    case .selected: targetLiftY = 9
-    case .hovered: targetLiftY = 5
-    case .near: targetLiftY = 2
-    case .idle: targetLiftY = 0
+    case .selected: targetLiftY = LumenV15Tokens.orbitLiftSelected
+    case .hovered: targetLiftY = LumenV15Tokens.orbitLiftHover
+    case .near: targetLiftY = LumenV15Tokens.orbitLiftNear
+    case .idle: targetLiftY = LumenV15Tokens.orbitLiftIdle
     }
+    currentLiftY = targetLiftY
 
     cardLayer.borderWidth = isSelected ? 1.5 : 1.0
     cardLayer.borderColor = (isSelected ? palette.orbitCardSelectedBorder : palette.orbitCardBorder).cgColor
-    shineLayer.opacity = (glowEnabled && (isSelected || visualState == .hovered)) ? 0.65 : 0.0
+    shineLayer.opacity = (glowEnabled && (isSelected || visualState == .hovered)) ? 0.60 : 0.0
 
-    keyBadge.layer?.backgroundColor = (isSelected ? palette.orbitKeyBadgeSelectedBackground : palette.orbitKeyBadgeBackground).cgColor
-    keyBadge.textColor = isSelected ? .white : palette.orbitKeyBadgeText
+    if let surfaceLayer = cardSurface.layer {
+      surfaceLayer.shadowColor = (isSelected && glowEnabled
+        ? palette.orbitCardSelectedGlow
+        : NSColor(srgbRed: 0.04, green: 0.11, blue: 0.22, alpha: 1)).cgColor
+      surfaceLayer.shadowOpacity = isSelected ? (glowEnabled ? 0.62 : 0.32) : 0.20
+      surfaceLayer.shadowRadius = isSelected ? 18 : 11
+    }
 
-    if let layer = self.layer {
-      layer.shadowColor = (isSelected && glowEnabled ? palette.orbitCardSelectedGlow : NSColor(srgbRed: 0.04, green: 0.11, blue: 0.22, alpha: 1)).cgColor
-      layer.shadowOpacity = isSelected ? (glowEnabled ? 0.68 : 0.35) : 0.20
-      layer.shadowRadius = isSelected ? 18 : 11
-      layer.zPosition = isSelected ? 4 : (visualState == .hovered ? 2 : 0)
+    if let outer = self.layer {
+      outer.zPosition = isSelected ? 4 : (visualState == .hovered ? 2 : 0)
+    }
 
+    if let liftLayer = liftContainer.layer {
       let targetTransform = CATransform3DMakeTranslation(0, targetLiftY, 0)
       if animated && LumenMotion.isEnabled {
-        let currentTransform = layer.presentation()?.transform ?? layer.transform
-        let anim = CASpringAnimation(keyPath: "transform")
+        let currentTransform = liftLayer.presentation()?.transform ?? liftLayer.transform
+        let anim = CABasicAnimation(keyPath: "transform")
         anim.fromValue = NSValue(caTransform3D: currentTransform)
         anim.toValue = NSValue(caTransform3D: targetTransform)
-        anim.damping = 19
-        anim.stiffness = 280
-        anim.mass = 0.85
-        anim.duration = min(0.32, anim.settlingDuration)
-        layer.removeAnimation(forKey: "orbitLift")
-        layer.transform = targetTransform
-        layer.add(anim, forKey: "orbitLift")
+        anim.duration = LumenV15Tokens.orbitLiftDuration
+        anim.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1.2)
+        liftLayer.removeAnimation(forKey: "orbitLift")
+        liftLayer.transform = targetTransform
+        liftLayer.add(anim, forKey: "orbitLift")
       } else {
-        layer.removeAnimation(forKey: "orbitLift")
-        layer.transform = targetTransform
+        liftLayer.removeAnimation(forKey: "orbitLift")
+        liftLayer.transform = targetTransform
       }
-    }
-    updateRemoveButtonVisibility(animated: animated)
-  }
-
-  @objc private func removeButtonClicked() {
-    onRemoveRequested?(item.id)
-  }
-}
-
-/// Core Animation radial burst of luminous micro-specks played on card removal.
-enum LumenOrbitReleaseLightEffect {
-  static func burst(in parentLayer: CALayer, from cardFrame: CGRect) {
-    let host = CALayer()
-    host.frame = parentLayer.bounds
-    host.zPosition = 20
-    parentLayer.addSublayer(host)
-
-    let goldenAngle: CGFloat = 2.39996
-    for i in 0..<18 {
-      let speck = CALayer()
-      let sz: CGFloat = (i % 4 == 0) ? 3.5 : 2.2
-      let x = cardFrame.minX + cardFrame.width * (0.15 + 0.70 * CGFloat((i * 7) % 17) / 17.0)
-      let y = cardFrame.minY + cardFrame.height * (0.15 + 0.70 * CGFloat((i * 11) % 17) / 17.0)
-      speck.frame = CGRect(x: x, y: y, width: sz, height: sz)
-      speck.cornerRadius = sz / 2
-      speck.backgroundColor = NSColor(srgbRed: 0.94, green: 0.985, blue: 1.0, alpha: 1).cgColor
-      speck.shadowColor = NSColor(srgbRed: 0.76, green: 0.90, blue: 1.0, alpha: 1).cgColor
-      speck.shadowOpacity = 0.9
-      speck.shadowRadius = 4
-      speck.shadowOffset = .zero
-      speck.opacity = 0
-      host.addSublayer(speck)
-
-      let angle = CGFloat(i) * goldenAngle
-      let dx = cos(angle) * CGFloat(18 + i * 2)
-      let dy = sin(angle) * CGFloat(14 + i * 2) + 22 // upward in AppKit coords
-
-      let duration = 0.42 + Double(i) * 0.008
-      let opacityAnim = CAKeyframeAnimation(keyPath: "opacity")
-      opacityAnim.values = [0.0, 0.95, 0.0]
-      opacityAnim.keyTimes = [0.0, 0.22, 1.0]
-
-      let moveAnim = CABasicAnimation(keyPath: "position")
-      moveAnim.fromValue = NSValue(point: NSPoint(x: x, y: y))
-      moveAnim.toValue = NSValue(point: NSPoint(x: x + dx, y: y + dy))
-
-      let scaleAnim = CAKeyframeAnimation(keyPath: "transform.scale")
-      scaleAnim.values = [0.6, 1.25, 0.2]
-      scaleAnim.keyTimes = [0.0, 0.22, 1.0]
-
-      let group = CAAnimationGroup()
-      group.animations = [opacityAnim, moveAnim, scaleAnim]
-      group.duration = duration
-      group.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.75, 0.3, 1)
-      group.fillMode = .forwards
-      group.isRemovedOnCompletion = false
-      speck.add(group, forKey: "releaseBurst")
-    }
-
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.62) {
-      host.removeFromSuperlayer()
     }
   }
 }

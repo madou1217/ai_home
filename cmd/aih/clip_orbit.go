@@ -78,7 +78,12 @@ func runClipOrbit(args []string, cmdRuntime commandRuntime) error {
 	}
 	target.RawQuery = query.Encode()
 
-	name, launchArgs := clipOrbitCommand(options, target.String())
+	// The product ships native clients on every desktop; only fall back to a
+	// Chromium app window when the native binary is not installed.
+	name, launchArgs, native := clipOrbitNativeCommand(options)
+	if !native {
+		name, launchArgs = clipOrbitCommand(options, target.String())
+	}
 	if options.printOnly {
 		_, _ = fmt.Fprintln(cmdRuntime.stdout, name+" "+strings.Join(launchArgs, " "))
 		return nil
@@ -106,6 +111,53 @@ func runClipOrbit(args []string, cmdRuntime commandRuntime) error {
 		return fmt.Errorf("打开 Paste Nexus 失败: %w", err)
 	}
 	return cmd.Process.Release()
+}
+
+// clipOrbitNativeCommand resolves the installed native Paste Lumen client for
+// this platform. It never consults the browser list: a missing binary simply
+// yields ok=false so the caller can fall back explicitly.
+func clipOrbitNativeCommand(options clipOrbitOptions) (string, []string, bool) {
+	mode := "--orbit"
+	if options.workspace {
+		mode = "--lumen"
+	}
+	home, _ := os.UserHomeDir()
+	if runtime.GOOS == "darwin" {
+		// LaunchServices reuses a running instance instead of spawning a copy.
+		app := filepath.Join(home, ".ai_home", "apps", "AI Home.app")
+		if info, err := os.Stat(app); err == nil && info.IsDir() {
+			return "/usr/bin/open", []string{"-a", app, "--args", mode}, true
+		}
+	}
+	candidates := func() []string {
+		switch runtime.GOOS {
+		case "darwin":
+			return []string{filepath.Join(home, ".ai_home", "apps", "AI Home.app", "Contents", "MacOS", "ai-home")}
+		case "windows":
+			local := os.Getenv("LOCALAPPDATA")
+			return []string{
+				filepath.Join(local, "aih", "aih-lumen.exe"),
+				filepath.Join(local, "aih", "aih-translation.exe"),
+			}
+		default:
+			return []string{
+				filepath.Join(home, ".local", "bin", "aih-lumen"),
+				"/usr/local/bin/aih-lumen",
+				"/usr/bin/aih-lumen",
+			}
+		}
+	}()
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, []string{mode}, true
+		}
+	}
+	if runtime.GOOS == "linux" {
+		if path, err := exec.LookPath("aih-lumen"); err == nil {
+			return path, []string{mode}, true
+		}
+	}
+	return "", nil, false
 }
 
 func clipOrbitOrigin(cmdRuntime commandRuntime) string {

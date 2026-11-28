@@ -77,7 +77,9 @@
 - [ ] VS Installer `--add Microsoft.VisualStudio.Component.WDK` 未产出 km 头文件，需要进一步修复安装
 - [ ] test signing：Secure Boot 已关闭，可开启；需要重启
 - [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
-- [ ] WFP callout 驱动骨架（C/C++）待在 WDK 可用后开始
+- [x] 绕过安装器：官方 NuGet `Microsoft.Windows.WDK.x64 10.0.28000.2526` 可解出 `ntddk.h`/`fwpsk.h`/`ntoskrnl.lib`
+- [ ] WFP callout 驱动骨架（C/C++）待写
+- [ ] Windows Store/UWP 风险：Claude 是 `shell:AppsFolder\AnthropicPBC.Claude_...!Claude`，Codex/ChatGPT 也是 AppsFolder；同包多实例/多 OAuth 可能受厂商单实例限制，需真机验证
 
 ### 2.2 P1：per-instance 透明 TCP 代理（WinDivert NAT）
 

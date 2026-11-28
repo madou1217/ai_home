@@ -1,7 +1,5 @@
 export type OfficeComputerPowerState = 'on' | 'off';
 
-export type OfficeWallpaperId = 'aurora' | 'sunset' | 'midnight';
-
 export interface OfficeMonitorTransform {
   x: number;
   y: number;
@@ -11,59 +9,9 @@ export interface OfficeMonitorTransform {
 
 export interface OfficeComputerPreferences {
   power: OfficeComputerPowerState;
-  wallpaper: OfficeWallpaperId;
-  rgbEnabled: boolean;
-  rgbColor: string;
   /** Per-station monitor pose; each station stores its own transform. */
   monitor: OfficeMonitorTransform;
 }
-
-export interface OfficeWallpaperMetadata {
-  id: OfficeWallpaperId;
-  label: string;
-  subtitle: string;
-  accentHex: string;
-  suggestedAssetPath: string;
-}
-
-export const OFFICE_WALLPAPER_IDS: readonly OfficeWallpaperId[] = Object.freeze([
-  'aurora',
-  'sunset',
-  'midnight',
-]);
-
-export const OFFICE_WALLPAPER_META: Readonly<Record<OfficeWallpaperId, OfficeWallpaperMetadata>> = Object.freeze({
-  aurora: Object.freeze({
-    id: 'aurora',
-    label: '极光冷翠',
-    subtitle: 'Aurora Cyan',
-    accentHex: '#00e5ff',
-    suggestedAssetPath: '/ui/office-assets/computer-v3/wallpaper-aurora.webp',
-  }),
-  sunset: Object.freeze({
-    id: 'sunset',
-    label: '暮光琥珀',
-    subtitle: 'Dusk Amber',
-    accentHex: '#f59e0b',
-    suggestedAssetPath: '/ui/office-assets/computer-v3/wallpaper-sunset.webp',
-  }),
-  midnight: Object.freeze({
-    id: 'midnight',
-    label: '深空午夜',
-    subtitle: 'Midnight Indigo',
-    accentHex: '#818cf8',
-    suggestedAssetPath: '/ui/office-assets/computer-v3/wallpaper-midnight.webp',
-  }),
-});
-
-export const OFFICE_RGB_PRESET_COLORS: readonly string[] = Object.freeze([
-  '#00e5ff',
-  '#10b981',
-  '#8b5cf6',
-  '#f59e0b',
-  '#ec4899',
-  '#3b82f6',
-]);
 
 /**
  * Scene-local monitor transform bounds relative to the station desk surface.
@@ -86,13 +34,8 @@ export const DEFAULT_OFFICE_MONITOR_TRANSFORM: OfficeMonitorTransform = Object.f
   yaw: 1.05,
 });
 
-const DEFAULT_RGB_COLOR = '#00e5ff';
-
 export const DEFAULT_OFFICE_COMPUTER_PREFERENCES: OfficeComputerPreferences = freezePreferences({
   power: 'on',
-  wallpaper: 'aurora',
-  rgbEnabled: true,
-  rgbColor: DEFAULT_RGB_COLOR,
   monitor: DEFAULT_OFFICE_MONITOR_TRANSFORM,
 });
 
@@ -123,9 +66,6 @@ function freezeTransform(transform: OfficeMonitorTransform): OfficeMonitorTransf
 function freezePreferences(prefs: OfficeComputerPreferences): OfficeComputerPreferences {
   return Object.freeze({
     power: prefs.power,
-    wallpaper: prefs.wallpaper,
-    rgbEnabled: prefs.rgbEnabled,
-    rgbColor: prefs.rgbColor,
     monitor: freezeTransform(prefs.monitor),
   });
 }
@@ -166,25 +106,6 @@ function normalizePower(value: unknown, fallback: OfficeComputerPowerState): Off
   return value === 'off' || value === 'on' ? value : fallback;
 }
 
-function normalizeWallpaper(value: unknown, fallback: OfficeWallpaperId): OfficeWallpaperId {
-  return value === 'aurora' || value === 'sunset' || value === 'midnight' ? value : fallback;
-}
-
-export function normalizeOfficeRgbColor(value: unknown, fallback = DEFAULT_RGB_COLOR): string {
-  if (typeof value !== 'string') return fallback;
-  const trimmed = value.trim();
-  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
-    return trimmed.toLowerCase();
-  }
-  if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
-    const r = trimmed[1];
-    const g = trimmed[2];
-    const b = trimmed[3];
-    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
-  }
-  return fallback;
-}
-
 function sanitizePreferences(
   rawInput: unknown,
   fallback: OfficeComputerPreferences = DEFAULT_OFFICE_COMPUTER_PREFERENCES
@@ -202,11 +123,6 @@ function sanitizePreferences(
 
   return freezePreferences({
     power: normalizePower(candidate.power, fallback.power),
-    wallpaper: normalizeWallpaper(candidate.wallpaper, fallback.wallpaper),
-    rgbEnabled: typeof candidate.rgbEnabled === 'boolean'
-      ? candidate.rgbEnabled
-      : fallback.rgbEnabled,
-    rgbColor: normalizeOfficeRgbColor(candidate.rgbColor, fallback.rgbColor),
     monitor,
   });
 }
@@ -218,9 +134,6 @@ function areTransformsEqual(a: OfficeMonitorTransform, b: OfficeMonitorTransform
 function arePreferencesEqual(a: OfficeComputerPreferences, b: OfficeComputerPreferences): boolean {
   return (
     a.power === b.power
-    && a.wallpaper === b.wallpaper
-    && a.rgbEnabled === b.rgbEnabled
-    && a.rgbColor === b.rgbColor
     && areTransformsEqual(a.monitor, b.monitor)
   );
 }

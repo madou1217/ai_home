@@ -249,9 +249,6 @@ export interface OfficeComputerPowerController {
   durabilityNote: SessionDurabilityNote;
   powerOffComputer: () => void;
   bootComputer: () => void;
-  updateAppearance: (
-    patch: Partial<Pick<OfficeComputerPreferences, 'wallpaper' | 'rgbEnabled' | 'rgbColor'>>,
-  ) => void;
 }
 
 export function useOfficeComputerPowerController({
@@ -508,13 +505,6 @@ export function useOfficeComputerPowerController({
     return () => observer.disconnect();
   }, [effectiveBootState.phase, isTerminating, scopeId, shouldMountTerminal, terminalHostRef, trimmedServerId]);
 
-  const updateAppearance = useCallback((
-    patch: Partial<Pick<OfficeComputerPreferences, 'wallpaper' | 'rgbEnabled' | 'rgbColor'>>,
-  ) => {
-    if (isTerminating || !isSessionServerScopeAdmitted(serverId, session) || !session) return;
-    updateOfficeComputerPreferences(serverId.trim(), session.sessionKey.trim(), patch);
-  }, [isTerminating, serverId, session]);
-
   const durabilityNote = useMemo(() => describeSessionDurability(session), [session]);
   const terminalReady = Boolean(shouldMountTerminal && scopeId && readyScopeId === scopeId);
 
@@ -528,6 +518,5 @@ export function useOfficeComputerPowerController({
     durabilityNote,
     powerOffComputer,
     bootComputer,
-    updateAppearance,
   };
 }

@@ -18,12 +18,6 @@ import {
   type OfficeComputerPreferences,
   type OfficeMonitorTransform,
 } from './office-computer-state';
-import {
-  acquireOfficeWallpaperCacheRef,
-  getOfficeWallpaperRasterVersion,
-  releaseOfficeWallpaperCacheRef,
-  subscribeOfficeWallpaperRasterReady,
-} from './office-computer-wallpapers';
 import { applyMonitorTransform, computeMonitorFocusAnchor } from './office-monitor-rig';
 import {
   createOfficeRoomRig,
@@ -432,7 +426,6 @@ export class OfficeSceneController {
   private currentMetrics: BayGridMetrics = computeBayGridMetrics(2);
   private viewportWidth = 1280;
   private viewportHeight = 720;
-  private rasterVersion = getOfficeWallpaperRasterVersion();
 
   private lastRoomKey = '';
   private lastPreset: OfficeCameraPreset = 'isometric';
@@ -484,8 +477,6 @@ export class OfficeSceneController {
   private disposed = false;
 
   private readonly resizeObserver: ResizeObserver;
-  private readonly unsubscribeWallpaperRaster: () => void;
-  private readonly acquiredWallpaperCacheRef: boolean;
   private readonly acquiredVoxelMaterialsRef: boolean;
 
   constructor(
@@ -547,9 +538,7 @@ export class OfficeSceneController {
     let skyRig: SkyRig | null = null;
     let voxelMaterials: VoxelMaterialSet | null = null;
     let resizeObserver: ResizeObserver | null = null;
-    let acquiredWallpaperRef = false;
     let acquiredVoxelRef = false;
-    let unsubscribeWallpaperRaster: (() => void) | null = null;
     let listenersAttached = false;
 
     try {
@@ -635,13 +624,6 @@ export class OfficeSceneController {
       this.attachEventListeners(canvas, controls);
       listenersAttached = true;
 
-      acquireOfficeWallpaperCacheRef();
-      acquiredWallpaperRef = true;
-      unsubscribeWallpaperRaster = subscribeOfficeWallpaperRasterReady(
-        this.handleWallpaperRasterReady
-      );
-      this.unsubscribeWallpaperRaster = unsubscribeWallpaperRaster;
-      this.acquiredWallpaperCacheRef = true;
       this.acquiredVoxelMaterialsRef = true;
       this.lastBehaviourClockMs = performance.now();
 
@@ -649,10 +631,6 @@ export class OfficeSceneController {
     } catch (error: unknown) {
       this.disposed = true;
       this.stopAnimationLoop();
-      unsubscribeWallpaperRaster?.();
-      if (acquiredWallpaperRef) {
-        releaseOfficeWallpaperCacheRef();
-      }
       resizeObserver?.disconnect();
       if (listenersAttached && canvas && controls) {
         this.detachEventListeners(canvas, controls);
@@ -932,7 +910,6 @@ export class OfficeSceneController {
         isSelected,
         isHovered,
         preferences: effectivePrefs,
-        rasterVersion: this.rasterVersion,
       });
     });
 
@@ -1132,10 +1109,6 @@ export class OfficeSceneController {
     this.clearBehaviourWakeTimer();
     this.behaviourManager.resetRoom();
     this.resizeObserver.disconnect();
-    this.unsubscribeWallpaperRaster();
-    if (this.acquiredWallpaperCacheRef) {
-      releaseOfficeWallpaperCacheRef();
-    }
     this.detachEventListeners(this.renderer.domElement, this.controls);
     this.controls.dispose();
 
@@ -1190,7 +1163,6 @@ export class OfficeSceneController {
         isSelected,
         isHovered,
         preferences: effectivePrefs,
-        rasterVersion: this.rasterVersion,
       });
     }
     this.needsStaticRender = true;
@@ -1198,12 +1170,6 @@ export class OfficeSceneController {
       this.renderSingleFrame();
     }
   }
-
-  private readonly handleWallpaperRasterReady = (): void => {
-    if (this.disposed) return;
-    this.rasterVersion = getOfficeWallpaperRasterVersion();
-    this.resyncAllStationsOnly();
-  };
 
   private applyCameraPreset(preset: OfficeCameraPreset, immediate: boolean): void {
     if (this.monitorDrag?.active) {

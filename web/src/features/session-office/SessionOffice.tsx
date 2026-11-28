@@ -21,7 +21,6 @@ import {
 import { updateOfficeComputerPreferences } from './office-computer-state';
 import type {
   DesktopOriginRect,
-  DesktopWindowLayout,
   OfficeCameraPreset,
   OfficeProjectRoom,
   OfficeSessionItem,
@@ -109,7 +108,6 @@ export default function SessionOffice({
   const [cameraPreset, setCameraPreset] = useState<OfficeCameraPreset>('isometric');
 
   const [desktopOpen, setDesktopOpen] = useState(false);
-  const [desktopInitialMode, setDesktopInitialMode] = useState<DesktopWindowLayout>('terminal-focus');
   const [desktopOriginRect, setDesktopOriginRect] = useState<DesktopOriginRect | null>(null);
   const [zoomingSessionId, setZoomingSessionId] = useState<string | null>(null);
 
@@ -218,7 +216,6 @@ export default function SessionOffice({
       setSelectedSessionId(matchedSession.id);
       activateManagerSession(matchedSession.id);
       setDesktopOriginRect(null);
-      setDesktopInitialMode('terminal-focus');
       setDesktopOpen(true);
       appliedDeepLinkRef.current = deepLinkSignature;
       return;
@@ -311,7 +308,6 @@ export default function SessionOffice({
     setSelectedSessionId(session.id);
     activateManagerSession(session.id);
     setDesktopOriginRect(originRect ?? null);
-    setDesktopInitialMode('terminal-focus');
     triggerZoomCue(session.id);
     setDesktopOpen(true);
   }, [activateManagerSession, triggerZoomCue]);
@@ -674,7 +670,6 @@ export default function SessionOffice({
         serverId={serverId}
         session={desktopSession}
         room={desktopRoom}
-        initialMode={desktopInitialMode}
         originRect={desktopOriginRect}
         terminatingSessionKey={terminatingSessionKey}
         terminateConfirmOpen={Boolean(confirmTarget)}

@@ -5,7 +5,6 @@ import {
   DEFAULT_OFFICE_MONITOR_TRANSFORM,
   type OfficeComputerPowerState,
   type OfficeMonitorTransform,
-  type OfficeWallpaperId,
 } from './office-computer-state';
 import {
   createMonitorScreenBundle,
@@ -428,9 +427,7 @@ export function syncMonitorAssemblyRig(
   palette: OfficeScenePalette,
   options: {
     power: OfficeComputerPowerState;
-    wallpaper: OfficeWallpaperId;
     transform: OfficeMonitorTransform;
-    rasterVersion: number;
   }
 ): void {
   applyMonitorTransform(rig, options.transform);
@@ -439,8 +436,6 @@ export function syncMonitorAssemblyRig(
 
   updateMonitorScreenTexture(unit.screenBundle, session, isSelected, palette, {
     power: options.power,
-    wallpaper: options.wallpaper,
-    rasterVersion: options.rasterVersion,
   });
 
   if (options.power === 'off') {

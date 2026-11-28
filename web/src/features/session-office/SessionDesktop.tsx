@@ -9,7 +9,6 @@ import {
 import {
   ArrowLeftOutlined,
   CodeOutlined,
-  CompressOutlined,
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
@@ -21,8 +20,6 @@ import {
   PlusOutlined,
   PoweroffOutlined,
   ReloadOutlined,
-  SettingOutlined,
-  SplitCellsOutlined,
   ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -30,11 +27,6 @@ import { Tooltip } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
 import OfficeBrowserWindow from './OfficeBrowserWindow';
-import OfficeComputerSettings from './OfficeComputerSettings';
-import {
-  OFFICE_DESKTOP_WALLPAPER_MAP,
-  useOptionalDesktopWallpaperAsset,
-} from './office-computer-config';
 import {
   buildStationPowerMap,
   isSessionServerScopeAdmitted,
@@ -44,7 +36,6 @@ import {
 } from './office-computer-power';
 import type {
   DesktopOriginRect,
-  DesktopWindowLayout,
   OfficeProjectRoom,
   OfficeSessionItem,
   SessionAvailability,
@@ -56,7 +47,6 @@ export interface SessionDesktopProps {
   serverId: string;
   session: OfficeSessionItem | null;
   room: OfficeProjectRoom | null;
-  initialMode: DesktopWindowLayout;
   originRect?: DesktopOriginRect | null;
   terminatingSessionKey: string | null;
   terminateConfirmOpen?: boolean;
@@ -163,7 +153,6 @@ export function SessionDesktop({
   serverId,
   session,
   room,
-  initialMode,
   originRect,
   terminatingSessionKey,
   terminateConfirmOpen = false,
@@ -175,9 +164,7 @@ export function SessionDesktop({
   onRefreshAll,
   onOpenNewTerminal,
 }: SessionDesktopProps) {
-  const [layoutMode, setLayoutMode] = useState<DesktopWindowLayout>(initialMode);
   const [terminalMinimized, setTerminalMinimized] = useState<boolean>(false);
-  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [portalOrigin, setPortalOrigin] = useState<DesktopOriginRect | null>(null);
   const [browserWindow, setBrowserWindow] = useState<{ identity: string; minimized: boolean } | null>(null);
 
@@ -185,7 +172,6 @@ export function SessionDesktop({
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const prevOpenRef = useRef(false);
   const prevDesktopIdentityRef = useRef<string | null>(null);
-  const prevInitialModeRef = useRef(initialMode);
   const prevTerminalVisibleRef = useRef(false);
   const lastRefitSignatureRef = useRef('');
 
@@ -232,7 +218,6 @@ export function SessionDesktop({
     durabilityNote,
     powerOffComputer,
     bootComputer,
-    updateAppearance,
   } = useOfficeComputerPowerController({
     open,
     serverId,
@@ -255,7 +240,6 @@ export function SessionDesktop({
 
   // Subscribe coworker pills to power preference updates across the room.
   const storeRevision = useOfficeComputerStoreRevision();
-  const loadedWallpaperAssetUrl = useOptionalDesktopWallpaperAsset(preferences.wallpaper);
 
   useEffect(() => {
     const justOpened = open && !prevOpenRef.current;
@@ -271,16 +255,11 @@ export function SessionDesktop({
     const identityChanged = prevDesktopIdentityRef.current !== desktopIdentity;
     prevDesktopIdentityRef.current = desktopIdentity;
 
-    const modeChanged = prevInitialModeRef.current !== initialMode;
-    prevInitialModeRef.current = initialMode;
-
-    if (justOpened || identityChanged || modeChanged) {
-      setLayoutMode(initialMode);
+    if (justOpened || identityChanged) {
       setTerminalMinimized(false);
     }
 
     if (identityChanged) {
-      setSettingsOpen(false);
       prevTerminalVisibleRef.current = false;
       lastRefitSignatureRef.current = '';
       if (!justOpened) {
@@ -303,8 +282,7 @@ export function SessionDesktop({
     }
   }, [
     desktopIdentity,
-    initialMode,
-    isPoweredOn,
+      isPoweredOn,
     open,
     originRect,
     session?.canAttachTerminal,
@@ -338,19 +316,15 @@ export function SessionDesktop({
         return;
       }
       event.preventDefault();
-      if (settingsOpen) {
-        setSettingsOpen(false);
-        return;
-      }
       onCloseToRoom();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onCloseToRoom, settingsOpen, terminateConfirmOpen]);
+  }, [open, onCloseToRoom, terminateConfirmOpen]);
 
   const terminalWanted = isPoweredOn && !terminalMinimized;
 
-  const terminalLayoutSignature = `${layoutMode}|${settingsOpen ? '1' : '0'}|${tabId ?? ''}`;
+  const terminalLayoutSignature = tabId ?? '';
 
   useEffect(() => {
     if (!open) return undefined;
@@ -384,22 +358,8 @@ export function SessionDesktop({
     };
   }, [open, shouldMountTerminal, terminalLayoutSignature, terminalWanted]);
 
-  const applyLayout = useCallback((nextLayout: DesktopWindowLayout) => {
-    if (!isPoweredOn) return;
-    setLayoutMode(nextLayout);
-    if (nextLayout === 'terminal-focus') {
-      setTerminalMinimized(false);
-    } else {
-      setTerminalMinimized(false);
-      setSettingsOpen(false);
-    }
-  }, [isPoweredOn]);
-
   const handleRestoreTerminal = useCallback(() => {
-    if (!isPoweredOn) {
-      setSettingsOpen(false);
-      return;
-    }
+    if (!isPoweredOn) return;
     setTerminalMinimized(false);
   }, [isPoweredOn]);
 
@@ -415,19 +375,8 @@ export function SessionDesktop({
     }
   }, [handleMinimizeTerminal, handleRestoreTerminal]);
 
-  const handleOpenSettings = useCallback(() => {
-    setSettingsOpen(true);
-  }, []);
-
-  const handleToggleSettings = useCallback(() => {
-    setSettingsOpen((prev) => !prev);
-  }, []);
-
   const handleToggleTerminalDock = useCallback(() => {
-    if (!isPoweredOn) {
-      setSettingsOpen(false);
-      return;
-    }
+    if (!isPoweredOn) return;
     if (terminalWanted) {
       handleMinimizeTerminal();
     } else {
@@ -466,10 +415,8 @@ export function SessionDesktop({
   const projectName = room?.projectName || session?.projectName || '当前项目';
   const projectPath = room?.projectPath || session?.cwd || '未指定目录';
   const sessionTitle = session?.shortLabel || session?.label || '未选定会话';
-  const wallpaperSpec = OFFICE_DESKTOP_WALLPAPER_MAP[preferences.wallpaper];
 
-  const activePaneCount = Number(terminalWanted) + Number(settingsOpen);
-  const gridColumns = activePaneCount >= 2 ? 'two' : (activePaneCount === 1 ? 'one' : 'none');
+  const gridColumns = terminalWanted ? 'one' : 'none';
   const allWindowsMinimized = isPoweredOn && gridColumns === 'none';
 
   const fallbackMeta: AvailabilityMeta = bootPhase === 'exited'
@@ -499,13 +446,6 @@ export function SessionDesktop({
       } as CSSProperties)
     : undefined;
 
-  const shellStyle = {
-    '--sd-rgb-color': preferences.rgbColor,
-  } as CSSProperties;
-
-  const wallpaperImgStyle = loadedWallpaperAssetUrl
-    ? ({ backgroundImage: `url("${loadedWallpaperAssetUrl.replace(/"/g, '\\"')}")` } as CSSProperties)
-    : undefined;
 
   return (
     <div
@@ -525,9 +465,7 @@ export function SessionDesktop({
       <div
         ref={shellRef}
         className="session-desktop-shell"
-        data-rgb={preferences.rgbEnabled ? 'on' : 'off'}
         data-power={preferences.power}
-        style={shellStyle}
         tabIndex={-1}
       >
         {/* OS Top Status Bar */}
@@ -570,37 +508,6 @@ export function SessionDesktop({
                 ) : null}
               </div>
             ) : null}
-          </div>
-
-          <div className="session-desktop-topbar-center" role="group" aria-label="桌面窗口与显示编排">
-            <button
-              type="button"
-              className="session-desktop-layout-btn"
-              data-active={isPoweredOn && layoutMode === 'terminal-focus' && terminalWanted && !settingsOpen ? 'true' : undefined}
-              onClick={() => applyLayout('terminal-focus')}
-            >
-              <CodeOutlined />
-              <span>终端窗口</span>
-            </button>
-            <button
-              type="button"
-              className="session-desktop-layout-btn"
-              data-active={isPoweredOn && layoutMode === 'split' && terminalWanted ? 'true' : undefined}
-              onClick={() => applyLayout('split')}
-            >
-              <SplitCellsOutlined />
-              <span>分屏协同</span>
-            </button>
-            <span className="session-desktop-topbar-sep" aria-hidden="true" />
-            <button
-              type="button"
-              className="session-desktop-layout-btn"
-              data-active={settingsOpen ? 'true' : undefined}
-              onClick={() => handleToggleSettings()}
-            >
-              <SettingOutlined />
-              <span>电脑设置</span>
-            </button>
           </div>
 
           <div className="session-desktop-topbar-right">
@@ -699,22 +606,14 @@ export function SessionDesktop({
           </div>
         </header>
 
-        {/* Desktop Stage: Wallpaper Backdrop + Standby or Active OS Windows */}
+        {/* Desktop Stage: Standby or Active OS Windows */}
         <main
           className="session-desktop-stage"
-          data-wallpaper={preferences.wallpaper}
           data-power={preferences.power}
         >
-          {isPoweredOn && loadedWallpaperAssetUrl ? (
-            <div
-              className="session-desktop-wallpaper-image"
-              style={wallpaperImgStyle}
-              aria-hidden="true"
-            />
-          ) : null}
 
           {isPoweredOn ? (
-            /* Powered-On Desktop Wallpaper Canvas (Desktop Icons + Identity Summary) */
+            /* Powered-On Desktop Canvas (Desktop Icons + Identity Summary) */
             <section
               className="session-desktop-canvas"
               data-revealed={allWindowsMinimized ? 'true' : undefined}
@@ -735,20 +634,6 @@ export function SessionDesktop({
                   <span className="session-desktop-app-meta">{sessionTitle}</span>
                 </button>
 
-                <button
-                  type="button"
-                  className="session-desktop-app-icon"
-                  data-active={settingsOpen ? 'true' : undefined}
-                  onClick={() => handleOpenSettings()}
-                >
-                  <span className="session-desktop-app-glyph">
-                    <SettingOutlined />
-                  </span>
-                  <span className="session-desktop-app-title">电脑设置</span>
-                  <span className="session-desktop-app-meta">
-                    {wallpaperSpec.label} · 单屏
-                  </span>
-                </button>
 
               </div>
 
@@ -793,7 +678,7 @@ export function SessionDesktop({
                         <dt>DISPLAY</dt>
                         <dd>
                           <span>
-                            {wallpaperSpec.label} · 单屏 · RGB {preferences.rgbEnabled ? preferences.rgbColor.toUpperCase() : '关'}
+                            单屏
                           </span>
                         </dd>
                       </div>
@@ -934,14 +819,6 @@ export function SessionDesktop({
                       <span>开机并恢复原会话</span>
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="session-desktop-btn"
-                    onClick={() => handleOpenSettings()}
-                  >
-                    <SettingOutlined />
-                    <span>电脑设置</span>
-                  </button>
                   {session ? (
                     <button
                       type="button"
@@ -1008,24 +885,6 @@ export function SessionDesktop({
                   ) : null}
                 </div>
                 <div className="session-desktop-window-controls">
-                  <button
-                    type="button"
-                    className="session-desktop-win-btn"
-                    onClick={() => handleToggleSettings()}
-                    title="打开或收起电脑设置窗口"
-                    aria-label="切换电脑设置窗口"
-                  >
-                    <SettingOutlined />
-                  </button>
-                  <button
-                    type="button"
-                    className="session-desktop-win-btn"
-                    onClick={() => applyLayout(layoutMode === 'split' ? 'terminal-focus' : 'split')}
-                    title={layoutMode === 'split' ? '独占终端窗口' : '分屏协同'}
-                    aria-label={layoutMode === 'split' ? '独占终端窗口' : '分屏协同'}
-                  >
-                    {layoutMode === 'split' ? <CompressOutlined /> : <SplitCellsOutlined />}
-                  </button>
                   <button
                     type="button"
                     className="session-desktop-win-btn"
@@ -1250,24 +1109,6 @@ export function SessionDesktop({
               </div>
             </section>
 
-            {/* Focused Computer Settings & Configuration Window */}
-            <OfficeComputerSettings
-              open={settingsOpen}
-              onCloseWindow={() => setSettingsOpen(false)}
-              onFocusTerminal={isPoweredOn ? () => {
-                setSettingsOpen(false);
-                handleRestoreTerminal();
-              } : undefined}
-              serverId={serverId}
-              session={session}
-              preferences={preferences}
-              loadedWallpaperAssetUrl={loadedWallpaperAssetUrl}
-              durabilityNote={durabilityNote}
-              isTerminating={isTerminating}
-              onPowerOffComputer={handlePowerOff}
-              onBootComputer={handleBoot}
-              onUpdateAppearance={updateAppearance}
-            />
           </div>
           {browserWindowVisible ? (
             <OfficeBrowserWindow
@@ -1320,17 +1161,6 @@ export function SessionDesktop({
               <span>任务浏览器</span>
             </button>
 
-            <button
-              type="button"
-              className="session-desktop-dock-pill"
-              data-active={settingsOpen ? 'true' : undefined}
-              data-minimized={!settingsOpen ? 'true' : undefined}
-              onClick={() => handleToggleSettings()}
-              title="切换电脑显示与电源设置窗口"
-            >
-              <SettingOutlined />
-              <span>电脑设置</span>
-            </button>
 
           </div>
 

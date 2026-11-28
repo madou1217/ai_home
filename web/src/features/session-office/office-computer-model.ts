@@ -2,31 +2,24 @@ import * as THREE from 'three';
 import type { SessionAvailability } from './session-office-types';
 import type { OfficeScenePalette } from './office-scene-types';
 import {
-  normalizeOfficeRgbColor,
   type OfficeComputerPowerState,
 } from './office-computer-state';
 import { getSharedVoxelMaterialSet } from './office-voxel-atlas';
 import {
   createSolidColorVoxelGeometry,
   VoxelBoxBuilder,
-  type SolidColorBoxInput,
 } from './office-voxel-builder';
 
 /**
  * Minecraft 体素桌面计算机组件：
  * - 严格轴对齐方块几何（零圆柱/球体/圆环/挤压/曲线，零任意旋转）。
- * - 全部静态不透明部件合批为 1 个共享图集 Mesh；玻璃侧窗、RGB 灯条、电源灯各占 1 个 Mesh（合计仅 4 Draw Calls）。
+ * - 全部静态不透明部件合批为 1 个共享图集 Mesh；玻璃侧窗、电源灯各占 1 个 Mesh。
  */
 
 export interface DesktopComputerRig {
   root: THREE.Group;
-  rgbMaterial: THREE.MeshBasicMaterial;
   powerLedMaterial: THREE.MeshBasicMaterial;
   powerState: OfficeComputerPowerState;
-  rgbEnabled: boolean;
-  rgbColor: THREE.Color;
-  /** 会话退出态下的 RGB 低亮标记 */
-  rgbDimmed: boolean;
   /** 确定性呼吸灯初始相位，避免相邻工位完全同步闪烁 */
   pulsePhase: number;
 }
@@ -46,7 +39,6 @@ const PC_MAX_Z = 0.4375;
 const PC_CAVITY_MIN_Y = PC_MIN_Y + 0.046875;
 const PC_CAVITY_MAX_Y = PC_MAX_Y - 0.03125;
 
-const RGB_OFF_HEX = '#262f3d';
 const POWER_LED_OFF_HEX = '#374151';
 
 /** 基于工位强调色计算确定性 32 位哈希（FNV-1a） */
@@ -394,62 +386,6 @@ function appendVoxelDesktopProps(
   });
 }
 
-/** 构建合批 RGB 发光体素灯条（机箱前竖条 + 显卡侧灯条 + 内存顶灯 + 键盘前灯条） */
-function buildRgbAccentGeometry(): THREE.BufferGeometry {
-  const rgbBoxes: SolidColorBoxInput[] = [
-    // 机箱前脸右侧竖向 RGB 灯柱
-    {
-      minX: -0.7734375,
-      minY: PC_MIN_Y + 0.0625,
-      minZ: 0.4296875,
-      maxX: -0.7578125,
-      maxY: PC_MIN_Y + 0.390625,
-      maxZ: PC_MAX_Z,
-      shadeFaces: false,
-    },
-    // 显卡侧边水平 RGB 灯条（透过玻璃窗可见）
-    {
-      minX: -0.78125,
-      minY: PC_MIN_Y + 0.1875,
-      minZ: 0.140625,
-      maxX: -0.765625,
-      maxY: PC_MIN_Y + 0.203125,
-      maxZ: 0.3125,
-      shadeFaces: false,
-    },
-    // 2 根内存条正面微光 RGB 灯边
-    {
-      minX: -0.84375,
-      minY: PC_MIN_Y + 0.2578125,
-      minZ: 0.265625,
-      maxX: -0.8359375,
-      maxY: PC_MIN_Y + 0.3515625,
-      maxZ: 0.28125,
-      shadeFaces: false,
-    },
-    {
-      minX: -0.84375,
-      minY: PC_MIN_Y + 0.2578125,
-      minZ: 0.296875,
-      maxX: -0.8359375,
-      maxY: PC_MIN_Y + 0.3515625,
-      maxZ: 0.3125,
-      shadeFaces: false,
-    },
-    // 键盘前缘低矮 RGB 氛围条
-    {
-      minX: 0.125,
-      minY: MAT_TOP_Y,
-      minZ: -0.171875,
-      maxX: 0.1328125,
-      maxY: MAT_TOP_Y + 0.015625,
-      maxZ: 0.203125,
-      shadeFaces: false,
-    },
-  ];
-  return createSolidColorVoxelGeometry(rgbBoxes);
-}
-
 /** 构建机箱顶前角方块电源指示灯几何 */
 function buildPowerLedGeometry(): THREE.BufferGeometry {
   return createSolidColorVoxelGeometry([
@@ -471,7 +407,7 @@ export function createDesktopComputerRig(
 ): DesktopComputerRig {
   const root = new THREE.Group();
   const sharedMaterials = getSharedVoxelMaterialSet();
-  const safeAccentHex = normalizeOfficeRgbColor(accentHex, palette.accentHex);
+  const safeAccentHex = accentHex || palette.accentHex;
 
   const opaqueBuilder = new VoxelBoxBuilder();
   const glassBuilder = new VoxelBoxBuilder();
@@ -495,17 +431,6 @@ export function createDesktopComputerRig(
   glassMesh.userData.noShadow = true;
   root.add(glassMesh);
 
-  // Draw Call 3: 工位独立 RGB 灯条材质与几何
-  const rgbMaterial = new THREE.MeshBasicMaterial({
-    color: safeAccentHex,
-  });
-  const rgbMesh = new THREE.Mesh(buildRgbAccentGeometry(), rgbMaterial);
-  rgbMesh.name = 'voxel-computer-rgb';
-  rgbMesh.castShadow = false;
-  rgbMesh.receiveShadow = false;
-  rgbMesh.userData.noShadow = true;
-  root.add(rgbMesh);
-
   // Draw Call 4: 工位独立电源指示灯材质与几何
   const powerLedMaterial = new THREE.MeshBasicMaterial({
     color: palette.successHex,
@@ -521,12 +446,8 @@ export function createDesktopComputerRig(
 
   return {
     root,
-    rgbMaterial,
     powerLedMaterial,
     powerState: 'on',
-    rgbEnabled: true,
-    rgbColor: new THREE.Color(safeAccentHex),
-    rgbDimmed: false,
     pulsePhase: initialPhase,
   };
 }
@@ -534,27 +455,10 @@ export function createDesktopComputerRig(
 export function syncDesktopComputerRig(
   rig: DesktopComputerRig,
   power: OfficeComputerPowerState,
-  rgbEnabled: boolean,
-  rgbColorHex: string,
   availability: SessionAvailability,
   palette: OfficeScenePalette
 ): void {
   rig.powerState = power;
-  rig.rgbEnabled = rgbEnabled;
-  rig.rgbDimmed = availability === 'exited';
-
-  const normalizedHex = normalizeOfficeRgbColor(rgbColorHex);
-  rig.rgbColor.set(normalizedHex);
-
-  // RGB 灯光同步：开机且开启 RGB 时显示主色（退出态柔暗），否则暗灰熄灭
-  if (power === 'on' && rgbEnabled) {
-    rig.rgbMaterial.color.copy(rig.rgbColor);
-    if (rig.rgbDimmed) {
-      rig.rgbMaterial.color.multiplyScalar(0.55);
-    }
-  } else {
-    rig.rgbMaterial.color.set(RGB_OFF_HEX);
-  }
 
   // 机箱顶前角电源状态灯同步
   let ledHex = palette.accentHex;
@@ -570,29 +474,3 @@ export function syncDesktopComputerRig(
   rig.powerLedMaterial.color.set(ledHex);
 }
 
-export function animateDesktopComputerRig(
-  rig: DesktopComputerRig,
-  elapsedSec: number,
-  dtSec: number,
-  reducedMotion: boolean
-): void {
-  if (rig.powerState !== 'on' || !rig.rgbEnabled) {
-    return;
-  }
-
-  const baseScale = rig.rgbDimmed ? 0.55 : 1.0;
-  if (reducedMotion) {
-    rig.rgbMaterial.color.copy(rig.rgbColor).multiplyScalar(baseScale);
-    return;
-  }
-
-  // 温和呼吸亮度调制（0.76 ~ 1.00），零临时对象分配
-  const safeDt = Number.isFinite(dtSec) && dtSec > 0 ? Math.min(dtSec, 0.1) : 0;
-  if (safeDt > 0) {
-    rig.pulsePhase = (rig.pulsePhase + safeDt * 0.15) % (Math.PI * 2);
-  }
-  const timeSec = Number.isFinite(elapsedSec) ? elapsedSec : 0;
-  const wave = Math.sin(timeSec * 2.1 + rig.pulsePhase);
-  const pulseFactor = baseScale * (0.88 + wave * 0.12);
-  rig.rgbMaterial.color.copy(rig.rgbColor).multiplyScalar(pulseFactor);
-}

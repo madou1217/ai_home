@@ -18,7 +18,6 @@ import {
   type OfficeCharacterRig,
 } from './office-character';
 import {
-  animateDesktopComputerRig,
   createDesktopComputerRig,
   syncDesktopComputerRig,
   type DesktopComputerRig,
@@ -82,7 +81,6 @@ export interface StationSyncOptions {
   isSelected: boolean;
   isHovered: boolean;
   preferences: OfficeComputerPreferences;
-  rasterVersion: number;
 }
 
 function hashKey(value: string): number {
@@ -95,11 +93,11 @@ function hashKey(value: string): number {
 }
 
 /**
- * 在不修改禁止文件 office-computer-model.ts 的前提下，将桌面上的 PC 机箱（含侧透玻璃、RGB 灯条与电源灯）
+ * 在不修改禁止文件 office-computer-model.ts 的前提下，将桌面上的 PC 机箱（含侧透玻璃与电源灯）
  * 精准平移至桌子侧后方地面地毯（x ∈ [0.375, 0.625], y ∈ [0.03125, 0.46875], z ∈ [-0.75, -0.375]）：
  * - 严格避开桌腿、椅子、显示器与键盘鼠标；
  * - 任意正视屏幕视角（含全范围偏航角）均保证整块屏幕零遮挡；
- * - 完整保留机箱原有合批 Draw Call、RGB/电源灯效材质与 station 拾取标签。
+ * - 完整保留机箱原有合批 Draw Call 与电源灯效材质与 station 拾取标签。
  */
 const ORIGINAL_PC_MIN_X = -0.98;
 const ORIGINAL_PC_MAX_X = -0.7;
@@ -442,7 +440,6 @@ export function createWorkstationPod(
     isSelected: false,
     isHovered: false,
     preferences: DEFAULT_OFFICE_COMPUTER_PREFERENCES,
-    rasterVersion: 0,
   });
 
   return rig;
@@ -468,7 +465,6 @@ export function syncWorkstationPod(
     isSelected,
     isHovered,
     preferences,
-    rasterVersion,
   } = options;
 
   // 悬停提亮（绝不修改几何形状）
@@ -478,22 +474,18 @@ export function syncWorkstationPod(
     rig.furnitureMaterial.emissive.set('#000000');
   }
 
-  // 同步主机电源、RGB 灯效与键鼠状态
+  // 同步主机电源与键鼠状态
   syncDesktopComputerRig(
     rig.computerRig,
     preferences.power,
-    preferences.rgbEnabled,
-    preferences.rgbColor,
     session.availability,
     palette
   );
 
-  // 同步显示器位姿、壁纸光栅化与实时预览屏幕
+  // 同步显示器位姿与实时预览屏幕
   syncMonitorAssemblyRig(rig.monitorAssembly, session, isSelected, palette, {
     power: preferences.power,
-    wallpaper: preferences.wallpaper,
     transform: preferences.monitor,
-    rasterVersion,
   });
 
   updateDeskBadgeTexture(
@@ -541,5 +533,4 @@ export function animateWorkstationPod(
   }
 
   animateOfficeCharacter(rig.character, elapsedSec, reducedMotion, behaviourPose);
-  animateDesktopComputerRig(rig.computerRig, elapsedSec, dtSec, reducedMotion);
 }

@@ -1,13 +1,7 @@
 import * as THREE from 'three';
 import type { OfficeSessionItem, SessionAvailability } from './session-office-types';
 import type { OfficeScenePalette, OfficeSceneSyncState } from './office-scene-types';
-import {
-  type OfficeComputerPowerState,
-  type OfficeWallpaperId,
-} from './office-computer-state';
-import {
-  drawMonitorWallpaperBackdrop,
-} from './office-computer-wallpapers';
+import type { OfficeComputerPowerState } from './office-computer-state';
 
 /**
  * 像素风 2D Canvas 纹理生成器（显示器实时会话预览、墙面铭牌、房间终端、桌面工位牌）。
@@ -24,8 +18,6 @@ export interface CanvasTextureBundle {
 
 export interface MonitorScreenTextureOptions {
   power: OfficeComputerPowerState;
-  wallpaper: OfficeWallpaperId;
-  rasterVersion: number;
 }
 
 export const OFFICE_MONITOR_CANVAS_WIDTH = 1024;
@@ -36,8 +28,6 @@ const SCREEN_H = OFFICE_MONITOR_CANVAS_HEIGHT;
 
 const DEFAULT_SCREEN_OPTIONS: MonitorScreenTextureOptions = {
   power: 'on',
-  wallpaper: 'aurora',
-  rasterVersion: 0,
 };
 
 const PIXEL_FONT_STACK = '"JetBrains Mono", "Fira Code", "Consolas", "PingFang SC", "Microsoft YaHei", monospace';
@@ -205,15 +195,11 @@ function getAvailabilityBadge(
   }
 }
 
-/** 绘制 1024×640 像素化壁纸背景（兼容光栅化接口），叠加深色遮罩确保高对比可读 */
-function paintPixelatedWallpaper(
-  ctx: CanvasRenderingContext2D,
-  wallpaperId: OfficeWallpaperId
-): void {
-  drawMonitorWallpaperBackdrop(ctx, wallpaperId, SCREEN_W, SCREEN_H);
-  ctx.fillStyle = 'rgba(5, 9, 18, 0.56)';
+/** 绘制固定深色像素背景，保证屏幕文本高对比可读。 */
+function paintScreenBackdrop(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = '#070c16';
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
   for (let y = 0; y < SCREEN_H; y += 12) {
     ctx.fillRect(0, y, SCREEN_W, 2);
   }
@@ -283,8 +269,6 @@ export function updateMonitorScreenTexture(
   const displayCwd = formatCompactPath(session.cwd) || '未登记工作目录';
   const signature = [
     'on-v3',
-    options.wallpaper,
-    String(options.rasterVersion),
     palette.mode,
     isSelected ? '1' : '0',
     session.shortLabel,
@@ -303,8 +287,8 @@ export function updateMonitorScreenTexture(
   const { ctx } = bundle;
   ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
 
-  // 绘制 1024×640 壁纸底图（支持光栅资产热刷新）
-  paintPixelatedWallpaper(ctx, options.wallpaper);
+  // 绘制 1024×640 固定屏幕背景
+  paintScreenBackdrop(ctx);
 
   const availBadge = getAvailabilityBadge(session.availability);
 

@@ -120,7 +120,7 @@ const ImageStudioWorkspace: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [initError, setInitError] = useState('');
   const [switchingSession, setSwitchingSession] = useState(false);
-  const [running, setRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [composerFeedback, setComposerFeedback] = useState<ImageStudioComposerFeedback | null>(null);
   const [deletingRevisionId, setDeletingRevisionId] = useState('');
   const [previewTarget, setPreviewTarget] = useState<{
@@ -293,7 +293,7 @@ const ImageStudioWorkspace: React.FC = () => {
   }, [background, mode, modelKey, models, outputFormat, quality]);
 
   useEffect(() => {
-    if (!session?.id || running) return undefined;
+    if (!session?.id) return undefined;
     let cancelled = false;
     const refresh = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -318,7 +318,7 @@ const ImageStudioWorkspace: React.FC = () => {
       window.removeEventListener('focus', refresh);
       window.removeEventListener('aih:webui-task-completed', refresh);
     };
-  }, [applyModelCatalog, running, selectedAssetId, selectedRevisionId, session?.id, setSelectionFromSession]);
+  }, [applyModelCatalog, selectedAssetId, selectedRevisionId, session?.id, setSelectionFromSession]);
 
   const selectedRevision = useMemo(
     () => resolveSelectedRevision(session, selectedRevisionId),
@@ -406,6 +406,59 @@ const ImageStudioWorkspace: React.FC = () => {
       // 会话写入已经完成；列表会由轮询继续同步，避免把辅助刷新误报成生成失败。
     }
   };
+
+  const runningRevisionCount = session
+    ? session.revisions.filter((revision) => revision.status === 'running').length
+    : 0;
+  const sessionHasRunningRevision = runningRevisionCount > 0;
+
+  // 生成由服务端内部队列调度：客户端只轮询会话状态，提交后可以继续提交新需求。
+  const sessionRef = useRef<ImageStudioSession | null>(null);
+  sessionRef.current = session;
+
+  useEffect(() => {
+    if (!session?.id || !sessionHasRunningRevision) return undefined;
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const detail = await imageStudioAPI.getSession(session.id);
+        if (cancelled) return;
+        const previousStatus = new Map(
+          (sessionRef.current?.revisions || []).map((revision) => [revision.id, revision.status] as const),
+        );
+        setSelectionFromSession(detail.session, selectedRevisionId, selectedAssetId);
+        await refreshSessionList();
+        const stillRunning = detail.session.revisions.some((revision) => revision.status === 'running');
+        if (stillRunning) return;
+        const settledFailure = detail.session.revisions.find((revision) => (
+          revision.status === 'failed' && previousStatus.get(revision.id) === 'running'
+        ));
+        if (settledFailure) {
+          setComposerFeedback({
+            tone: 'error',
+            text: `失败：${settledFailure.error?.message || '图像生成未完成'}`,
+          });
+          return;
+        }
+        // 异步提交时客户端没有结果可预览；结算后自动选中刚完成的修订，
+        // 让画布直接显示这次生成的图，而不是停在提交前的旧图上。
+        const settledSuccess = detail.session.revisions.find((revision) => (
+          revision.status === 'succeeded' && previousStatus.get(revision.id) === 'running'
+        ));
+        if (settledSuccess) {
+          setSelectionFromSession(detail.session, settledSuccess.id, settledSuccess.outputAssetIds?.[0] || '');
+        }
+        setComposerFeedback({ tone: 'success', text: '已生成：结果已保存到当前会话。' });
+      } catch (_error) {
+        // 会话可能正在写入；下一轮继续同步。
+      }
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selectedAssetId, selectedRevisionId, session?.id, sessionHasRunningRevision, setSelectionFromSession]);
 
   const handleSelectSession = (sessionId: string) => {
     if (!sessionId || sessionId === session?.id) return;
@@ -539,10 +592,12 @@ const ImageStudioWorkspace: React.FC = () => {
     }
     const runSessionId = session.id;
     const runMode = mode;
-    setRunning(true);
+    setSubmitting(true);
     setComposerFeedback({
       tone: 'running',
-      text: runMode === 'edit' ? '生成中：正在处理编辑修订…' : '生成中：正在生成新图像…',
+      text: runMode === 'edit'
+        ? '已提交：编辑修订已进入内部队列，可继续提交新的需求。'
+        : '已提交：新图像已进入内部队列，可继续提交新的需求。',
     });
     try {
       const response = await imageStudioAPI.run(runSessionId, buildImageStudioRunInput({
@@ -562,23 +617,12 @@ const ImageStudioWorkspace: React.FC = () => {
         outputFormat,
         outputCompression,
         moderation,
+        async: true,
       }));
-      const revision = response.session.revisions.find((item) => item.id === response.revisionId) || null;
-      const assetId = revision?.outputAssetIds?.[0] || '';
       if (activeSessionIdRef.current === runSessionId) {
-        setSelectionFromSession(response.session, response.revisionId, assetId);
-        if (runMode === 'edit' && assetId) {
-          setSourceSelections([storedSourceSelection(assetId)]);
-          setParentRevisionId(response.revisionId);
-          setMaskAssetId('');
-          setMaskUpload(null);
-        }
+        setSelectionFromSession(response.session, response.revisionId, '');
       }
       await refreshSessionList();
-      setComposerFeedback({
-        tone: 'success',
-        text: runMode === 'edit' ? '已生成：编辑修订已保存到当前会话。' : '已生成：新图像已保存到当前会话。',
-      });
     } catch (error) {
       if (activeSessionIdRef.current === runSessionId) {
         try {
@@ -593,7 +637,7 @@ const ImageStudioWorkspace: React.FC = () => {
         text: `失败：${detail}`,
       });
     } finally {
-      setRunning(false);
+      setSubmitting(false);
     }
   };
 
@@ -780,9 +824,6 @@ const ImageStudioWorkspace: React.FC = () => {
     });
   };
 
-  const sessionHasRunningRevision = Boolean(
-    running || session?.revisions.some((revision) => revision.status === 'running'),
-  );
   const onlineModelCount = models.filter((model) => model.availableAccountCount > 0).length;
 
   const headerExtra = (
@@ -817,7 +858,7 @@ const ImageStudioWorkspace: React.FC = () => {
           appVariant="icon"
           icon={<ReloadOutlined />}
           aria-label="刷新会话"
-          disabled={!session || running}
+          disabled={!session || submitting}
           onClick={handleRefreshCurrent}
         />
       </Tooltip>
@@ -881,7 +922,7 @@ const ImageStudioWorkspace: React.FC = () => {
                 revision={selectedRevision}
                 selectedAsset={selectedAsset}
                 assetUrls={assetUrls}
-                running={running}
+                running={sessionHasRunningRevision}
                 onSelectAsset={(nextAssetId) => {
                   setSelectedAssetId(nextAssetId);
                 }}
@@ -921,7 +962,8 @@ const ImageStudioWorkspace: React.FC = () => {
               sourceLimit={sourceLimit}
               maskPreviewUrl={maskPreviewUrl}
               maskLabel={maskUpload?.name || (maskAsset ? `遮罩资产 · ${maskAsset.id.slice(-8)}` : '')}
-              running={running}
+              submitting={submitting}
+              runningRevisionCount={runningRevisionCount}
               feedback={composerFeedback}
               onModelChange={setModelKey}
               onModeChange={setMode}

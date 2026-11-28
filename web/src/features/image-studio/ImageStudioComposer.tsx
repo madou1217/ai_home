@@ -62,7 +62,10 @@ interface ImageStudioComposerProps {
   sourceLimit: number;
   maskPreviewUrl: string;
   maskLabel: string;
-  running: boolean;
+  /** 正在提交（等待服务端接单），不是「正在生成」。 */
+  submitting: boolean;
+  /** 会话内正在生成/排队的修订数量。 */
+  runningRevisionCount: number;
   feedback?: ImageStudioComposerFeedback | null;
   onModelChange: (modelKey: string) => void;
   onModeChange: (mode: ImageStudioRevisionMode) => void;
@@ -311,7 +314,8 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
   sourceLimit,
   maskPreviewUrl,
   maskLabel,
-  running,
+  submitting,
+  runningRevisionCount,
   feedback,
   onModelChange,
   onModeChange,
@@ -503,13 +507,18 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
           type="primary"
           size="large"
           icon={<SendOutlined />}
-          loading={running}
-          disabled={!canSubmit || running}
+          loading={submitting}
+          disabled={!canSubmit || submitting}
           onClick={onSubmit}
           block
         >
-          {running ? '生成中…' : mode === 'edit' ? '开始编辑' : '开始生成'}
+          {mode === 'edit' ? '开始编辑' : '开始生成'}
         </AppButton>
+        {runningRevisionCount > 0 ? (
+          <p className={styles.composerHint} role="status">
+            队列中有 {runningRevisionCount} 条生成进行中，可继续提交。
+          </p>
+        ) : null}
       </div>
     </aside>
   );

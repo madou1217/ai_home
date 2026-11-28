@@ -4492,6 +4492,8 @@ export interface ImageStudioRunInput {
   output_format?: string;
   output_compression?: number;
   moderation?: string;
+  /** 只落库并立即返回 running 修订，生成交给服务端内部队列。 */
+  async?: boolean;
 }
 
 export interface ImageStudioRunResponse extends ImageStudioSessionResponse {

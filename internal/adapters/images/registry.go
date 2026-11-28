@@ -531,6 +531,11 @@ func retryable(err error) bool {
 	if !ok {
 		return false
 	}
+	// 超时不能换号重放：上游可能已经收下请求并出图计费，只是响应没在时限内回来。
+	// 换号再发一次会重复消耗额度并产出重复图片，比直接把这单判失败更糟。
+	if generationErr.Code == "upstream_timeout" {
+		return false
+	}
 	switch generationErr.Code {
 	case "invalid_access_token",
 		"infinite_loop_detected",

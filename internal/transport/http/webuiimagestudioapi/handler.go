@@ -252,6 +252,21 @@ func (h *Handler) handleExecuteRun(w http.ResponseWriter, r *http.Request, sessi
 			runReq.HasSources = true
 		}
 	}
+	// 异步提交：只落库并返回 running 修订，生成交给服务内部队列。
+	// 客户端因此可以连续提交多条需求，由网关按并发上限排队消化。
+	if runReq.Async {
+		res, err := h.service.StartRun(r.Context(), sessionID, runReq)
+		if err != nil {
+			writeFromStudioErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"ok":         true,
+			"session":    res.Session,
+			"revisionId": res.RevisionID,
+		})
+		return
+	}
 	res, err := h.service.ExecuteRun(r.Context(), sessionID, runReq)
 	if err != nil {
 		writeFromStudioErr(w, err)

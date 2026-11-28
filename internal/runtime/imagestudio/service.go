@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
 	"github.com/madou1217/ai_home/internal/adapters/images"
@@ -59,6 +61,8 @@ type RunRequest struct {
 	Image             string           `json:"image"`
 	MaskAssetID       string           `json:"maskAssetId"`
 	Mask              string           `json:"mask"`
+	// Async=true 时只落库并返回 running 修订，生成交给内部队列（WebUI 使用）。
+	Async bool `json:"async,omitempty"`
 }
 
 // RunResult 是成功运行后的完整会话快照与修订 ID。
@@ -81,6 +85,8 @@ type ServiceDependencies struct {
 	Usage         imagesapi.UsageRecorder
 	Outcomes      imagesapi.ImageOutcomes
 	Now           func() time.Time
+	// MaxConcurrentRuns 是后台同时执行的运行数；<=0 时用 DefaultMaxConcurrentRuns。
+	MaxConcurrentRuns int
 }
 
 // Service 编排工作台模型目录、会话仓储与上游生图/编辑运行。
@@ -96,6 +102,9 @@ type Service struct {
 	usage         imagesapi.UsageRecorder
 	outcomes      imagesapi.ImageOutcomes
 	now           func() time.Time
+	jobs          chan preparedRun
+	// queuedBytes 是排队请求体的当前占用，用于在条数之外再兜一层内存上限。
+	queuedBytes atomic.Int64
 }
 
 // NewService 构造线程安全的 Image Studio 领域服务。
@@ -111,7 +120,14 @@ func NewService(deps ServiceDependencies) (*Service, error) {
 	if fetcher == nil {
 		fetcher = images.NewFetcher(deps.HTTP)
 	}
-	return &Service{
+	workers := deps.MaxConcurrentRuns
+	if workers <= 0 {
+		workers = DefaultMaxConcurrentRuns
+	}
+	if workers > imageStudioQueueLimit {
+		workers = imageStudioQueueLimit
+	}
+	service := &Service{
 		store:         deps.Store,
 		catalog:       deps.Catalog,
 		registry:      deps.Registry,
@@ -123,7 +139,12 @@ func NewService(deps ServiceDependencies) (*Service, error) {
 		usage:         deps.Usage,
 		outcomes:      deps.Outcomes,
 		now:           nowFn,
-	}, nil
+		jobs:          make(chan preparedRun, imageStudioQueueLimit),
+	}
+	for worker := 0; worker < workers; worker++ {
+		go service.runWorker()
+	}
+	return service, nil
 }
 
 // Store 返回关联的会话/资产 SQLite 仓储。
@@ -151,15 +172,57 @@ func (svc *Service) DeleteRevision(ctx context.Context, sessionID string, revisi
 	return svc.store.DeleteRevision(ctx, sessionID, revisionID)
 }
 
-// ExecuteRun 校验参数、创建 running 修订、调用上游策略、持久化输出图片并更新账号统计。
+// preparedRun 是一次已经落库、等待执行的运行。
+type preparedRun struct {
+	sessionID  string
+	revisionID string
+	request    imagegeneration.Request
+}
+
+// ExecuteRun 同步执行一次运行：校验参数、创建 running 修订、调用上游策略、持久化输出图片并更新账号统计。
+//
+// 管理端「立即拿结果」的调用方继续走这里；WebUI 提交走 StartRun，把生成交给内部队列，
+// 避免客户端被一条长请求和并发上限卡住。
 func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunRequest) (RunResult, error) {
-	models, _, err := svc.ListModels(ctx, "")
+	plan, _, err := svc.prepareRun(ctx, sessionID, req)
 	if err != nil {
 		return RunResult{}, err
 	}
-	selected, err := selectCatalogModel(req, models)
+	completed, err := svc.executePrepared(ctx, plan)
 	if err != nil {
 		return RunResult{}, err
+	}
+	return RunResult{Session: completed, RevisionID: plan.revisionID}, nil
+}
+
+// StartRun 创建 running 修订后立即返回会话快照，把真正的上游调用交给内部队列。
+//
+// 语义是「提交成功 ≠ 生成成功」：客户端可以连续提交多条需求，队列按 FIFO 消化，
+// 并发上限在内部排队等待，而不是把「暂时没有并发名额」直接变成客户端失败，
+// 也不是让客户端自己禁止提交新需求。
+func (svc *Service) StartRun(ctx context.Context, sessionID string, req RunRequest) (RunResult, error) {
+	plan, started, err := svc.prepareRun(ctx, sessionID, req)
+	if err != nil {
+		return RunResult{}, err
+	}
+	if enqueueErr := svc.enqueueRun(plan); enqueueErr != nil {
+		failCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
+		_, _, _ = svc.store.FailRevision(failCtx, sessionID, plan.revisionID, "", enqueueErr)
+		cancel()
+		return RunResult{}, enqueueErr
+	}
+	return RunResult{Session: started, RevisionID: plan.revisionID}, nil
+}
+
+// prepareRun 完成全部同步校验与落库，返回可直接执行的运行计划与会话快照。
+func (svc *Service) prepareRun(ctx context.Context, sessionID string, req RunRequest) (preparedRun, Session, error) {
+	models, _, err := svc.ListModels(ctx, "")
+	if err != nil {
+		return preparedRun{}, Session{}, err
+	}
+	selected, err := selectCatalogModel(req, models)
+	if err != nil {
+		return preparedRun{}, Session{}, err
 	}
 
 	mode := "generation"
@@ -168,13 +231,13 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 	}
 	sourcesInput, err := normalizeStudioSources(req)
 	if err != nil {
-		return RunResult{}, err
+		return preparedRun{}, Session{}, err
 	}
 	if mode == "generation" && (len(sourcesInput) > 0 || strings.TrimSpace(req.Mask) != "" || strings.TrimSpace(req.MaskAssetID) != "") {
-		return RunResult{}, NewError(400, "image_input_requires_edit", "source images and masks require edit mode")
+		return preparedRun{}, Session{}, NewError(400, "image_input_requires_edit", "source images and masks require edit mode")
 	}
 	if strings.TrimSpace(req.MaskAssetID) != "" && strings.TrimSpace(req.Mask) != "" {
-		return RunResult{}, NewError(400, "ambiguous_mask_input", "choose either maskAssetId or mask, not both")
+		return preparedRun{}, Session{}, NewError(400, "ambiguous_mask_input", "choose either maskAssetId or mask, not both")
 	}
 
 	type resolvedSource struct {
@@ -190,12 +253,12 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		aid := strings.TrimSpace(src.AssetID)
 		rawImg := strings.TrimSpace(src.Image)
 		if aid != "" && rawImg != "" {
-			return RunResult{}, NewError(400, "ambiguous_image_input", "each source must use either assetId or image")
+			return preparedRun{}, Session{}, NewError(400, "ambiguous_image_input", "each source must use either assetId or image")
 		}
 		if aid != "" {
 			asset, dataBytes, readErr := svc.store.ReadAsset(ctx, sessionID, aid)
 			if readErr != nil {
-				return RunResult{}, readErr
+				return preparedRun{}, Session{}, readErr
 			}
 			hasStoredSource = true
 			b64 := base64.StdEncoding.EncodeToString(dataBytes)
@@ -214,7 +277,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 			})
 			continue
 		}
-		return RunResult{}, NewError(400, "invalid_image_source", "each source must include assetId or image")
+		return preparedRun{}, Session{}, NewError(400, "invalid_image_source", "each source must include assetId or image")
 	}
 
 	maskDataURL := ""
@@ -222,7 +285,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 	if maskAID := strings.TrimSpace(req.MaskAssetID); maskAID != "" {
 		asset, dataBytes, readErr := svc.store.ReadAsset(ctx, sessionID, maskAID)
 		if readErr != nil {
-			return RunResult{}, readErr
+			return preparedRun{}, Session{}, readErr
 		}
 		hasStoredMask = true
 		maskDataURL = "data:" + asset.MIME + ";base64," + base64.StdEncoding.EncodeToString(dataBytes)
@@ -273,7 +336,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 
 	execJSON, err := json.Marshal(execMap)
 	if err != nil {
-		return RunResult{}, err
+		return preparedRun{}, Session{}, err
 	}
 	pathname := imagegeneration.PathGenerations
 	if mode == "edit" {
@@ -289,11 +352,11 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 	parsedReq, parseErr := imagegeneration.Parse(execJSON, pathname, parseOpts)
 	if parseErr != nil {
 		if !imagegeneration.IsPassthroughCandidateError(parseErr) || selected.Source != "discovered" {
-			return RunResult{}, mapRequestParseError(parseErr)
+			return preparedRun{}, Session{}, mapRequestParseError(parseErr)
 		}
 		lenient, lenientErr := imagegeneration.ParsePassthrough(execJSON, pathname, parseOpts)
 		if lenientErr != nil {
-			return RunResult{}, mapRequestParseError(parseErr)
+			return preparedRun{}, Session{}, mapRequestParseError(parseErr)
 		}
 		parsedReq = lenient
 	}
@@ -307,7 +370,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		if i < len(parsedReq.Images) {
 			decodedBytes, decErr := base64.StdEncoding.DecodeString(parsedReq.Images[i].Data)
 			if decErr != nil {
-				return RunResult{}, NewError(400, "invalid_image_input", "source image data is invalid base64")
+				return preparedRun{}, Session{}, NewError(400, "invalid_image_input", "source image data is invalid base64")
 			}
 			revSources = append(revSources, RevisionSourceInput{
 				Image: &StoredImage{
@@ -322,7 +385,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 	if !hasStoredMask && parsedReq.Mask != nil {
 		decodedMask, decErr := base64.StdEncoding.DecodeString(parsedReq.Mask.Data)
 		if decErr != nil {
-			return RunResult{}, NewError(400, "invalid_mask_input", "mask image data is invalid base64")
+			return preparedRun{}, Session{}, NewError(400, "invalid_mask_input", "mask image data is invalid base64")
 		}
 		maskStoreImg = &StoredImage{
 			MIME:  string(parsedReq.Mask.MIME),
@@ -330,7 +393,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		}
 	}
 
-	_, startedRev, err := svc.store.BeginRevision(ctx, sessionID, BeginRevisionInput{
+	startedSession, startedRev, err := svc.store.BeginRevision(ctx, sessionID, BeginRevisionInput{
 		Mode:             mode,
 		Provider:         selected.Provider,
 		Model:            selected.ID,
@@ -351,77 +414,64 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		},
 	})
 	if err != nil {
-		return RunResult{}, err
+		return preparedRun{}, Session{}, err
 	}
+	return preparedRun{
+		sessionID:  sessionID,
+		revisionID: startedRev.ID,
+		request:    parsedReq,
+	}, startedSession, nil
+}
 
-	revisionID := startedRev.ID
-	var execution images.Execution
-	hasExecution := false
+// executePrepared 调用上游、物化输出并把修订结算为 succeeded/failed。
+func (svc *Service) executePrepared(ctx context.Context, plan preparedRun) (Session, error) {
+	parsedReq := plan.request
+	revisionID := plan.revisionID
 	failAndRecord := func(cause error, accountRef string) error {
 		mapped := mapExecutionError(cause)
 		if revisionID != "" {
 			fCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
-			_, _, _ = svc.store.FailRevision(fCtx, sessionID, revisionID, accountRef, mapped)
+			_, _, _ = svc.store.FailRevision(fCtx, plan.sessionID, revisionID, accountRef, mapped)
 			cancel()
 		}
-		if hasExecution && svc.outcomes != nil {
+		if accountRef != "" && svc.outcomes != nil {
 			if _, ok := StudioAccountFailureCodes[mapped.Code]; ok {
 				rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
-				svc.outcomes.RecordImageFailure(rCtx, execution.Account.AccountRef, parsedReq.Model, mapped)
+				svc.outcomes.RecordImageFailure(rCtx, accountRef, parsedReq.Model, mapped)
 				cancel()
 			}
 		}
 		return mapped
 	}
 
-	var execResult imageexecution.Result
-	usedSharedExecutor := false
-	if svc.execution != nil {
-		usedSharedExecutor = true
-		execResult, err = svc.execution.Execute(ctx, selected.Provider, parsedReq)
-		if err != nil {
-			return RunResult{}, failAndRecord(err, execResult.AttemptAccountRef)
+	execution, execResult, usedSharedExecutor, attemptedAccountRef, err := svc.executeWithCapacityWait(ctx, plan)
+	if err != nil {
+		// 直连路径的每次尝试已经在 AttemptFailure 里记过账号失败；这里再记一次会把
+		// 同一单失败算成两次（旧同步路径只在没记过时才补记）。
+		recordedAccount := ""
+		if usedSharedExecutor {
+			recordedAccount = attemptedAccountRef
 		}
-		execution = execResult.Execution
-	} else {
-		if svc.accounts == nil {
-			return RunResult{}, failAndRecord(NewError(503, "no_available_account", "image account source is not configured"), "")
-		}
-		attemptedAccountRef := ""
-		execOpts := images.ExecuteOptions{HTTP: svc.httpDoer, HTTPForAccount: svc.accountEgress}
-		if svc.outcomes != nil {
-			execOpts.AttemptFailure = func(account images.Account, model string, attemptErr error) {
-				attemptedAccountRef = account.AccountRef
-				rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
-				defer cancel()
-				svc.outcomes.RecordImageFailure(rCtx, account.AccountRef, model, attemptErr)
-			}
-		}
-		execution, err = images.Execute(ctx, svc.registry, svc.accounts, selected.Provider, parsedReq, execOpts)
-		if err != nil {
-			return RunResult{}, failAndRecord(err, attemptedAccountRef)
-		}
+		return Session{}, failAndRecord(err, recordedAccount)
 	}
-	hasExecution = true
 
 	svc.recordUsage(ctx, execution, parsedReq.Model)
 
 	materialized, err := MaterializeOutputs(ctx, execution, svc.fetcher, defaultRemoteFetchTimeout)
 	if err != nil {
-		return RunResult{}, failAndRecord(err, execution.Account.AccountRef)
+		return Session{}, failAndRecord(err, execution.Account.AccountRef)
 	}
 
 	completedSession, _, err := svc.store.CompleteRevision(
 		context.WithoutCancel(ctx),
-		sessionID,
+		plan.sessionID,
 		revisionID,
 		execution.Account.AccountRef,
 		materialized,
 	)
 	if err != nil {
-		return RunResult{}, failAndRecord(err, execution.Account.AccountRef)
+		return Session{}, failAndRecord(err, execution.Account.AccountRef)
 	}
-	revisionID = ""
 
 	if usedSharedExecutor {
 		rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
@@ -433,10 +483,77 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		cancel()
 	}
 
-	return RunResult{
-		Session:    completedSession,
-		RevisionID: startedRev.ID,
-	}, nil
+	return completedSession, nil
+}
+
+// executeWithCapacityWait 执行一次上游调用；仅当失败是并发准入拒绝时，按 Retry-After
+// 等待内部名额后重试，而不是把「暂时没有并发」当成生成失败。
+func (svc *Service) executeWithCapacityWait(
+	ctx context.Context,
+	plan preparedRun,
+) (images.Execution, imageexecution.Result, bool, string, error) {
+	deadline := time.Now().Add(imageStudioCapacityWait)
+	for {
+		execution, execResult, usedShared, attemptRef, err := svc.executeOnce(ctx, plan)
+		if err == nil {
+			return execution, execResult, usedShared, attemptRef, nil
+		}
+		rejection, isRejection := admission.AsRejection(err)
+		if !isRejection || ctx.Err() != nil {
+			return execution, execResult, usedShared, attemptRef, err
+		}
+		wait := rejection.RetryAfter
+		if wait <= 0 {
+			wait = time.Second
+		}
+		if wait > maxCapacityRetryWait {
+			wait = maxCapacityRetryWait
+		}
+		if time.Now().Add(wait).After(deadline) {
+			return execution, execResult, usedShared, attemptRef, err
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return execution, execResult, usedShared, attemptRef, err
+		case <-timer.C:
+		}
+	}
+}
+
+// executeOnce 是单次上游执行：有共享执行器时走执行器，否则直接走 images.Execute。
+func (svc *Service) executeOnce(
+	ctx context.Context,
+	plan preparedRun,
+) (images.Execution, imageexecution.Result, bool, string, error) {
+	parsedReq := plan.request
+	var execResult imageexecution.Result
+	if svc.execution != nil {
+		result, err := svc.execution.Execute(ctx, parsedReq.Provider, parsedReq)
+		if err != nil {
+			return images.Execution{}, result, true, result.AttemptAccountRef, err
+		}
+		return result.Execution, result, true, result.AttemptAccountRef, nil
+	}
+	if svc.accounts == nil {
+		return images.Execution{}, execResult, false, "", NewError(503, "no_available_account", "image account source is not configured")
+	}
+	attemptedAccountRef := ""
+	execOpts := images.ExecuteOptions{HTTP: svc.httpDoer, HTTPForAccount: svc.accountEgress}
+	if svc.outcomes != nil {
+		execOpts.AttemptFailure = func(account images.Account, model string, attemptErr error) {
+			attemptedAccountRef = account.AccountRef
+			rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
+			defer cancel()
+			svc.outcomes.RecordImageFailure(rCtx, account.AccountRef, model, attemptErr)
+		}
+	}
+	execution, err := images.Execute(ctx, svc.registry, svc.accounts, parsedReq.Provider, parsedReq, execOpts)
+	if err != nil {
+		return images.Execution{}, execResult, false, attemptedAccountRef, err
+	}
+	return execution, execResult, false, "", nil
 }
 
 func (svc *Service) recordUsage(ctx context.Context, execution images.Execution, model string) {

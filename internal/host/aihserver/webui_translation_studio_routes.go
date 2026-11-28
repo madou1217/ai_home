@@ -239,6 +239,8 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		Usage:         usageRecorder,
 		Outcomes:      imageOutcomes,
 		Now:           time.Now,
+		// WebUI 的提交走内部队列：并发上限在网关内部排队，客户端不再被阻塞。
+		MaxConcurrentRuns: imagestudio.MaxConcurrentRunsFromEnv(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 Image Studio 领域服务失败: %w", err)

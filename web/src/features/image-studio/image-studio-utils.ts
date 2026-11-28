@@ -333,6 +333,8 @@ interface BuildImageStudioRunInputOptions {
   outputFormat: string;
   outputCompression: number;
   moderation: string;
+  /** 提交后立即返回，生成由服务端内部队列调度。 */
+  async?: boolean;
 }
 
 export function buildImageStudioRunInput(options: BuildImageStudioRunInputOptions): ImageStudioRunInput {
@@ -351,6 +353,7 @@ export function buildImageStudioRunInput(options: BuildImageStudioRunInputOption
     outputFormat,
     outputCompression,
     moderation,
+    async: asyncSubmit = false,
   } = options;
   const isEdit = mode === 'edit';
   return {
@@ -372,5 +375,6 @@ export function buildImageStudioRunInput(options: BuildImageStudioRunInputOption
       ? { output_compression: outputCompression }
       : {}),
     ...(model.capabilities.moderation && moderation ? { moderation } : {}),
+    ...(asyncSubmit ? { async: true } : {}),
   };
 }

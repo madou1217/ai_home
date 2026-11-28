@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,8 +39,31 @@ func EffectiveCodexImageBaseURL() string {
 // codexImageModel 是 codex 原生图片策略唯一支持的模型。
 const codexImageModel = "gpt-image-2"
 
-// upstreamTimeoutMS 是图片上游的最小超时；图片生成远慢于对话。
-const upstreamTimeoutMS = 120000
+// defaultUpstreamTimeoutMS 是图片上游的默认超时；图片生成远慢于对话。
+//
+// 高质量出图在高峰期经常超过 2 分钟：过早判定超时会把「上游已经出图并计费」的请求
+// 报成失败，客户端还拿不到图。默认放宽到 5 分钟，并允许用
+// AIH_IMAGE_UPSTREAM_TIMEOUT_MS 按部署覆盖（最小 30s）。
+const defaultUpstreamTimeoutMS = 300000
+
+// minUpstreamTimeoutMS 是允许覆盖的最小值：低于它等于把正常的慢出图判死。
+const minUpstreamTimeoutMS = 30000
+
+// upstreamTimeoutMS 是本次进程生效的图片上游超时（毫秒）。
+var upstreamTimeoutMS = resolveUpstreamTimeoutMS()
+
+// resolveUpstreamTimeoutMS 读取环境变量覆盖，非法值回落到默认值。
+func resolveUpstreamTimeoutMS() int {
+	raw := strings.TrimSpace(os.Getenv("AIH_IMAGE_UPSTREAM_TIMEOUT_MS"))
+	if raw == "" {
+		return defaultUpstreamTimeoutMS
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < minUpstreamTimeoutMS {
+		return defaultUpstreamTimeoutMS
+	}
+	return value
+}
 
 // upstreamTimeout 返回图片上游的最小超时。
 func upstreamTimeout() time.Duration {

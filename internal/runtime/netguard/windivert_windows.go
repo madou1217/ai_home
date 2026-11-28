@@ -89,6 +89,10 @@ type WinDivertGuard struct {
 	status   GuardStatus
 	blocked  uint64
 	applyErr string
+	// transparent TCP redirect state (AIH_NETGUARD_TRANSPARENT=1).
+	nat     *natTable
+	relay   *redirectRelay
+	inbound uintptr
 }
 
 // NewWinDivertGuard creates a strict Windows guard.
@@ -159,6 +163,12 @@ func (guard *WinDivertGuard) Start(ctx context.Context) error {
 	guard.mu.Lock()
 	defer guard.mu.Unlock()
 	guard.status.Active = true
+	if transparentEnabled() {
+		if err := guard.startTransparent(ctx); err != nil {
+			guard.status.Active = false
+			return err
+		}
+	}
 	// The caller normally calls SetProcessTree immediately after starting the
 	// target suspended. If PIDs are already present, apply now.
 	if len(guard.pids) > 0 {
@@ -348,7 +358,15 @@ func (guard *WinDivertGuard) drain(handle uintptr) {
 			return
 		}
 		payload := packet[:received]
-		if guard.packetBelongsToInstance(payload) {
+		target := guard.packetBelongsToInstance(payload)
+		if target && guard.nat != nil {
+			if rewritten := guard.rewriteOutbound(payload); rewritten != nil {
+				var sent uint32
+				_, _, _ = winDivertSendProc.Call(handle, uintptr(unsafe.Pointer(&rewritten[0])), uintptr(len(rewritten)), uintptr(unsafe.Pointer(&sent)), uintptr(unsafe.Pointer(&address[0])))
+				continue
+			}
+		}
+		if target {
 			atomic.AddUint64(&guard.blocked, 1)
 			continue
 		}

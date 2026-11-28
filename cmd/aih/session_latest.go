@@ -227,12 +227,15 @@ func parseTranscriptLineEntries(provider string, line []byte) []sessionPreviewEn
 			switch jsonString(payload["type"]) {
 			case "message":
 				return contentPreviewEntries(payload["content"], jsonString(payload["role"]), atMS)
-			case "function_call", "custom_tool_call":
-				name := jsonString(payload["name"])
-				if name == "" {
-					name = jsonString(payload["tool"])
+			case "function_call":
+				return toolPreviewEntries(jsonString(payload["name"]), payload["arguments"], atMS)
+			case "custom_tool_call":
+				// Codex code-mode 工具把源文本放在 input（不是 arguments JSON）。
+				detail := payload["input"]
+				if len(detail) == 0 {
+					detail = payload["arguments"]
 				}
-				return toolPreviewEntries(name, payload["arguments"], atMS)
+				return toolPreviewEntries(jsonString(payload["name"]), detail, atMS)
 			}
 			return nil
 		}
@@ -355,10 +358,27 @@ func toolPreviewDetail(raw json.RawMessage) string {
 	if json.Unmarshal(raw, &input) != nil {
 		return ""
 	}
-	for _, key := range []string{"command", "file_path", "path", "pattern", "query", "description", "url"} {
-		if value := jsonString(input[key]); value != "" {
+	for _, key := range []string{
+		"command", "cmd", "file_path", "filePath", "path", "notebook_path",
+		"pattern", "query", "description", "url",
+	} {
+		if value := previewDetailValue(input[key]); value != "" {
 			return value
 		}
+	}
+	return ""
+}
+
+func previewDetailValue(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	if value := jsonString(raw); value != "" {
+		return value
+	}
+	var parts []string
+	if json.Unmarshal(raw, &parts) == nil {
+		return strings.Join(parts, " ")
 	}
 	return ""
 }

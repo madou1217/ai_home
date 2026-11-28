@@ -1,0 +1,511 @@
+//go:build windows
+
+package netguard
+
+import (
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+	"unsafe"
+)
+
+const (
+	winDivertLayerNetwork   = 0
+	winDivertExternalFilter = "outbound and not loopback"
+	winDivertShutdownRecv   = 0x1
+	invalidHandle           = ^uintptr(0)
+)
+
+var (
+	kernel32                = syscall.NewLazyDLL("kernel32.dll")
+	procCreateToolhelp32    = kernel32.NewProc("CreateToolhelp32Snapshot")
+	procProcess32First      = kernel32.NewProc("Process32FirstW")
+	procProcess32Next       = kernel32.NewProc("Process32NextW")
+	winDivertOnce           sync.Once
+	winDivertDLL            *syscall.DLL
+	winDivertLoadErr        error
+	winDivertOpenProc       *syscall.Proc
+	winDivertRecvProc       *syscall.Proc
+	winDivertCloseProc      *syscall.Proc
+	winDivertShutdownProc   *syscall.Proc
+	winDivertSendProc       *syscall.Proc
+	iphlpapi                = syscall.NewLazyDLL("iphlpapi.dll")
+	procGetExtendedTcpTable = iphlpapi.NewProc("GetExtendedTcpTable")
+	processSnapshotFlag     = uintptr(0x00000002) // TH32CS_SNAPPROCESS
+)
+
+type processEntry32 struct {
+	Size            uint32
+	CntUsage        uint32
+	ProcessID       uint32
+	DefaultHeapID   uintptr
+	ModuleID        uint32
+	Threads         uint32
+	ParentProcessID uint32
+	PriClassBase    int32
+	Flags           uint32
+	ExeFile         [260]uint16
+}
+
+// WinDivertGuard is the Windows P0 prototype adapter.
+//
+// It drops outbound non-loopback IPv4 TCP packets whose owning process belongs
+// to the instance tree, using the Windows owner table as the 5-tuple → PID
+// bridge (WinDivert's NETWORK layer does not support processId). Apps that use
+// the local proxy continue to work because loopback is outside the filter;
+// apps that bypass it fail closed.
+//
+// Scope/limits of this prototype: UDP attribution, IPv6, suspended launch and
+// sub-250ms child races are not yet solved. It is not the final strict
+// guarantee; the WFP callout adapter owns that contract.
+type WinDivertGuard struct {
+	options Options
+
+	mu       sync.Mutex
+	handle   uintptr
+	pids     map[int]struct{}
+	rootPID  int
+	watcher  context.CancelFunc
+	status   GuardStatus
+	blocked  uint64
+	applyErr string
+}
+
+// NewWinDivertGuard creates a strict Windows guard.
+func NewWinDivertGuard(options Options) (Guard, error) {
+	if options.Policy.Mode != ModeStrict {
+		return NewNoop(options), nil
+	}
+	if err := options.Policy.Validate(options.ProxyURL); err != nil {
+		return nil, err
+	}
+	if err := loadWinDivert(); err != nil {
+		return nil, err
+	}
+	return &WinDivertGuard{
+		options: options,
+		pids:    make(map[int]struct{}),
+		status: GuardStatus{
+			Mode:    ModeStrict,
+			Backend: "windivert",
+		},
+	}, nil
+}
+
+func loadWinDivert() error {
+	winDivertOnce.Do(func() {
+		path := strings.TrimSpace(os.Getenv("AIH_WINDIVERT_DLL"))
+		if path == "" {
+			if executable, err := os.Executable(); err == nil {
+				path = filepath.Join(filepath.Dir(executable), "WinDivert.dll")
+			}
+		}
+		if path == "" {
+			winDivertLoadErr = errors.New("找不到 WinDivert.dll；请将它放在 aih-netguard 同目录或设置 AIH_WINDIVERT_DLL")
+			return
+		}
+		dll, err := syscall.LoadDLL(path)
+		if err != nil {
+			winDivertLoadErr = fmt.Errorf("加载 WinDivert.dll 失败: %w", err)
+			return
+		}
+		winDivertDLL = dll
+		winDivertOpenProc, winDivertLoadErr = dll.FindProc("WinDivertOpen")
+		if winDivertLoadErr != nil {
+			return
+		}
+		winDivertRecvProc, winDivertLoadErr = dll.FindProc("WinDivertRecv")
+		if winDivertLoadErr != nil {
+			return
+		}
+		winDivertCloseProc, winDivertLoadErr = dll.FindProc("WinDivertClose")
+		if winDivertLoadErr != nil {
+			return
+		}
+		winDivertShutdownProc, winDivertLoadErr = dll.FindProc("WinDivertShutdown")
+		if winDivertLoadErr != nil {
+			return
+		}
+		winDivertSendProc, winDivertLoadErr = dll.FindProc("WinDivertSend")
+	})
+	return winDivertLoadErr
+}
+
+func (guard *WinDivertGuard) Start(ctx context.Context) error {
+	if guard == nil {
+		return errors.New("netguard: nil guard")
+	}
+	guard.mu.Lock()
+	defer guard.mu.Unlock()
+	guard.status.Active = true
+	// The caller normally calls SetProcessTree immediately after starting the
+	// target suspended. If PIDs are already present, apply now.
+	if len(guard.pids) > 0 {
+		return guard.applyFilterLocked()
+	}
+	return nil
+}
+
+func (guard *WinDivertGuard) SetProcessTree(ctx context.Context, rootPID int, pids []int) error {
+	if guard == nil {
+		return errors.New("netguard: nil guard")
+	}
+	guard.mu.Lock()
+	if rootPID > 0 {
+		guard.rootPID = rootPID
+	}
+	for _, pid := range pids {
+		if pid > 0 {
+			guard.pids[pid] = struct{}{}
+		}
+	}
+	if guard.rootPID > 0 {
+		guard.pids[guard.rootPID] = struct{}{}
+	}
+	startWatcher := guard.watcher == nil && guard.rootPID > 0 && ctx != nil
+	var watcherCtx context.Context
+	var cancel context.CancelFunc
+	if startWatcher {
+		watcherCtx, cancel = context.WithCancel(ctx)
+		guard.watcher = cancel
+	}
+	guard.mu.Unlock()
+	if startWatcher {
+		go guard.trackProcessTree(watcherCtx)
+	}
+	guard.mu.Lock()
+	defer guard.mu.Unlock()
+	return guard.applyFilterLocked()
+}
+
+// trackProcessTree polls the Windows process snapshot and adds all descendants
+// of rootPID. This covers Chromium/Electron helpers created after the launch.
+// A suspended launch narrows the initial race; future WFP tagging removes it.
+func (guard *WinDivertGuard) trackProcessTree(ctx context.Context) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			guard.refreshDescendants()
+		}
+	}
+}
+
+func (guard *WinDivertGuard) refreshDescendants() {
+	guard.mu.Lock()
+	root := guard.rootPID
+	guard.mu.Unlock()
+	if root <= 0 {
+		return
+	}
+	children := descendantPIDs(root)
+	if len(children) == 0 {
+		return
+	}
+	changed := false
+	guard.mu.Lock()
+	for _, pid := range children {
+		if _, exists := guard.pids[pid]; !exists {
+			guard.pids[pid] = struct{}{}
+			changed = true
+		}
+	}
+	if changed {
+		_ = guard.applyFilterLocked()
+	}
+	guard.mu.Unlock()
+}
+
+func (guard *WinDivertGuard) applyFilterLocked() error {
+	if !guard.status.Active {
+		return nil
+	}
+	pids := make([]int, 0, len(guard.pids))
+	for pid := range guard.pids {
+		if pid > 0 {
+			pids = append(pids, pid)
+		}
+	}
+	guard.status.ProtectedPIDs = len(pids)
+	if len(pids) == 0 {
+		return nil
+	}
+	filterPtr, err := syscall.BytePtrFromString(winDivertExternalFilter)
+	if err != nil {
+		guard.applyErr = err.Error()
+		return err
+	}
+	handle, _, callErr := winDivertOpenProc.Call(
+		uintptr(unsafe.Pointer(filterPtr)),
+		uintptr(winDivertLayerNetwork),
+		0,
+		0,
+	)
+	if handle == invalidHandle || handle == 0 {
+		message := "WinDivertOpen 失败"
+		if callErr != nil && callErr != syscall.Errno(0) {
+			message = fmt.Sprintf("%s: %v（需要管理员权限和同目录 WinDivert64.sys）", message, callErr)
+		}
+		guard.applyErr = message
+		guard.status.LastError = message
+		return errors.New(message)
+	}
+	old := guard.handle
+	guard.handle = handle
+	guard.applyErr = ""
+	guard.status.LastError = ""
+	go guard.drain(handle)
+	if old != 0 && old != invalidHandle {
+		_, _, _ = winDivertShutdownProc.Call(old, uintptr(winDivertShutdownRecv))
+		_, _, _ = winDivertCloseProc.Call(old)
+	}
+	return nil
+}
+
+func (guard *WinDivertGuard) drain(handle uintptr) {
+	if handle == 0 || handle == invalidHandle {
+		return
+	}
+	packet := make([]byte, 65535)
+	address := make([]byte, 80)
+	for {
+		var received uint32
+		ok, _, _ := winDivertRecvProc.Call(
+			handle,
+			uintptr(unsafe.Pointer(&packet[0])),
+			uintptr(len(packet)),
+			uintptr(unsafe.Pointer(&received)),
+			uintptr(unsafe.Pointer(&address[0])),
+		)
+		if ok == 0 {
+			return
+		}
+		payload := packet[:received]
+		if guard.packetBelongsToInstance(payload) {
+			atomic.AddUint64(&guard.blocked, 1)
+			continue
+		}
+		var sent uint32
+		_, _, _ = winDivertSendProc.Call(
+			handle,
+			uintptr(unsafe.Pointer(&payload[0])),
+			uintptr(len(payload)),
+			uintptr(unsafe.Pointer(&sent)),
+			uintptr(unsafe.Pointer(&address[0])),
+		)
+	}
+}
+
+// packetBelongsToInstance attributes an outbound packet to a PID using the
+// Windows TCP/UDP owner tables. WinDivert's NETWORK layer cannot expose
+// processId; the owner table is the supported bridge between the 5-tuple and
+// the instance's process tree.
+func (guard *WinDivertGuard) packetBelongsToInstance(packet []byte) bool {
+	if len(packet) < 20 {
+		return false
+	}
+	version := packet[0] >> 4
+	if version != 4 {
+		// IPv6 attribution is not implemented in P0; leave it for the WFP
+		// adapter rather than pretending it is blocked.
+		return false
+	}
+	headerLen := int(packet[0]&0x0f) * 4
+	if headerLen < 20 || len(packet) < headerLen+4 {
+		return false
+	}
+	protocol := packet[9]
+	if protocol != 6 && protocol != 17 {
+		return false
+	}
+	srcPort := binary.BigEndian.Uint16(packet[headerLen : headerLen+2])
+	pid := lookupOwnerPID(protocol, srcPort)
+	if pid <= 0 {
+		return false
+	}
+	guard.mu.Lock()
+	_, target := guard.pids[pid]
+	guard.mu.Unlock()
+	return target
+}
+
+// lookupOwnerPID maps a local TCP/UDP port to its owning PID. Results are
+// cached briefly; the tables are queried only for ports not seen before.
+func lookupOwnerPID(protocol byte, port uint16) int {
+	key := fmt.Sprintf("%d:%d", protocol, port)
+	if value, ok := ownerCache.Load(key); ok {
+		entry := value.(ownerCacheEntry)
+		if time.Since(entry.at) < 3*time.Second {
+			return entry.pid
+		}
+	}
+	var pid int
+	if protocol == 6 {
+		pid = tcpOwnerPID(port)
+	} else {
+		pid = udpOwnerPID(port)
+	}
+	ownerCache.Store(key, ownerCacheEntry{pid: pid, at: time.Now()})
+	return pid
+}
+
+type ownerCacheEntry struct {
+	pid int
+	at  time.Time
+}
+
+var ownerCache sync.Map
+
+func tcpOwnerPID(port uint16) int {
+	var size uint32
+	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, syscall.AF_INET, 5, 0)
+	if size == 0 {
+		return 0
+	}
+	buffer := make([]byte, size)
+	result, _, _ := procGetExtendedTcpTable.Call(
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(unsafe.Pointer(&size)),
+		0, syscall.AF_INET, 5, 0,
+	)
+	if result != 0 {
+		return 0
+	}
+	return findTCPOwner(buffer, port)
+}
+
+func findTCPOwner(buffer []byte, port uint16) int {
+	if len(buffer) < 4 {
+		return 0
+	}
+	count := int(binary.LittleEndian.Uint32(buffer[:4]))
+	offset := 4
+	const rowSize = 24
+	for index := 0; index < count && offset+rowSize <= len(buffer); index++ {
+		row := buffer[offset : offset+rowSize]
+		localPort := binary.LittleEndian.Uint32(row[8:12])
+		if byteSwap16(uint16(localPort)) != port {
+			offset += rowSize
+			continue
+		}
+		return int(binary.LittleEndian.Uint32(row[20:24]))
+	}
+	return 0
+}
+
+func udpOwnerPID(port uint16) int {
+	var size uint32
+	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, syscall.AF_INET, 1, 0)
+	if size == 0 {
+		return 0
+	}
+	buffer := make([]byte, size)
+	result, _, _ := procGetExtendedTcpTable.Call(
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(unsafe.Pointer(&size)),
+		0, syscall.AF_INET, 1, 0,
+	)
+	if result != 0 {
+		return 0
+	}
+	return findUDPOwner(buffer, port)
+}
+
+func findUDPOwner(buffer []byte, port uint16) int {
+	if len(buffer) < 4 {
+		return 0
+	}
+	count := int(binary.LittleEndian.Uint32(buffer[:4]))
+	offset := 4
+	const rowSize = 12
+	for index := 0; index < count && offset+rowSize <= len(buffer); index++ {
+		row := buffer[offset : offset+rowSize]
+		localPort := binary.LittleEndian.Uint32(row[4:8])
+		if byteSwap16(uint16(localPort)) != port {
+			offset += rowSize
+			continue
+		}
+		return int(binary.LittleEndian.Uint32(row[8:12]))
+	}
+	return 0
+}
+
+func byteSwap16(value uint16) uint16 {
+	return value<<8 | value>>8
+}
+
+func (guard *WinDivertGuard) Stop(context.Context) error {
+	guard.mu.Lock()
+	if guard.watcher != nil {
+		guard.watcher()
+		guard.watcher = nil
+	}
+	handle := guard.handle
+	guard.handle = 0
+	guard.status.Active = false
+	guard.mu.Unlock()
+	if handle != 0 && handle != invalidHandle {
+		_, _, _ = winDivertShutdownProc.Call(handle, uintptr(winDivertShutdownRecv))
+		_, _, _ = winDivertCloseProc.Call(handle)
+	}
+	return nil
+}
+
+func (guard *WinDivertGuard) Status() GuardStatus {
+	guard.mu.Lock()
+	defer guard.mu.Unlock()
+	status := guard.status
+	status.Blocked = atomic.LoadUint64(&guard.blocked)
+	return status
+}
+
+func (guard *WinDivertGuard) Audit(context.Context) (Audit, error) {
+	return Audit{
+		DNSMode: guard.options.Policy.DNS,
+		Notes:   []string{"P0 guard: non-loopback packets from the instance process tree are dropped"},
+	}, nil
+}
+
+func descendantPIDs(root int) []int {
+	snapshot, _, _ := procCreateToolhelp32.Call(processSnapshotFlag, 0)
+	if snapshot == invalidHandle {
+		return nil
+	}
+	defer syscall.CloseHandle(syscall.Handle(snapshot))
+	entries := make(map[uint32][]uint32)
+	var entry processEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	ok, _, _ := procProcess32First.Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+	for ok != 0 {
+		entries[entry.ParentProcessID] = append(entries[entry.ParentProcessID], entry.ProcessID)
+		entry.Size = uint32(unsafe.Sizeof(entry))
+		ok, _, _ = procProcess32Next.Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+	}
+	var out []int
+	queue := []uint32{uint32(root)}
+	seen := map[uint32]struct{}{uint32(root): {}}
+	for len(queue) > 0 {
+		parent := queue[0]
+		queue = queue[1:]
+		for _, child := range entries[parent] {
+			if _, exists := seen[child]; exists {
+				continue
+			}
+			seen[child] = struct{}{}
+			queue = append(queue, child)
+			out = append(out, int(child))
+		}
+	}
+	return out
+}

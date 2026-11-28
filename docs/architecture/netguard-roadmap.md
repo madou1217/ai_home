@@ -34,33 +34,49 @@
 
 ---
 
-## Phase 1 — NetGuard 契约与实例身份（基础）
+## Phase 1 — NetGuard 契约与实例身份（基础）🚧
 
-- [ ] 定义 `LaunchTarget`：provider + surface(cli|desktop) + accountRef + instanceSlot
-- [ ] 定义 `ProxySpec`：direct / local / selector(国家/城市/池/节点) / custom URL
-- [ ] 定义 `NetworkPolicy`：direct / cooperative / strict_proxy
-- [ ] 定义 `LaunchProfile`：ProxySpec + NetworkPolicy + DNSMode + 最近成功状态
-- [ ] 定义 `NetworkGuard` 接口：Prepare / AttachProcessTree / Start / Stop / Status / Audit
-- [ ] 定义实例身份：launchId + 进程树（Job Object / cgroup / sandbox 进程树），不以 PID 为身份
-- [ ] Guard 审计模型：非 loopback socket、出口 IP、DNS 状态、错误
-- [ ] 失败语义：Guard 准备失败时拒绝启动，或用户显式选择 non-strict
+- [x] 定义 `LaunchTarget`：provider + surface(cli|desktop) + accountRef + instanceSlot
+- [x] 定义 `ProxySpec`：direct / local / selector(国家/城市/池/节点) / custom URL
+- [x] 定义 `NetworkPolicy`：direct / cooperative / strict_proxy
+- [x] 定义 `LaunchProfile`：ProxySpec + NetworkPolicy + DNSMode + 最近成功状态
+- [x] 定义 `NetworkGuard` 接口：Start / SetProcessTree / Stop / Status / Audit
+- [x] 平台构造函数：Windows strict → WinDivert P0；其他平台 strict 明确返回 unsupported
+- [ ] 实例身份与进程树抽象完全落到 Orchestrator（当前由 guard 自己跟踪 root PID）
+- [ ] Guard 审计模型：非 loopback socket、出口 IP、DNS 状态、错误（当前只有 blocked/PIDs）
+- [ ] 失败语义：Guard 准备失败时拒绝启动，或用户显式选择 non-strict（接口已有，Orchestrator 未接）
 
 **完成标准**：接口与数据模型落地，能用一个假 Guard 跑通 preflight→launch→stop 的状态机。
+
+**代码**：`internal/runtime/netguard`、`cmd/aih-netguard`。
 
 ---
 
 ## Phase 2 — Windows per-instance Guard（最高优先级）
 
-### 2.1 P0：per-process / per-instance 阻断（WinDivert）
+### 2.1 P0：per-process / per-instance 阻断（WinDivert）🚧
 
 - [x] 主机工具链确认（管理员、VS/SDK、WinDivert 可用）
-- [x] WinDivert 2.2.2 下载、签名驱动与 `processId` 过滤确认
-- [ ] 启动 suspended：先建 Job Object / 实例标记，再恢复进程
-- [ ] 进程创建回调/ETW：把子进程动态加入实例进程树
-- [ ] WinDivert 过滤器：目标实例所有非 loopback TCP/UDP 丢弃
-- [ ] IPv6 外部流量阻断
-- [ ] 代理断开时保持阻断（fail closed）
-- [ ] 测试：目标进程直连失败、走代理成功、其他实例不受影响、子进程被阻断
+- [x] WinDivert 2.2.2 下载、签名驱动
+- [x] 关键发现：**WinDivert NETWORK 层不支持 `processId` 字段**（官方文档明确），不能直接按 PID 过滤
+- [x] 改为 5-tuple → Windows TCP/UDP owner table → PID 的桥接方案
+- [x] 目标进程 IPv4 TCP 直连阻断（真机：目标 `DIRECT_ERROR`，`blocked=3`）
+- [x] 非目标进程不受影响（真机：另一个进程 `DIRECT_OK 200`）
+- [ ] UDP owner table 命中（真机 first attempt：目标 UDP 仍 `UDP_OK`，blocked=0，需修复）
+- [ ] IPv6 外部流量归因/阻断（P0 未实现）
+- [ ] 启动 suspended / Job Object：消除初始进程跟踪竞态
+- [ ] 代理 loopback 放行验证（过滤器排除 loopback，但未做正向请求验收）
+- [ ] 代理断开 fail closed 验收（当前 guard 只阻断；与入口 fail closed 联调未做）
+- [ ] 子进程验收（当前有 250ms 轮询 watcher，测试客户端未跑通）
+
+**WinDivert 结论**：它是 P0 的**可运行原型**，但 WinDivert 无法提供内核级 processId 归因；UDP/IPv6/竞态无法达到“精确 per-instance”验收。长期必须用 WFP callout。
+
+### 2.1a WFP 前置条件（当前阻塞）
+
+- [ ] WDK 安装：`winget Microsoft.WindowsWDK.10.0.26100` 失败 1714，原因 `Windows SDK ARM64 Desktop Tools` 旧版本无法卸载；需要修复 VS/SDK 组件或用 VS Installer 重装
+- [ ] test signing：Secure Boot 已关闭，可开启；需要重启
+- [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
+- [ ] WFP callout 驱动骨架（C/C++）待在 WDK 可用后开始
 
 ### 2.2 P1：per-instance 透明 TCP 代理（WinDivert NAT）
 
@@ -190,8 +206,8 @@
 | 代理选择 / 临时入口 / 稳定端口 / 健康 | 高 | 90% | ✅ 基础完成 |
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
-| 严格进程级网络控制（跨平台） | 低 | 5% | 🚧 Phase 1/2 |
-| Windows per-instance GUI（JP/SG） | 工具已备 | 0% | ⬜ Phase 2 |
+| 严格进程级网络控制（跨平台） | 中 | 10% | 🚧 Phase 1/2 |
+| Windows per-instance GUI（JP/SG） | P0 TCP 原型可运行 | 8% | 🚧 Phase 2 |
 | macOS CLI strict | 机制已验证 | 0% | ⬜ Phase 3 |
 | macOS GUI strict | 原型待做 | 0% | ⬜ Phase 3 |
 | Linux CLI/GUI strict | 方案已有 | 0% | ⬜ Phase 4 |
@@ -200,7 +216,7 @@
 | 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈15%** | 🚧 |
+| **总目标** | — | **≈17%** | 🚧 |
 
 ---
 
@@ -223,7 +239,8 @@
 
 ## 当前状态
 
-- 当前阶段：**Phase 1 契约设计 + Phase 2.1 Windows P0 阻断原型**
-- 已完成：Phase 0
+- 当前阶段：**Phase 1 契约/Windows P0 原型已完成一部分；2.1 UDP/IPv6/WFP 受 WDK 阻塞**
+- 已完成：Phase 0；Phase 1 契约代码；P0 的 IPv4 TCP 目标/非目标隔离
 - 未开始：Phase 3–9
 - 最近更新：2026-11-28
+- 证据：Windows 真机 `aih-netguard` 目标进程 `DIRECT_ERROR`、非目标 `DIRECT_OK 200`、`blocked=3`；UDP 仍 `UDP_OK`（待修）

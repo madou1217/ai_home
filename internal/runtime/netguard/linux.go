@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -149,6 +150,9 @@ func (guard *LinuxGuard) SetProcessTree(ctx context.Context, rootPID int, pids [
 	}
 	if rootPID > 0 {
 		seen[rootPID] = struct{}{}
+		for _, pid := range linuxDescendants(rootPID) {
+			seen[pid] = struct{}{}
+		}
 	}
 	for pid := range seen {
 		// Writing a PID moves the process; descendants inherit the cgroup.
@@ -182,6 +186,57 @@ func (guard *LinuxGuard) Stop(ctx context.Context) error {
 	_ = sudoRun(ctx, "nft", "delete", "table", "inet", guard.table)
 	_ = sudoRun(ctx, "rmdir", guard.cgroup)
 	return nil
+}
+
+// linuxDescendants returns the current process tree below root by reading
+// /proc/<pid>/stat. Assigning only the root PID to a cgroup does not move
+// children that already exist, so they must be added explicitly at attach time.
+func linuxDescendants(root int) []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	children := make(map[int][]int)
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		data, err := os.ReadFile("/proc/" + entry.Name() + "/stat")
+		if err != nil {
+			continue
+		}
+		text := string(data)
+		end := strings.LastIndex(text, ")")
+		if end < 0 {
+			continue
+		}
+		fields := strings.Fields(text[end+1:])
+		if len(fields) < 2 {
+			continue
+		}
+		ppid, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		children[ppid] = append(children[ppid], pid)
+	}
+	var out []int
+	queue := []int{root}
+	seen := map[int]struct{}{root: {}}
+	for len(queue) > 0 {
+		parent := queue[0]
+		queue = queue[1:]
+		for _, child := range children[parent] {
+			if _, exists := seen[child]; exists {
+				continue
+			}
+			seen[child] = struct{}{}
+			queue = append(queue, child)
+			out = append(out, child)
+		}
+	}
+	return out
 }
 
 func (guard *LinuxGuard) Status() GuardStatus {

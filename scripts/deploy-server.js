@@ -340,7 +340,7 @@ function remoteArtifactSize(options, remotePath, target) {
     ], { capture: true });
     return Number(String(output).trim()) || 0;
   }
-  const output = run('ssh', [...sshArgs(options), options.ssh, `stat -c %s ${shQuote(remotePath)} 2>/dev/null || echo 0`], { capture: true });
+  const output = run('ssh', [...sshArgs(options), options.ssh, `stat -c %s ${shQuote(remotePath)} 2>/dev/null || stat -f %z ${shQuote(remotePath)} 2>/dev/null || echo 0`], { capture: true });
   return Number(output) || 0;
 }
 

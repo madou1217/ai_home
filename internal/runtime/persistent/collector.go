@@ -174,6 +174,7 @@ func ParseSessionList(stdout string) []SessionRow {
 
 		rows = append(rows, SessionRow{
 			Name:             trimmedName,
+			Origin:           SessionOriginTmux,
 			Live:             live,
 			CreatedAtMS:      createdVal,
 			Path:             pathVal,

@@ -35,8 +35,19 @@ type ReapPolicy struct {
 }
 
 // SessionRow 表示一次持久会话枚举返回的统一只读行视图。
+// SessionOrigin 标识会话是谁创建/如何被发现的，ss 只展示 AIH 管理的会话，
+// 外部 Codex 不进入列表。
+const (
+	SessionOriginTmux          = "tmux"
+	SessionOriginAIHNative     = "aih-native"
+	SessionOriginAIHEnded      = "aih-ended"
+	SessionOriginExternalCodex = "external-codex"
+)
+
 type SessionRow struct {
-	Provider     string
+	Provider string
+	// Origin 见 SessionOrigin*；空值兼容旧缓存，按 managed 处理。
+	Origin       string
 	RuntimeScope string
 	AccountRef   string
 	Gateway      bool

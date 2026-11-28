@@ -289,7 +289,38 @@ func foldedSessionTitle(rows []persistent.SessionRow, row persistent.SessionRow)
 func mainSessionRows(rows []persistent.SessionRow) []persistent.SessionRow {
 	selected := make([]persistent.SessionRow, 0, len(rows))
 	for _, row := range rows {
-		if row.Subagent {
+		if row.Subagent || row.Origin == persistent.SessionOriginExternalCodex {
+			continue
+		}
+		selected = append(selected, row)
+	}
+	return selected
+}
+
+func sessionOriginLabel(row persistent.SessionRow) string {
+	switch row.Origin {
+	case persistent.SessionOriginTmux:
+		return "tmux"
+	case persistent.SessionOriginAIHNative:
+		return "aih-native"
+	case persistent.SessionOriginAIHEnded:
+		return "aih-ended"
+	case persistent.SessionOriginExternalCodex:
+		return "external-codex"
+	}
+	if strings.TrimSpace(row.Socket) != "" {
+		return "tmux"
+	}
+	if row.NativeOnly {
+		return "aih-native"
+	}
+	return "-"
+}
+
+func filterExternalSessionRows(rows []persistent.SessionRow) []persistent.SessionRow {
+	selected := make([]persistent.SessionRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Origin == persistent.SessionOriginExternalCodex {
 			continue
 		}
 		selected = append(selected, row)

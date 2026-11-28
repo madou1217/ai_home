@@ -21,6 +21,7 @@ const (
 // SessionCacheEntry 是缓存里的单行。
 type SessionCacheEntry struct {
 	Name            string `json:"name"`
+	Origin          string `json:"origin,omitempty"`
 	Title           string `json:"title"`
 	AgentSessionID  string `json:"agentSessionId"`
 	Provider        string `json:"provider"`
@@ -93,6 +94,7 @@ func WriteSessionCache(aiHomeDir string, rows []SessionRow, now time.Time) error
 		projectPath := strings.TrimSpace(row.Path)
 		entries = append(entries, SessionCacheEntry{
 			Name:            name,
+			Origin:          strings.TrimSpace(row.Origin),
 			Title:           strings.TrimSpace(row.Label),
 			AgentSessionID:  strings.TrimSpace(row.NativeID),
 			Provider:        row.Provider,

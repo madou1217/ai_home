@@ -251,6 +251,7 @@ func nativeSessionRow(session nativeSelectedSession) persistent.SessionRow {
 	}
 	return persistent.SessionRow{
 		Provider:         session.Provider,
+		Origin:           persistent.SessionOriginAIHNative,
 		RuntimeScope:     "native",
 		Name:             nativeSessionName(session.Provider, session.ID),
 		Path:             session.CWD,
@@ -524,6 +525,31 @@ const (
 //
 // 只补有 hook 运行记录（或已有活跃行）的 Provider，避免为了列历史去扫描
 // 所有 Provider 的会话库；结果再按最近活动截断，防止把几百条历史灌进选择器。
+// managedNativeIDs 返回 AIH 已知管理的原生 session id；用于区分
+// 最近历史里的 aih 会话和用户直接用 Codex 开的会话。
+func managedNativeIDs(aiHomeDir string, rows []persistent.SessionRow) map[string]bool {
+	managed := make(map[string]bool)
+	for _, state := range readNativeStateSessions(aiHomeDir) {
+		managed[strings.ToLower(strings.TrimSpace(state.Provider))+"\x00"+strings.TrimSpace(state.ID)] = true
+	}
+	for _, row := range rows {
+		providerID := strings.ToLower(strings.TrimSpace(row.Provider))
+		if id := strings.TrimSpace(row.NativeID); providerID != "" && id != "" {
+			managed[providerID+"\x00"+id] = true
+		}
+	}
+	for _, entry := range persistent.ReadSessionCache(aiHomeDir, time.Now()) {
+		if entry.Origin == "" || strings.EqualFold(entry.Origin, persistent.SessionOriginExternalCodex) {
+			continue
+		}
+		providerID := strings.ToLower(strings.TrimSpace(entry.Provider))
+		if id := strings.TrimSpace(entry.AgentSessionID); providerID != "" && id != "" {
+			managed[providerID+"\x00"+id] = true
+		}
+	}
+	return managed
+}
+
 func appendRecentNativeSessionRows(
 	ctx context.Context,
 	runtime commandRuntime,
@@ -559,6 +585,7 @@ func appendRecentNativeSessionRows(
 	}
 	cwd, _ := os.Getwd()
 	known := nativeRowIndex(*rows)
+	managed := managedNativeIDs(aiHomeDir, *rows)
 	candidates := make([]persistent.SessionRow, 0, maxRecentNativeIdleRows)
 	for providerID := range providers {
 		if providerID == "" {
@@ -577,9 +604,14 @@ func appendRecentNativeSessionRows(
 				if id == "" || session.UpdatedAtMS < cutoff || known[nativeRowKey(providerID, id)] {
 					continue
 				}
+				if strings.EqualFold(providerID, "codex") && !managed[strings.ToLower(providerID)+"\x00"+id] {
+					// 用户直接用 Codex 打开的 thread 不在 aih ss 里。
+					continue
+				}
 				known[nativeRowKey(providerID, id)] = true
 				candidates = append(candidates, persistent.SessionRow{
 					Provider:         providerID,
+					Origin:           persistent.SessionOriginAIHEnded,
 					RuntimeScope:     "native",
 					Name:             nativeSessionName(providerID, id),
 					Path:             projectPath,

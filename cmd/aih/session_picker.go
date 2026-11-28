@@ -125,6 +125,9 @@ func (state *pickerState) visibleRows() []persistent.SessionRow {
 	children := make(map[string][]persistent.SessionRow)
 	main := make([]persistent.SessionRow, 0, len(state.rows))
 	for _, row := range state.rows {
+		if row.Origin == persistent.SessionOriginExternalCodex {
+			continue
+		}
 		if row.Subagent {
 			parent := rootParent(strings.TrimSpace(row.ParentID))
 			if parent != "" && ids[parent] {
@@ -351,6 +354,7 @@ func buildPickerFrame(state *pickerState, labels map[string]string, width int) (
 			lines = append(lines, "  provider: "+row.Provider)
 			lines = append(lines, "  账号: "+globalSessionAccount(*row, labels))
 			lines = append(lines, "  状态: "+globalSessionStatus(*row))
+			lines = append(lines, "  来源: "+sessionOriginLabel(*row))
 			lines = append(lines, "  最新消息: "+pickerLatestMessage(*row))
 			lines = append(lines, "  路径: "+row.Path)
 			lines = append(lines, fmt.Sprintf("  运行时: socket=%s pane=%s", row.Socket, globalSessionID(*row)))

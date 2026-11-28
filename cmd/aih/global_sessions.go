@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -125,6 +127,7 @@ func collectGlobalRowsMode(
 	visibleAll, _ := resolveSessionScope(rows, runtime, allProjectsRequested(allProjects...))
 	appendRecentNativeSessionRows(ctx, runtime, &rows, visibleAll)
 	applyNativeTurnStates(store.AIHomeDir, rows)
+	rows = filterExternalSessionRows(rows)
 	annotateLatestMessages(ctx, runtime, store.AIHomeDir, rows)
 	rows = filterDismissedSessionRows(rows, readSSDismissed(store.AIHomeDir, now))
 	ensureUniqueSessionTitles(rows)
@@ -148,6 +151,8 @@ func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]
 	if hostHome == "" {
 		return
 	}
+	aiHomeDir, _ := resolveAIHomeDir(runtime)
+	managed := managedNativeIDs(aiHomeDir, *rows)
 	known := make(map[string]bool)
 	for _, row := range *rows {
 		if row.Provider == "codex" && strings.TrimSpace(row.NativeID) != "" {
@@ -161,8 +166,18 @@ func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]
 		if id == "" || !isCodexThreadID(id) || known[id] || strings.TrimSpace(session.CWD) == "" || session.Exec {
 			continue
 		}
+		if !managed["codex\x00"+id] {
+			// 没有 hook/cache/registry 记录：不是 AIH 启动的 thread，
+			// 即使共享 app-server 持锁也不进入 ss。
+			continue
+		}
 		locked := codexThreadLockHeld(hostHome, id)
 		if !locked {
+			continue
+		}
+		origin, _ := codexLockOrigin(hostHome, id)
+		if origin == "" || origin == persistent.SessionOriginExternalCodex {
+			// 外部 Codex 的 thread 不属于 aih ss；不杀、不投影。
 			continue
 		}
 		updated := session.UpdatedAtMS
@@ -171,6 +186,7 @@ func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]
 		}
 		*rows = append(*rows, persistent.SessionRow{
 			Provider:     "codex",
+			Origin:       origin,
 			RuntimeScope: "native",
 			Socket:       "",
 			Name:         "codex-" + id[:8],
@@ -206,6 +222,55 @@ func codexThreadLockHeld(hostHome, threadID string) bool {
 	return len(lockHolderPIDs(lock)) > 0
 }
 
+// codexLockOrigin 判断 thread 写锁的持有者是否由 AIH 启动。
+// 只有 AIH 管理的持有者才允许进入 ss；外部 Codex 的锁和会话都不属于 AIH。
+func codexLockOrigin(hostHome, threadID string) (string, []int) {
+	lock := filepath.Join(hostHome, providerroot.ConfigDir("codex"), "thread-writer-locks", threadID+".lock")
+	holders := lockHolderPIDs(lock)
+	if len(holders) == 0 {
+		return "", nil
+	}
+	live := make([]int, 0, len(holders))
+	for _, pid := range holders {
+		if processExists(pid) {
+			live = append(live, pid)
+		}
+	}
+	if len(live) == 0 {
+		return "", nil
+	}
+	for _, pid := range live {
+		if !processHasAIHAncestor(pid) {
+			return persistent.SessionOriginExternalCodex, live
+		}
+	}
+	return persistent.SessionOriginAIHNative, live
+}
+
+func processHasAIHAncestor(pid int) bool {
+	seen := make(map[int]bool)
+	for current := pid; current > 1 && !seen[current]; {
+		seen[current] = true
+		command, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(current)).Output()
+		if err != nil {
+			return false
+		}
+		fields := strings.Fields(strings.TrimSpace(string(command)))
+		if len(fields) > 0 {
+			switch strings.ToLower(filepath.Base(strings.Trim(fields[0], "\"'"))) {
+			case "aih", "aih-go", "aih-server":
+				return true
+			}
+		}
+		parent, parentErr := processParentPID(current)
+		if parentErr != nil || parent <= 0 {
+			return false
+		}
+		current = parent
+	}
+	return false
+}
+
 // cachedGlobalRows 用 30 分钟内的 ss-rows.json 先渲染首帧；真实采集
 // 在 picker 起来后由后台刷新接管，避免终端空等 2~3 秒。
 func cachedGlobalRows(aiHomeDir string) []persistent.SessionRow {
@@ -216,11 +281,13 @@ func cachedGlobalRows(aiHomeDir string) []persistent.SessionRow {
 	rows := make([]persistent.SessionRow, 0, len(entries))
 	for _, entry := range entries {
 		name := strings.TrimSpace(entry.Name)
-		if name == "" {
+		if name == "" || strings.TrimSpace(entry.Origin) == "" {
+			// 旧缓存没有来源字段，不能把可能的外部 Codex 会话渲染到首帧。
 			continue
 		}
 		rows = append(rows, persistent.SessionRow{
 			Provider:         strings.TrimSpace(entry.Provider),
+			Origin:           strings.TrimSpace(entry.Origin),
 			Name:             name,
 			Label:            strings.TrimSpace(entry.Title),
 			NativeID:         strings.TrimSpace(entry.AgentSessionID),
@@ -395,12 +462,13 @@ func writeGlobalSessionGroups(
 	for _, group := range groups {
 		_, _ = fmt.Fprintf(output, "\n  项目：%s\n", group.Project)
 		writer := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(writer, "  状态\tprovider\t账号\t会话名称\t最新消息\t会话ID\t最近活动")
+		_, _ = fmt.Fprintln(writer, "  状态\t来源\tprovider\t账号\t会话名称\t最新消息\t会话ID\t最近活动")
 		for _, row := range group.Rows {
 			_, _ = fmt.Fprintf(
 				writer,
-				"  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				"  %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				globalSessionStatus(row),
+				sessionOriginLabel(row),
 				row.Provider,
 				globalSessionAccount(row, labels),
 				foldedSessionTitle(rows, row),

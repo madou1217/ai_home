@@ -61,8 +61,8 @@ func runCodexTakeover(arguments []string, runtime commandRuntime) error {
 		if processIsCurrentOrAncestor(pid) {
 			return fmt.Errorf("thread %s 由当前 Codex 会话（pid=%d）持有；为避免结束当前会话，不能从其子进程自动接管", threadID, pid)
 		}
-		if !isCodexProcess(pid) {
-			return fmt.Errorf("thread %s 的持有者 pid=%d 不是可确认的 Codex/aih 进程，拒绝结束", threadID, pid)
+		if !isCodexProcess(pid) || !processHasAIHAncestor(pid) {
+			return fmt.Errorf("thread %s 的持有者 pid=%d 不是 aih 管理的 Codex 进程，拒绝结束", threadID, pid)
 		}
 	}
 	for _, pid := range holders {
@@ -255,16 +255,37 @@ func resolveCodexHostHome(runtime commandRuntime) (string, error) {
 	return runtime.userHomeDir()
 }
 
-func takeoverCodexThreadIfNeeded(threadID string, runtime commandRuntime) error {
+// ensureCodexResumeAvailable 在 resume 前处理 thread 锁，但绝不主动杀活进程：
+//   - 无活持有者：删除陈旧锁，允许启动；
+//   - 活持有者属于 aih：拒绝并提示从 aih ss / 原终端处理；
+//   - 活持有者不是 aih：拒绝，绝不抢锁。
+func ensureCodexResumeAvailable(threadID string, runtime commandRuntime) error {
 	home, err := resolveCodexHostHome(runtime)
 	if err != nil || strings.TrimSpace(home) == "" {
 		return errors.New("codex_takeover_home_unavailable")
 	}
 	lockPath := filepath.Join(home, providerroot.ConfigDir("codex"), "thread-writer-locks", threadID+".lock")
-	if len(lockHolderPIDs(lockPath)) == 0 {
+	if _, statErr := os.Stat(lockPath); statErr != nil {
 		return nil
 	}
-	// Resume is an explicit request to own this exact thread. Release only
-	// verified holders; never delete a lock file or kill an unrelated process.
-	return runCodexTakeover([]string{threadID, "--force"}, runtime)
+	holders := lockHolderPIDs(lockPath)
+	live := make([]int, 0, len(holders))
+	for _, pid := range holders {
+		if processExists(pid) {
+			live = append(live, pid)
+		}
+	}
+	if len(live) == 0 {
+		if removeErr := os.Remove(lockPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return fmt.Errorf("thread %s 的陈旧锁无法清理: %w", threadID, removeErr)
+		}
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已释放 thread %s 的陈旧锁\n", threadID)
+		return nil
+	}
+	for _, pid := range live {
+		if !processHasAIHAncestor(pid) {
+			return fmt.Errorf("thread %s 正被非 aih Codex 进程 pid=%d 持有；请先退出该 Codex 会话，再 resume", threadID, pid)
+		}
+	}
+	return fmt.Errorf("thread %s 正被 aih 进程 pid=%d 持有；请先在原终端退出，或从 aih ss 进入已有 tmux 会话；确认接管请显式执行 aih codex takeover %s --force", threadID, live[0], threadID)
 }

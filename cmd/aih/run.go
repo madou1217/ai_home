@@ -411,7 +411,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	// global writer lock. Resolve the exact thread before native argv rewrite.
 	if providerID == "codex" && len(arguments) >= 2 {
 		if threadID, ok := codexResumeThreadID(arguments); ok {
-			if err := takeoverCodexThreadIfNeeded(threadID, runtime); err != nil {
+			if err := ensureCodexResumeAvailable(threadID, runtime); err != nil {
 				return err
 			}
 		}

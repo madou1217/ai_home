@@ -224,7 +224,7 @@ func writeSessionRows(
 	}
 	_, _ = fmt.Fprintf(output, "%s 持久会话（%d）：\n", providerID, len(rows))
 	writer := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "状态\t账号\t会话名称\t最新消息\t会话ID\t项目\t最近活动")
+	_, _ = fmt.Fprintln(writer, "状态\t来源\t账号\t会话名称\t最新消息\t会话ID\t项目\t最近活动")
 	for _, row := range rows {
 		status := globalSessionStatus(row)
 		account := strings.TrimSpace(labels[row.AccountRef])
@@ -246,8 +246,9 @@ func writeSessionRows(
 		}
 		_, _ = fmt.Fprintf(
 			writer,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			status,
+			sessionOriginLabel(row),
 			account,
 			title,
 			pickerLatestMessage(row),

@@ -90,11 +90,23 @@ AihngIsLoopbackRemote(_In_ const FWPS_INCOMING_VALUES0 *inFixedValues)
 {
     if (RtlEqualMemory(&inFixedValues->layerId, &FWPM_LAYER_ALE_AUTH_CONNECT_V4,
                        sizeof(GUID))) {
-        const FWPS_INCOMING_VALUE0 *value =
+        const FWPS_INCOMING_VALUE0 *remote =
             &inFixedValues->incomingValue[FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_REMOTE_ADDRESS];
-        if (value->value.type == FWP_UINT32) {
-            /* Network byte order: 127.0.0.0/8. */
-            return (value->value.uint32 & 0xFF000000) == 0x7F000000;
+        const FWPS_INCOMING_VALUE0 *local =
+            &inFixedValues->incomingValue[FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_LOCAL_ADDRESS];
+        UINT32 addresses[2] = {0, 0};
+        if (remote->value.type == FWP_UINT32) {
+            addresses[0] = remote->value.uint32;
+        }
+        if (local->value.type == FWP_UINT32) {
+            addresses[1] = local->value.uint32;
+        }
+        for (UINT32 index = 0; index < 2; index++) {
+            UINT32 address = addresses[index];
+            if ((address & 0xFF000000) == 0x7F000000 ||
+                (address & 0x000000FF) == 0x0000007F) {
+                return TRUE;
+            }
         }
         return FALSE;
     }

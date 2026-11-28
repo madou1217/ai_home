@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"strings"
 	"sync"
 
 	"github.com/coder/websocket"
+	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
 )
@@ -348,6 +350,7 @@ func (handler *Handler) pumpClientToUpstream(
 		// Responses WS 协议；Node 旧实现原样转发，只标记不可重放。把它们当成
 		// 非法请求会直接 400，客户端的取消/控制帧因此反复失败。
 		if frameType := clientFrameType(payload); frameType != "" && frameType != "response.create" {
+			log.Printf("codex responses ws control frame type=%s request_id=%s", frameType, requestid.FromContext(session.Context()))
 			observer.MarkReplayUnavailable()
 			// response.cancel：上游 native turn lane 在轮次运行中拒绝状态帧
 			// （unsupported_native_inflight_message），转发只会把这个错误交给
@@ -387,6 +390,7 @@ func (handler *Handler) pumpClientToUpstream(
 			// 真正的并发请求，保留 concurrent_response_create。
 			if errors.Is(err, ErrConcurrentTurn) {
 				if request, parseErr := parseClientFrame(payload, observer.model); parseErr == nil && request.Model == observer.model {
+					log.Printf("codex responses ws pipelined response.create request_id=%s", requestid.FromContext(session.Context()))
 					observer.MarkReplayUnavailable()
 					if writeErr := writeMessage(
 						session.Context(),

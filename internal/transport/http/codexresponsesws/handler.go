@@ -30,6 +30,7 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
@@ -235,7 +236,9 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	client.SetReadLimit(MaxMessageBytes)
-	session := newManagedSession(client, request.Context())
+	// 把 aih request id 绑在客户端连接上：后续任何 WS 错误帧都能带回同一个 ID。
+	wrappedClient := requestIDConnection{Connection: client, requestID: requestid.FromContext(request.Context())}
+	session := newManagedSession(wrappedClient, request.Context())
 	if !handler.sessions.Add(session) {
 		_ = client.Close(websocket.StatusServiceRestart, "server closing")
 		return
@@ -822,9 +825,15 @@ func writeWebSocketError(
 	code string,
 	message string,
 ) {
+	requestID := ""
+	if provider, ok := connection.(interface{ RequestID() string }); ok {
+		requestID = provider.RequestID()
+	}
+	log.Printf("codex responses ws error status=%d code=%s request_id=%s", status, code, requestID)
 	payload, err := json.Marshal(webSocketErrorEnvelope{
-		Type:   "error",
-		Status: status,
+		Type:         "error",
+		Status:       status,
+		AIHRequestID: requestID,
 		Error: webSocketErrorView{
 			Code:    code,
 			Message: message,
@@ -842,9 +851,10 @@ func writeWebSocketError(
 }
 
 type webSocketErrorEnvelope struct {
-	Type   string             `json:"type"`
-	Status int                `json:"status"`
-	Error  webSocketErrorView `json:"error"`
+	Type         string             `json:"type"`
+	Status       int                `json:"status"`
+	AIHRequestID string             `json:"aih_request_id,omitempty"`
+	Error        webSocketErrorView `json:"error"`
 }
 
 type webSocketErrorView struct {
@@ -862,13 +872,25 @@ func writeHTTPError(
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("X-Content-Type-Options", "nosniff")
+	requestID := response.Header().Get(requestid.HeaderName)
+	log.Printf("codex responses ws http error status=%d code=%s request_id=%s", status, code, requestID)
 	response.WriteHeader(status)
 	_ = json.NewEncoder(response).Encode(webSocketErrorEnvelope{
-		Type:   "error",
-		Status: status,
+		Type:         "error",
+		Status:       status,
+		AIHRequestID: requestID,
 		Error: webSocketErrorView{
 			Code:    code,
 			Message: message,
 		},
 	})
 }
+
+// requestIDConnection 给客户端连接附加 aih request id，错误帧据此回传。
+type requestIDConnection struct {
+	responseswebsocket.Connection
+	requestID string
+}
+
+// RequestID 返回握手请求的 aih request id。
+func (connection requestIDConnection) RequestID() string { return connection.requestID }

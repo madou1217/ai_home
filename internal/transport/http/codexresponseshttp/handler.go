@@ -632,14 +632,19 @@ func (handler *Handler) failAdmission(response http.ResponseWriter, trail *failu
 
 // writeAdmissionError 写出与其它 Codex 错误同形的 429 错误体。
 func writeAdmissionError(response http.ResponseWriter) {
+	requestID := response.Header().Get(requestid.HeaderName)
+	log.Printf("codex responses http error status=%d code=%s request_id=%s", http.StatusTooManyRequests, admission.CodeAccountTemporarilyUnavailable, requestID)
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(http.StatusTooManyRequests)
-	_ = json.NewEncoder(response).Encode(map[string]any{"error": map[string]any{
+	body := map[string]any{
 		"code":    admission.CodeAccountTemporarilyUnavailable,
 		"message": "Inference capacity is temporarily unavailable, retry later",
 		"type":    "rate_limit_error",
-		"param":   nil,
-	}})
+	}
+	if requestID != "" {
+		body["aih_request_id"] = requestID
+	}
+	_ = json.NewEncoder(response).Encode(map[string]any{"error": body})
 }
 
 func (handler *Handler) recordFailure(ctx context.Context, route runtimecore.ModelRoute, selection Selection, failure inferencegateway.AttemptFailure) runtimecore.CooldownReceipt {
@@ -652,9 +657,16 @@ func (handler *Handler) recordFailure(ctx context.Context, route runtimecore.Mod
 
 func writeError(response http.ResponseWriter, code string) {
 	definition := codexrelay.Error(code)
+	// 错误体回带 aih request id：用户只需提供这个值即可在服务端日志定位整条链路。
+	requestID := response.Header().Get(requestid.HeaderName)
+	log.Printf("codex responses http error status=%d code=%s request_id=%s", definition.Status, code, requestID)
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(definition.Status)
-	_ = json.NewEncoder(response).Encode(map[string]any{"error": map[string]any{"code": code, "message": definition.Message, "type": definition.Type, "param": nil}})
+	body := map[string]any{"code": code, "message": definition.Message, "type": definition.Type, "param": nil}
+	if requestID != "" {
+		body["aih_request_id"] = requestID
+	}
+	_ = json.NewEncoder(response).Encode(map[string]any{"error": body})
 }
 
 // isStatelessCredential 报告凭据是否指向不存储 response 的 ChatGPT Codex 上游。

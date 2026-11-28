@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,23 +202,27 @@ func (store *Store) apply(op writeOp) {
 		if err != nil {
 			return
 		}
-		_, _ = store.db.ExecContext(ctx, `
+		if _, err := store.db.ExecContext(ctx, `
 INSERT INTO codex_response_contexts (response_id, account_ref, items_json, bytes, updated_at_ms)
 VALUES (?, '', ?, ?, ?)
 ON CONFLICT(response_id) DO UPDATE SET
     items_json = excluded.items_json,
     bytes = excluded.bytes,
     updated_at_ms = excluded.updated_at_ms`,
-			op.responseID, encoded, int64(len(encoded)), nowMS)
+			op.responseID, encoded, int64(len(encoded)), nowMS); err != nil {
+			log.Printf("codex response context: 保存上下文失败 response_id=%s err=%v", op.responseID, err)
+		}
 	case writeAccount:
-		_, _ = store.db.ExecContext(ctx, `
+		if _, err := store.db.ExecContext(ctx, `
 INSERT INTO codex_response_contexts (response_id, account_ref, model, items_json, bytes, updated_at_ms)
 VALUES (?, ?, ?, X'', 0, ?)
 ON CONFLICT(response_id) DO UPDATE SET
     account_ref = excluded.account_ref,
     model = CASE WHEN excluded.model <> '' THEN excluded.model ELSE model END,
     updated_at_ms = excluded.updated_at_ms`,
-			op.responseID, op.accountRef, op.model, nowMS)
+			op.responseID, op.accountRef, op.model, nowMS); err != nil {
+			log.Printf("codex response context: 保存账号归属失败 response_id=%s err=%v", op.responseID, err)
+		}
 	}
 }
 

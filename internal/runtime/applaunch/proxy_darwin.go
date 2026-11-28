@@ -25,7 +25,7 @@ func openAppSandboxed(app launcher.App, mode ProxyMode, proxyURL string, options
 		return errors.New("找不到应用可执行文件: " + executable)
 	}
 	args := []string{}
-	if mode == ProxyModeChromium {
+	if mode == ProxyModeChromium || isElectronBundle(bundle) {
 		args = append(args, chromiumArguments(proxyURL, options.ProfileDir, options.ExtraArgs)...)
 		args = append(args, "--no-sandbox")
 	}
@@ -45,6 +45,18 @@ func openAppSandboxed(app launcher.App, mode ProxyMode, proxyURL string, options
 		cleanup()
 	}()
 	return nil
+}
+
+// isElectronBundle detects the Chromium/Electron runtime inside a .app. Such
+// apps accept --proxy-server even when the catalog classified them as
+// environment-only.
+func isElectronBundle(bundle string) bool {
+	if _, err := os.Stat(filepath.Join(bundle, "Contents", "Resources", "app.asar")); err == nil {
+		return true
+	}
+	framework := filepath.Join(bundle, "Contents", "Frameworks", "Electron Framework.framework")
+	_, err := os.Stat(framework)
+	return err == nil
 }
 
 func openWithProxy(_ context.Context, app launcher.App, mode ProxyMode, proxyURL string, options ProxyOptions) error {

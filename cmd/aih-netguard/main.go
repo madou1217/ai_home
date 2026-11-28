@@ -19,6 +19,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "exec" {
+		os.Exit(runSandboxExec(os.Args[2:]))
+	}
 	var (
 		rootPID     = flag.Int("root-pid", 0, "实例根进程 PID；自动纳入其所有子进程")
 		pidsValue   = flag.String("pids", "", "逗号分隔的额外 PID")

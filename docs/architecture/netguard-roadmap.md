@@ -111,14 +111,19 @@
 
 ## Phase 3 — macOS Guard
 
-### 3.1 CLI strict
+### 3.1 CLI strict 🚧
 
-- [ ] sandbox-exec profile 生成器（per launch）
-- [ ] 禁止外部 IP，允许白名单 loopback（代理/AIH 网关/MCP）
-- [ ] 注入 `HTTP(S)_PROXY` + `NODE_USE_ENV_PROXY=1`
-- [ ] 四个 CLI 真实请求验收（Claude/Codex/Gemini/AGY）
-- [ ] 代理断开 fail closed；无 direct 回落
+- [x] sandbox-exec profile 生成器（per launch）
+- [x] 禁止外部 IP，允许 loopback（代理/AIH 网关/MCP）
+- [x] 注入 `HTTP(S)_PROXY` + `NODE_USE_ENV_PROXY=1`
+- [x] 真机：代理请求 204；`curl --noproxy '*'` 直连 IP/域名均被拒
+- [x] 真机：代理端口不存在时请求直接失败（fail closed）
+- [x] 真机：Claude 2.1.332 / Codex 0.172.0 / Gemini 0.70.0 均可在 sandbox 内启动
+- [x] CLI 工具：`aih-netguard exec --proxy-url ... -- <command>`
+- [ ] 四个 CLI 真实 API 请求验收（含 AGY；当前只验证启动）
 - [ ] 多实例不同代理验收
+- [ ] DNS 严格阻断（当前 DNS 经 mDNSResponder 仍可解析；Phase 5）
+- [ ] 与 Provider CLI 启动路径集成（Phase 8）
 
 ### 3.2 GUI App
 
@@ -207,9 +212,9 @@
 | 代理选择 / 临时入口 / 稳定端口 / 健康 | 高 | 90% | ✅ 基础完成 |
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
-| 严格进程级网络控制（跨平台） | 中 | 10% | 🚧 Phase 1/2 |
+| 严格进程级网络控制（跨平台） | 中 | 15% | 🚧 Phase 1/2/3 |
 | Windows per-instance GUI（JP/SG） | P0 TCP 原型可运行 | 8% | 🚧 Phase 2 |
-| macOS CLI strict | 机制已验证 | 0% | ⬜ Phase 3 |
+| macOS CLI strict | 机制+三 CLI 启动已验证 | 40% | 🚧 Phase 3 |
 | macOS GUI strict | 原型待做 | 0% | ⬜ Phase 3 |
 | Linux CLI/GUI strict | 方案已有 | 0% | ⬜ Phase 4 |
 | DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
@@ -217,7 +222,7 @@
 | 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈17%** | 🚧 |
+| **总目标** | — | **≈19%** | 🚧 |
 
 ---
 
@@ -240,8 +245,8 @@
 
 ## 当前状态
 
-- 当前阶段：**Phase 1 契约/Windows P0 原型已完成一部分；2.1 UDP/IPv6/WFP 受 WDK 阻塞**
-- 已完成：Phase 0；Phase 1 契约代码；P0 的 IPv4 TCP 目标/非目标隔离
-- 未开始：Phase 3–9
+- 当前阶段：**Phase 2.1 WFP 受 WDK 阻塞；Phase 3.1 macOS CLI sandbox 已可用**
+- 已完成：Phase 0；Phase 1 契约代码；P0 IPv4 TCP 目标/非目标隔离；macOS CLI sandbox 包装器
+- 未开始：Phase 2.2 P1 透明 TCP、Phase 2.3 WFP、Phase 4–9
 - 最近更新：2026-11-28
-- 证据：Windows 真机 `aih-netguard` 目标进程 `DIRECT_ERROR`、非目标 `DIRECT_OK 200`、`blocked=3`；UDP 仍 `UDP_OK`（待修）
+- 证据：Windows 目标 `DIRECT_ERROR`/`blocked=3`、非目标 `DIRECT_OK 200`；macOS sandbox 代理 204、`--noproxy '*'` 直连拒绝、dead proxy 失败关闭、Claude/Codex/Gemini `--version` 正常

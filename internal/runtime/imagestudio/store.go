@@ -208,6 +208,31 @@ type Store struct {
 	dbPath string
 	now    func() time.Time
 	mu     sync.Mutex
+	// recovered 是启动时发现的、可以重新入队的未完成修订（按创建时间升序）。
+	// 队列在内存里，重启会丢；但这些修订的输入已经落库，可以重建后继续跑。
+	recovered []RecoveredRun
+}
+
+// RecoveredRun 是一条可以在重启后续跑的未完成修订。
+type RecoveredRun struct {
+	SessionID string
+	Revision  Revision
+}
+
+// imageStudioResumeWindowMS 限制重启后自动续跑的时间窗：更早的修订多半已经
+// 没人等结果，继续跑只会烧额度，所以仍然按“被重启打断”结算。
+const imageStudioResumeWindowMS int64 = 24 * 60 * 60 * 1000
+
+// TakeRecoveredRuns 取走启动时收集的可续跑修订（只返回一次）。
+func (s *Store) TakeRecoveredRuns() []RecoveredRun {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.recovered
+	s.recovered = nil
+	return out
 }
 
 const studioSchemaSQL = `
@@ -335,6 +360,12 @@ func (s *Store) initAndRecover(ctx context.Context) error {
 				if session.Revisions[i].Status != "running" {
 					continue
 				}
+				// 输入（prompt/模型/参数/源图资产）都已经落库，重启后可以原样重建
+				// 再跑一遍；只有超出自愈窗口的才结算成“被重启打断”。
+				if recoveredAt-session.Revisions[i].CreatedAt <= imageStudioResumeWindowMS {
+					s.recovered = append(s.recovered, RecoveredRun{SessionID: session.ID, Revision: session.Revisions[i]})
+					continue
+				}
 				session.Revisions[i].Status = "failed"
 				session.Revisions[i].CompletedAt = recoveredAt
 				session.Revisions[i].Error = &RevisionError{
@@ -351,7 +382,15 @@ func (s *Store) initAndRecover(ctx context.Context) error {
 				}
 			}
 		}
+		sortRecoveredRuns(s.recovered)
 		return nil
+	})
+}
+
+// sortRecoveredRuns 按创建时间升序排列，保证重启后续跑的顺序与提交顺序一致。
+func sortRecoveredRuns(runs []RecoveredRun) {
+	sort.SliceStable(runs, func(i, j int) bool {
+		return runs[i].Revision.CreatedAt < runs[j].Revision.CreatedAt
 	})
 }
 

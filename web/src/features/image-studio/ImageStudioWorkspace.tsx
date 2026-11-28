@@ -447,7 +447,16 @@ const ImageStudioWorkspace: React.FC = () => {
           revision.status === 'succeeded' && previousStatus.get(revision.id) === 'running'
         ));
         if (settledSuccess) {
-          setSelectionFromSession(detail.session, settledSuccess.id, settledSuccess.outputAssetIds?.[0] || '');
+          const settledAssetId = settledSuccess.outputAssetIds?.[0] || '';
+          setSelectionFromSession(detail.session, settledSuccess.id, settledAssetId);
+          // 编辑跑完后，把结果接成下一次编辑的源图（同步提交时代就是这么接的）；
+          // 异步提交没有即时返回值，只能等结算这一跳补上。
+          if (settledSuccess.mode === 'edit' && settledAssetId) {
+            setSourceSelections([storedSourceSelection(settledAssetId)]);
+            setParentRevisionId(settledSuccess.id);
+            setMaskAssetId('');
+            setMaskUpload(null);
+          }
         }
         setComposerFeedback({ tone: 'success', text: '已生成：结果已保存到当前会话。' });
       } catch (_error) {

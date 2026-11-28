@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -144,7 +145,76 @@ func NewService(deps ServiceDependencies) (*Service, error) {
 	for worker := 0; worker < workers; worker++ {
 		go service.runWorker()
 	}
+	// 队列在内存里，重启会丢；把落库的未完成修订重新排回队列，接着跑。
+	service.resumePendingRuns()
 	return service, nil
+}
+
+// revisionIsRunning 报告会话里是否仍有指定修订处于 running。
+func revisionIsRunning(session Session, revisionID string) bool {
+	for _, rev := range session.Revisions {
+		if rev.ID == revisionID {
+			return rev.Status == "running"
+		}
+	}
+	return false
+}
+
+// runRequestFromRevision 用落库的修订重建执行请求：源图在提交时已经存成资产，
+// 所以重启后可以原样重放，不需要客户端重新提交。
+func runRequestFromRevision(rev Revision) RunRequest {
+	req := RunRequest{
+		ModelKey:          rev.ModelKey,
+		Model:             rev.Model,
+		Provider:          rev.Provider,
+		Mode:              rev.Mode,
+		Prompt:            rev.Prompt,
+		Size:              rev.Parameters.Size,
+		Quality:           rev.Parameters.Quality,
+		Background:        rev.Parameters.Background,
+		OutputFormat:      rev.Parameters.OutputFormat,
+		OutputCompression: rev.Parameters.OutputCompression,
+		Moderation:        rev.Parameters.Moderation,
+		MaskAssetID:       rev.MaskAssetID,
+		ParentRevisionID:  rev.ParentRevisionID,
+	}
+	if rev.Parameters.N > 0 {
+		n := rev.Parameters.N
+		req.N = &n
+	}
+	for _, assetID := range rev.SourceAssetIDs {
+		req.Sources = append(req.Sources, RunSourceInput{AssetID: assetID})
+	}
+	req.HasSources = len(req.Sources) > 0
+	return req
+}
+
+// resumePendingRuns 把重启前没跑完的修订重新入队；重建失败或队列满时按失败结算。
+//
+// 语义是 at-least-once：进程在生成中途被杀时上游可能已经出图，重启后会再跑一次，
+// 这里选择"宁可能重复也不丢用户已提交的需求"，与「重启即失败」的旧行为相反。
+func (svc *Service) resumePendingRuns() {
+	runs := svc.store.TakeRecoveredRuns()
+	if len(runs) == 0 {
+		return
+	}
+	log.Printf("image studio: resuming %d pending run(s) after restart", len(runs))
+	go func() {
+		for _, run := range runs {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), studioRecordTimeout)
+			plan, _, err := svc.prepareRun(ctx, run.SessionID, runRequestFromRevision(run.Revision), run.Revision.ID)
+			if err == nil {
+				err = svc.enqueueRun(plan)
+			}
+			cancel()
+			if err == nil {
+				continue
+			}
+			failCtx, failCancel := context.WithTimeout(context.WithoutCancel(context.Background()), studioRecordTimeout)
+			_, _, _ = svc.store.FailRevision(failCtx, run.SessionID, run.Revision.ID, "", err)
+			failCancel()
+		}
+	}()
 }
 
 // Store 返回关联的会话/资产 SQLite 仓储。
@@ -184,7 +254,7 @@ type preparedRun struct {
 // 管理端「立即拿结果」的调用方继续走这里；WebUI 提交走 StartRun，把生成交给内部队列，
 // 避免客户端被一条长请求和并发上限卡住。
 func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunRequest) (RunResult, error) {
-	plan, _, err := svc.prepareRun(ctx, sessionID, req)
+	plan, _, err := svc.prepareRun(ctx, sessionID, req, "")
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -201,7 +271,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 // 并发上限在内部排队等待，而不是把「暂时没有并发名额」直接变成客户端失败，
 // 也不是让客户端自己禁止提交新需求。
 func (svc *Service) StartRun(ctx context.Context, sessionID string, req RunRequest) (RunResult, error) {
-	plan, started, err := svc.prepareRun(ctx, sessionID, req)
+	plan, started, err := svc.prepareRun(ctx, sessionID, req, "")
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -215,7 +285,10 @@ func (svc *Service) StartRun(ctx context.Context, sessionID string, req RunReque
 }
 
 // prepareRun 完成全部同步校验与落库，返回可直接执行的运行计划与会话快照。
-func (svc *Service) prepareRun(ctx context.Context, sessionID string, req RunRequest) (preparedRun, Session, error) {
+//
+// reuseRevisionID 非空时表示续跑：修订在重启前已经落库，这里只重建执行请求，
+// 不会再写一条新修订。
+func (svc *Service) prepareRun(ctx context.Context, sessionID string, req RunRequest, reuseRevisionID string) (preparedRun, Session, error) {
 	models, _, err := svc.ListModels(ctx, "")
 	if err != nil {
 		return preparedRun{}, Session{}, err
@@ -391,6 +464,17 @@ func (svc *Service) prepareRun(ctx context.Context, sessionID string, req RunReq
 			MIME:  string(parsedReq.Mask.MIME),
 			Bytes: decodedMask,
 		}
+	}
+
+	if reuseRevisionID != "" {
+		session, readErr := svc.store.GetSession(ctx, sessionID)
+		if readErr != nil {
+			return preparedRun{}, Session{}, readErr
+		}
+		if !revisionIsRunning(session, reuseRevisionID) {
+			return preparedRun{}, Session{}, NewError(409, "image_studio_revision_not_resumable", "image Studio revision is no longer running")
+		}
+		return preparedRun{sessionID: sessionID, revisionID: reuseRevisionID, request: parsedReq}, session, nil
 	}
 
 	startedSession, startedRev, err := svc.store.BeginRevision(ctx, sessionID, BeginRevisionInput{

@@ -51,7 +51,8 @@ func TestStoreCRUDRecoveryAndAssetCleanup(t *testing.T) {
 		t.Fatalf("unexpected default session: %+v", sess)
 	}
 
-	// 开始一个 running 修订 -> 重建 Store 后应自动恢复为 failed / image_studio_run_interrupted (503)
+	// 开始一个 running 修订 -> 重建 Store 时，超出 24h 续跑窗口的按
+	// failed / image_studio_run_interrupted (503) 结算（窗口内的会重新入队，见 resumePendingRuns）
 	_, rev, err := store.BeginRevision(ctx, sess.ID, BeginRevisionInput{
 		Mode:     "generation",
 		Provider: "codex",

@@ -253,8 +253,8 @@ function clearDynamicWorldGroup(
 
 /** 构建贴墙项目铭牌（尺寸 1.875 × 0.75 ≤ 2×1 体素，紧贴墙面 z ∈ [0, 0.0625]） */
 function buildPlaqueGroup(
-  plaqueScreenMaterial: THREE.MeshLambertMaterial,
-  opaqueVoxelMaterial: THREE.MeshLambertMaterial
+  plaqueScreenMaterial: THREE.Material,
+  opaqueVoxelMaterial: THREE.Material
 ): THREE.Group {
   const plaqueGroup = new THREE.Group();
   const builder = new VoxelBoxBuilder();
@@ -276,9 +276,9 @@ function buildPlaqueGroup(
 
 /** 构建贴墙房间邮件终端面板（尺寸 1.50 × 0.875 ≤ 2×1 体素，紧贴墙面 z ∈ [0, 0.0625]） */
 function buildRoomTerminalGroup(
-  terminalScreenMaterial: THREE.MeshLambertMaterial,
+  terminalScreenMaterial: THREE.Material,
   terminalStatusMaterial: THREE.MeshBasicMaterial,
-  opaqueVoxelMaterial: THREE.MeshLambertMaterial
+  opaqueVoxelMaterial: THREE.Material
 ): { group: THREE.Group; screenMesh: THREE.Mesh } {
   const group = new THREE.Group();
   const builder = new VoxelBoxBuilder();

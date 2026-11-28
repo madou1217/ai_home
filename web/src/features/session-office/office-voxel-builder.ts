@@ -4,10 +4,12 @@ import { getTileUvRect, type VoxelTileId } from './office-voxel-atlas';
 /**
  * Minecraft 体素几何构建引擎：
  * 1. 严格轴对齐盒子几何（最小细节单位 0.0625 world unit）。
- * 2. 经典逐面亮度分层：顶面 1.00，±X 0.80，±Z 0.65，底面 0.52。
- * 3. 四档体素环境光遮蔽（AO）：1.00 / 0.75 / 0.50 / 0.25，烘焙至顶点色，支持对角线翻转防插值锯齿。
- * 4. 整数网格体素器（VoxelGrid）自动执行相邻实心面剔除并按渲染层合批输出单个 BufferGeometry。
- * 5. 精细家具盒构建器（VoxelBoxBuilder）支持 0.0625 精度子体素合批与接触面近邻 AO 烘焙。
+ * 2. 适配 PBR 光照的 Minecraft 逐面亮度分层与微冷暖 AO 暗角着色，避免传统死黑叠加。
+ * 3. 四档平滑体素 AO（1.00 / 0.83 / 0.64 / 0.44）+ 对角线翻转规则防插值折痕。
+ * 4. 整数网格体素器（VoxelGrid）自动执行实心面剔除、同类玻璃/水合并与按渲染层合批；
+ *    水面层自动输出 [0..1] 独立循环 UV 以支持流畅水面流动动画。
+ * 5. 精细家具盒构建器（VoxelBoxBuilder）支持 0.0625 精度子体素合批、接触面近邻 AO
+ *    以及经典 Minecraft 十字交叉植被（addCrossPlant）。
  */
 
 export const VOXEL_UNIT = 0.0625;
@@ -16,18 +18,23 @@ export type VoxelFaceDir = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
 
 export type VoxelRenderLayer = 'opaque' | 'cutout' | 'glass' | 'water' | 'emissive';
 
-/** Minecraft 经典六面亮度系数 */
+/** 适配 PBR 光照的 Minecraft 六面亮度分层（保留清晰方块体块感，不与真实阴影双重过暗） */
 export const FACE_SHADE: Readonly<Record<VoxelFaceDir, number>> = {
   py: 1.0,
-  px: 0.8,
-  nx: 0.8,
-  pz: 0.65,
-  nz: 0.65,
-  ny: 0.52,
+  px: 0.9,
+  nx: 0.84,
+  pz: 0.85,
+  nz: 0.78,
+  ny: 0.58,
 };
 
-/** 四档体素 AO 亮度表：索引 = 3 - 遮挡数（0=最暗 0.25，3=无遮挡 1.0） */
-export const AO_LEVELS: readonly [number, number, number, number] = [0.25, 0.5, 0.75, 1.0];
+/** 四档体素 AO 亮度表：索引 = 3 - 遮挡数（0=深折角 0.44，3=无遮挡 1.0） */
+export const AO_LEVELS: readonly [number, number, number, number] = [0.44, 0.64, 0.83, 1.0];
+
+/** 深 AO 折角微妙冷色环境偏移（模拟天光漫射，让角落层次通透不发脏） */
+const AO_COOL_R = 0.95;
+const AO_COOL_G = 0.97;
+const AO_COOL_B = 1.04;
 
 export interface VoxelBlockFaceTiles {
   px?: VoxelTileId;
@@ -141,7 +148,7 @@ interface FaceTemplate {
   corners: readonly [FaceCornerSpec, FaceCornerSpec, FaceCornerSpec, FaceCornerSpec];
 }
 
-// 严格验证逆时针向外绕序（叉积 (v1-v0) × (v2-v0) 与法线同向）
+// 严格逆时针向外绕序（叉积 (v1-v0) × (v2-v0) 与法线同向）
 const FACE_TEMPLATES: readonly FaceTemplate[] = [
   {
     dir: 'py',
@@ -236,11 +243,21 @@ function emitQuad(
   for (let i = 0; i < 4; i += 1) {
     const p = corners[i];
     const uv = uvCorners[i];
-    const shade = faceShade * aoLevels[i];
+    const aoVal = aoLevels[i];
+    const occStrength = Math.max(0, 1 - aoVal);
+    const shade = faceShade * aoVal;
+    // 在 AO 折角叠加极轻微的冷蓝天光倾向，使阴暗缝隙立体通透
+    const cr = 1 + (AO_COOL_R - 1) * occStrength;
+    const cg = 1 + (AO_COOL_G - 1) * occStrength;
+    const cb = 1 + (AO_COOL_B - 1) * occStrength;
     buf.positions.push(p[0], p[1], p[2]);
     buf.normals.push(normal[0], normal[1], normal[2]);
     buf.uvs.push(uv[0], uv[1]);
-    buf.colors.push(tintColor.r * shade, tintColor.g * shade, tintColor.b * shade);
+    buf.colors.push(
+      Math.min(1, tintColor.r * shade * cr),
+      Math.min(1, tintColor.g * shade * cg),
+      Math.min(1, tintColor.b * shade * cb)
+    );
   }
   // Minecraft 对角线翻转规则：防止 AO 插值在四边形上产生不对称折痕
   if (aoLevels[0] + aoLevels[2] > aoLevels[1] + aoLevels[3]) {
@@ -265,7 +282,7 @@ function cellKey(x: number, y: number, z: number): string {
 
 /**
  * 整数网格体素世界构建器：
- * 适用于房间地面、砖墙、窗户、屋顶、室外草地、泥土崖壁、方块树与水池。
+ * 适用于房间地面、砖墙、窗户、屋顶、室外草地、多层浮空岛崖壁、方块树与水池。
  */
 export class VoxelGrid {
   private readonly cells = new Map<string, StoredCell>();
@@ -362,7 +379,8 @@ export class VoxelGrid {
         }
 
         const tileId = resolveFaceTile(cell.spec.tiles, tpl.dir);
-        const uvRect = getTileUvRect(tileId);
+        const isWater = cell.layer === 'water';
+        const uvRect = isWater ? null : getTileUvRect(tileId);
         const shade = cell.layer === 'emissive' ? 1.0 : FACE_SHADE[tpl.dir];
 
         const positions: [
@@ -396,10 +414,18 @@ export class VoxelGrid {
             origin.y + cell.y + corner.pos[1],
             origin.z + cell.z + corner.pos[2],
           ];
-          uvs[c] = [
-            corner.uv[0] === 0 ? uvRect.u0 : uvRect.u1,
-            corner.uv[1] === 0 ? uvRect.v0 : uvRect.v1,
-          ];
+          if (isWater) {
+            // 独立循环水面贴图：每格映射半个 32×32 周期，连续波纹跨块平滑衔接
+            uvs[c] = [
+              (cell.x + corner.pos[0]) * 0.5,
+              (cell.z + corner.pos[2]) * 0.5,
+            ];
+          } else if (uvRect) {
+            uvs[c] = [
+              corner.uv[0] === 0 ? uvRect.u0 : uvRect.u1,
+              corner.uv[1] === 0 ? uvRect.v0 : uvRect.v1,
+            ];
+          }
           if (cell.layer === 'emissive' || cell.layer === 'water') {
             ao[c] = 1.0;
           } else {
@@ -436,12 +462,23 @@ export class VoxelGrid {
   }
 }
 
+interface CrossPlantInput {
+  cx: number;
+  baseY: number;
+  cz: number;
+  width: number;
+  height: number;
+  tile: VoxelTileId;
+  tint?: string;
+}
+
 /**
- * 精细子体素轴对齐盒合批器（支持 0.0625 精度、逐面亮度与盒间接触 AO）。
- * 用于工位书桌、椅子、显示器外壳、PC 机箱、键盘、鼠标、箱子与装饰物。
+ * 精细子体素轴对齐盒合批器（支持 0.0625 精度、逐面亮度、盒间接触 AO 与十字交叉植被）。
+ * 用于工位书桌、椅子、显示器外壳、PC 机箱、键盘、鼠标、箱子与室外花草。
  */
 export class VoxelBoxBuilder {
   private readonly boxes: VoxelBoxInput[] = [];
+  private readonly crossPlants: CrossPlantInput[] = [];
 
   public addBox(input: VoxelBoxInput): this {
     this.boxes.push(input);
@@ -479,6 +516,20 @@ export class VoxelBoxBuilder {
       hiddenFaces: options?.hiddenFaces,
       floorY: options?.floorY,
     });
+  }
+
+  /** 添加经典 Minecraft X 型双交叉像素植物（用于高草、野花与水岸甘蔗，配合 cutout 材质使用） */
+  public addCrossPlant(
+    cx: number,
+    baseY: number,
+    cz: number,
+    width: number,
+    height: number,
+    tile: VoxelTileId,
+    tint?: string
+  ): this {
+    this.crossPlants.push({ cx, baseY, cz, width, height, tile, tint });
+    return this;
   }
 
   private sampleOccluded(
@@ -568,7 +619,6 @@ export class VoxelBoxBuilder {
           ];
 
           if (enableAo) {
-            // 在法线外侧微小探针点检测相邻体素与地面遮挡
             const s1 = this.sampleOccluded(
               vx + corner.side1[0] * probe,
               vy + corner.side1[1] * probe,
@@ -598,12 +648,71 @@ export class VoxelBoxBuilder {
       }
     }
 
+    // 发射 X 型交叉植物面片（底部微暗模拟草根接地阴影，顶部全亮）
+    const invSqrt2 = Math.SQRT1_2;
+    for (let i = 0; i < this.crossPlants.length; i += 1) {
+      const p = this.crossPlants[i];
+      const uvRect = getTileUvRect(p.tile);
+      const half = p.width * 0.5 * invSqrt2;
+      const y0 = p.baseY;
+      const y1 = p.baseY + p.height;
+      if (p.tint) {
+        SCRATCH_COLOR.set(p.tint);
+      } else {
+        SCRATCH_COLOR.setRGB(1, 1, 1);
+      }
+
+      const uvQuad: [
+        [number, number],
+        [number, number],
+        [number, number],
+        [number, number],
+      ] = [
+        [uvRect.u0, uvRect.v0],
+        [uvRect.u1, uvRect.v0],
+        [uvRect.u1, uvRect.v1],
+        [uvRect.u0, uvRect.v1],
+      ];
+
+      // 对角面 1
+      emitQuad(
+        buf,
+        [
+          [p.cx - half, y0, p.cz - half],
+          [p.cx + half, y0, p.cz + half],
+          [p.cx + half, y1, p.cz + half],
+          [p.cx - half, y1, p.cz - half],
+        ],
+        [0, 1, 0],
+        uvQuad,
+        [0.72, 0.72, 1.0, 1.0],
+        0.96,
+        SCRATCH_COLOR
+      );
+
+      // 对角面 2
+      emitQuad(
+        buf,
+        [
+          [p.cx - half, y0, p.cz + half],
+          [p.cx + half, y0, p.cz - half],
+          [p.cx + half, y1, p.cz - half],
+          [p.cx - half, y1, p.cz + half],
+        ],
+        [0, 1, 0],
+        uvQuad,
+        [0.72, 0.72, 1.0, 1.0],
+        0.92,
+        SCRATCH_COLOR
+      );
+    }
+
     return buffersToGeometry(buf);
   }
 }
 
 /**
- * 构建纯色轴对齐盒子合批几何（用于发光描边方框、云朵、星点、脉冲折线路径等）。
+ * 构建纯色轴对齐盒子合批几何（用于发光描边方框、云朵、星点、太阳/月亮等）。
  */
 export function createSolidColorVoxelGeometry(boxes: readonly SolidColorBoxInput[]): THREE.BufferGeometry {
   const buf = createRawBuffers();

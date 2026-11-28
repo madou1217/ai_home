@@ -43,6 +43,7 @@ interface ShellTerminalPanelProps {
     persistent?: boolean;
     kind?: 'account-cli' | 'shell';
     closeToken?: string;
+    initialCommand?: string;
   }>;
   activeTabId?: string;
   onActiveTabChange?: (id: string) => void;
@@ -551,6 +552,15 @@ function ShellTerminalPanel({
           ? { ...t, termId: res.termId!, status: inst.exited ? 'closed' : inst.inputReady ? 'ready' : 'connecting' }
           : t
       )));
+      const initialCommand = String(definition?.initialCommand || '').trim();
+      if (
+        initialCommand
+        && !previousResultId
+        && !res.reused
+        && definition?.kind === 'shell'
+      ) {
+        void terminalAPI.input(res.termId, `${initialCommand}\r`).catch(() => undefined);
+      }
     } catch (error) {
       if (!isAttachmentAlive()) return;
       term.writeln(`\x1b[31m终端连接失败: ${String((error as Error)?.message || error)}\x1b[0m`);

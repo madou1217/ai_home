@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/failureprovenanceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountoutcomesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicodexresetcreditapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuinativeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuischeduledtasksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverrestartapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitasksapi"
@@ -100,6 +101,15 @@ func buildWebUIOpsMiscRoutesWithPorts(
 		return nil, fmt.Errorf("创建账号结果汇总接口失败: %w", err)
 	}
 
+	nativeSessionsHandler, err := webuinativeapi.NewHandler(webuinativeapi.Dependencies{
+		Authorizer:  dependencies.Authorizer,
+		AIHomeDir:   aiHome,
+		HostHomeDir: hostHome,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建原生会话清单接口失败: %w", err)
+	}
+
 	hub := ports.Hub
 	if hub == nil {
 		hub = taskhub.NewHub()
@@ -168,6 +178,7 @@ func buildWebUIOpsMiscRoutesWithPorts(
 
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountoutcomesapi.Path, Handler: outcomesHandler},
+		{Pattern: "GET " + webuinativeapi.Path, Handler: nativeSessionsHandler},
 		// 浏览器数据面直接由 Go 应答。
 		{Pattern: "GET " + webuiaccountoutcomesapi.PublicPath, Handler: webuiaccountoutcomesapi.NewPublicAlias(outcomesHandler)},
 		{Pattern: "GET " + webuitasksapi.Path, Handler: tasksHandler},

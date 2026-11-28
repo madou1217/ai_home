@@ -2761,7 +2761,17 @@ export interface TerminalDirectorySession {
   nativeSessionId?: string;
   source: 'native' | 'web';
   status: 'running' | 'exited';
+  /** Directory-backed sessions default to a tmux attach; resume requires the provider CLI. */
+  attachMode?: 'tmux' | 'resume';
+  resumeCommand?: string;
 }
+
+export const nativeSessionsAPI = {
+  list: async (): Promise<{ ok: boolean; sessions: TerminalDirectorySession[] }> => {
+    const response = await api.get('/webui/native-sessions');
+    return response.data;
+  },
+};
 
 export const terminalAPI = {
   listSessions: async (): Promise<{ ok: boolean; sessions: TerminalDirectorySession[] }> => {
@@ -2775,7 +2785,7 @@ export const terminalAPI = {
     muxId?: string,
     cwd?: string,
     sessionKey?: string
-  ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; cols?: number; rows?: number; error?: string }> =>
+  ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; reused?: boolean; cols?: number; rows?: number; error?: string }> =>
     terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
   input: (termId: string, data: string, protocol?: boolean) => terminalPost('input', { termId, data, protocol }),
   pasteImage: async (sessionKey: string, cwd: string | undefined, dataUrl: string): Promise<{
@@ -2799,6 +2809,7 @@ export const terminalAPI = {
     cwd?: string;
     shell?: string;
     durable?: boolean;
+    reused?: boolean;
     error?: string;
   }> => terminalPost('attach', { sessionKey, muxId }),
   // 整个面板一条 SSE，承载所有 tab 的输出（帧带 termId），规避浏览器每域 ~6 连接上限。

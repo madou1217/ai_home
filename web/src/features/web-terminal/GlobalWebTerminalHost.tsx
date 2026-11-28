@@ -4,7 +4,6 @@ import { message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { resolveLiveActiveServerId } from '@/features/session-office/office-computer-power';
 import {
-  readOfficeComputerPreferences,
   subscribeOfficeComputerPreferences,
 } from '@/features/session-office/office-computer-state';
 import { terminalAPI } from '@/services/api';
@@ -77,7 +76,7 @@ function filterAdmittedPoweredOnTabs(
     const tabSid = String(tab.serverId || '').trim();
     if (!id || !skey || tabSid !== sid) return false;
     if (!isFloatingHostTab(tab)) return false;
-    return readOfficeComputerPreferences(sid, skey).power === 'on';
+    return true;
   });
 }
 
@@ -200,7 +199,7 @@ export default function GlobalWebTerminalHost() {
   // transitions without waiting for a React render.
   const [viewerAuthority] = useState(() => createWebTerminalViewerAuthority({
     readLiveServerId: resolveLiveActiveServerId,
-    isPoweredOn: (sid, sessionKey) => readOfficeComputerPreferences(sid, sessionKey).power === 'on',
+    isPoweredOn: () => true,
   }));
 
   useEffect(() => addActiveControlPlaneProfileChangeListener(() => {

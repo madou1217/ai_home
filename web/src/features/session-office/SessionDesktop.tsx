@@ -191,9 +191,10 @@ export function SessionDesktop({
         cwd: tabCwd,
         kind: tabKind,
         persistent: true,
+        initialCommand: session?.tab?.initialCommand,
       },
     ];
-  }, [tabCwd, tabId, tabKind, tabLabel, tabSessionKey]);
+  }, [session?.tab?.initialCommand, tabCwd, tabId, tabKind, tabLabel, tabSessionKey]);
 
   const canAttachBase = Boolean(
     sessionScopeAdmitted

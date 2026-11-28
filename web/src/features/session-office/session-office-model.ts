@@ -225,15 +225,17 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
     const contentPreview = cachedPreview?.preview?.trim() || undefined;
     const model = previewModel || tab?.model;
     if (availability === 'directory-only') {
+      const resume = dir?.attachMode === 'resume';
       tab = {
-        id: `web-terminal:${sessionKey}`,
+        id: resume ? `native-resume:${sessionKey}` : `web-terminal:${sessionKey}`,
         sessionKey,
         label,
         cwd,
         serverId: input.serverId,
-        kind,
+        kind: resume ? 'shell' : kind,
         harness: provider || undefined,
         nativeSessionId,
+        initialCommand: resume ? String(dir?.resumeCommand || '').trim() || undefined : undefined,
       };
     }
 

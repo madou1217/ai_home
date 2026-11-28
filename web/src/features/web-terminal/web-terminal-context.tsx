@@ -27,6 +27,8 @@ export interface WebTerminalTab {
   harness?: string;
   model?: string;
   nativeSessionId?: string;
+  /** One-shot command typed into a freshly opened shell (resume/attach helper). */
+  initialCommand?: string;
 }
 interface WebTerminalLayoutState {
   tabs: WebTerminalTab[];
@@ -50,6 +52,7 @@ export interface OpenWebTerminalTabInput {
   harness?: string;
   model?: string;
   nativeSessionId?: string;
+  initialCommand?: string;
 }
 
 interface WebTerminalManagerValue extends WebTerminalLayoutState {
@@ -309,7 +312,8 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
       origin: requestedOrigin,
       harness: String(input.harness || '').trim() || undefined,
       model: String(input.model || '').trim() || undefined,
-      nativeSessionId: String(input.nativeSessionId || '').trim() || undefined
+      nativeSessionId: String(input.nativeSessionId || '').trim() || undefined,
+      initialCommand: String(input.initialCommand || '').trim() || undefined
     };
     setScopedState((current) => {
       // A launch may finish after the user switches servers. Preserve it in
@@ -394,6 +398,7 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
           origin: 'adopted',
           harness: input.harness,
           nativeSessionId: input.nativeSessionId,
+          initialCommand: input.initialCommand,
         });
         changed = true;
       }

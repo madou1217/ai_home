@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { message } from 'antd';
 import {
+  nativeSessionsAPI,
   sessionsAPI,
   terminalAPI,
   type TerminalDirectorySession,
@@ -205,13 +206,47 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     });
   }, [directory.sessions, manager.serverId, terminatedSessionKeys]);
 
+  const [previewCache, setPreviewCache] = useState<Map<string, SessionPreviewCacheEntry>>(() => new Map());
+  const [nativeSessions, setNativeSessions] = useState<TerminalDirectorySession[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const result = await nativeSessionsAPI.list();
+        if (active && result?.ok && Array.isArray(result.sessions)) {
+          setNativeSessions(result.sessions);
+        }
+      } catch {
+        // Native discovery is best-effort; the terminal directory remains authoritative.
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 8000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [manager.serverId]);
+
   const effectiveDirectorySessions = useMemo<TerminalDirectorySession[]>(() => {
     const base = canonicalOverride && canonicalOverride.serverId === manager.serverId
       ? canonicalOverride.sessions
       : directory.sessions;
-    if (terminatedSessionKeys.size === 0) return base;
-    return base.filter((session) => !terminatedSessionKeys.has(session.sessionKey));
-  }, [canonicalOverride, directory.sessions, manager.serverId, terminatedSessionKeys]);
+    const live = terminatedSessionKeys.size === 0
+      ? base
+      : base.filter((session) => !terminatedSessionKeys.has(session.sessionKey));
+    const knownKeys = new Set(live.map((session) => session.sessionKey));
+    const knownNativeIds = new Set(
+      live.map((session) => String(session.nativeSessionId || '').trim()).filter(Boolean),
+    );
+    const resumeOnly = nativeSessions.filter((session) => {
+      if (!session.sessionKey || knownKeys.has(session.sessionKey)) return false;
+      const nativeId = String(session.nativeSessionId || '').trim();
+      return !(nativeId && knownNativeIds.has(nativeId));
+    });
+    return [...live, ...resumeOnly];
+  }, [canonicalOverride, directory.sessions, manager.serverId, nativeSessions, terminatedSessionKeys]);
 
   const effectiveInteractiveTabs = useMemo<WebTerminalTab[]>(() => {
     if (terminatedSessionKeys.size === 0) return manager.tabs;
@@ -242,8 +277,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
         })),
     );
   }, [effectiveDirectorySessions, excludedSessionKeys, manager.adoptSessions, terminatingSessionKeys]);
-
-  const [previewCache, setPreviewCache] = useState<Map<string, SessionPreviewCacheEntry>>(() => new Map());
 
   const mountedRef = useRef(true);
   const closeResyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

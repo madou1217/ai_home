@@ -89,7 +89,8 @@
 - ⛔ test signing：`bcdedit /set testsigning on` + 重启（Secure Boot 已关闭）；当前 `sc start` 返回 **577**。**等待用户授权重启**
 - [x] 驱动加载：testsigning 重启后 `AihNetGuard` RUNNING
 - [x] WFP 外部阻断真机：受保护进程 TCP/UDP 外联失败，`blocked=3`
-- [ ] WFP loopback 放行：真机仍失败（127.0.0.1:18080 被阻断），需继续修 classify 地址判断
+- [x] WFP loopback 放行：高权重 `FWP_CONDITION_FLAG_IS_LOOPBACK` permit filter；真机 127.0.0.1:18080 OK
+- [x] WFP 真机验收：外部 TCP/UDP 阻断、loopback OK、非目标 TCP OK、blocked 计数递增
 - [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
 - [x] Windows Store/UWP 事实确认：Claude/Codex 均为 AppsFolder/AppContainer；命令行代理参数不可注入、同包多实例受限。Chrome/Edge（独立 profile）可严格启动；UWP 双实例需透明重定向
 
@@ -251,8 +252,8 @@
 | 代理选择 / 临时入口 / 稳定端口 / 健康 | 高 | 90% | ✅ 基础完成 |
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
-| 严格进程级网络控制（跨平台） | 中 | 22% | 🚧 Phase 1/2/3 |
-| Windows per-instance GUI（JP/SG） | App Desk 严格启动端到端通过；双 Chrome 代理/直连通过；WFP 待加载 | 40% | 🚧 Phase 2 |
+| 严格进程级网络控制（跨平台） | 中 | 30% | 🚧 Phase 1/2/3 |
+| Windows per-instance GUI（JP/SG） | WFP 内核阻断/loopback/非目标真机通过；App Desk 严格启动通过 | 60% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+Claude/Codex 真实 API 通过 | 50% | 🚧 Phase 3 |
 | macOS GUI strict | App Desk 严格启动走 sandbox-exec，台账/进程真机通过 | 45% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
@@ -261,7 +262,7 @@
 | 统一实例台账 / 可观测 | App Desk Guard + Provider open-app/原生 CLI 台账 | 65% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈43%** | 🚧 |
+| **总目标** | — | **≈50%** | 🚧 |
 
 ---
 

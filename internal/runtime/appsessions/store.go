@@ -165,11 +165,15 @@ func (store *Store) List(ctx context.Context) ([]Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	changed, err := store.refreshLocked(document, time.Now())
+	now := time.Now()
+	changed, err := store.refreshLocked(document, now)
 	if err != nil {
 		return nil, err
 	}
-	document.Instances = prune(document.Instances, time.Now())
+	if store.reapProxyEntriesLocked(document, now) {
+		changed = true
+	}
+	document.Instances = prune(document.Instances, now)
 	if changed {
 		_ = store.saveLocked(document)
 	}
@@ -205,36 +209,63 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 			selected[trimmed] = struct{}{}
 		}
 	}
+	processes, _ := listProcesses(ctx)
 	var results []KillResult
 	now := time.Now()
+	proxyPIDs := make(map[int]struct{})
 	for index := range document.Instances {
 		instance := &document.Instances[index]
 		if len(selected) > 0 {
 			if _, wanted := selected[instance.ID]; !wanted {
 				continue
 			}
-		} else if !instance.Live {
+		} else if !instance.ActiveNow() {
 			continue
 		}
-		if !instance.Live || len(instance.PIDs) == 0 {
+		pids := expandKillPIDs(*instance, processes, now)
+		if len(pids) == 0 {
 			results = append(results, KillResult{ID: instance.ID, Name: instance.Name, Message: "进程已退出"})
 			continue
 		}
-		pids, killErr := terminateProcesses(ctx, instance.PIDs)
+		signalled, killErr := terminateProcesses(ctx, pids)
 		if killErr != nil {
-			results = append(results, KillResult{ID: instance.ID, Name: instance.Name, PIDs: pids, Message: killErr.Error()})
+			results = append(results, KillResult{ID: instance.ID, Name: instance.Name, PIDs: signalled, Message: killErr.Error()})
 			continue
 		}
 		instance.Live = false
 		instance.Status = StatusExited
 		instance.ExitedAtMs = now.UnixMilli()
 		instance.PIDs = nil
-		results = append(results, KillResult{ID: instance.ID, Name: instance.Name, PIDs: pids, Killed: true})
+		if instance.ProxyPID > 0 {
+			proxyPIDs[instance.ProxyPID] = struct{}{}
+			instance.ProxyPID = 0
+		}
+		results = append(results, KillResult{ID: instance.ID, Name: instance.Name, PIDs: signalled, Killed: true})
+	}
+	// Temporary proxy entries belong to the app instance; do not leave the
+	// serve child running after its last consumer was killed.
+	for pid := range proxyPIDs {
+		if proxyPIDReferenced(document.Instances, pid) {
+			continue
+		}
+		_, _ = terminateProcesses(ctx, []int{pid})
 	}
 	if err := store.saveLocked(document); err != nil {
 		return results, err
 	}
 	return results, nil
+}
+
+func proxyPIDReferenced(instances []Instance, pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	for _, instance := range instances {
+		if instance.ActiveNow() && instance.ProxyPID == pid {
+			return true
+		}
+	}
+	return false
 }
 
 // SetProxyEntry updates one instance's proxy endpoint after a manual reconnect.
@@ -341,6 +372,38 @@ func (store *Store) RemoveHistory(ctx context.Context, ids []string) (int, error
 	return removed, nil
 }
 
+// reapProxyEntriesLocked stops temporary proxy entries whose last app instance
+// has exited naturally. Explicit Kill does this immediately; this covers the
+// user closing the app window themselves, without leaving a serve child behind.
+func (store *Store) reapProxyEntriesLocked(document *storeDocument, now time.Time) bool {
+	referenced := make(map[int]struct{})
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ActiveNow() && instance.ProxyPID > 0 {
+			referenced[instance.ProxyPID] = struct{}{}
+		}
+	}
+	changed := false
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ProxyPID <= 0 || instance.ActiveNow() {
+			continue
+		}
+		if _, used := referenced[instance.ProxyPID]; used {
+			continue
+		}
+		// Give a just-exited row a moment: a helper may still be shutting down
+		// and the launch record may be reused by a fast relaunch.
+		if instance.ExitedAtMs > 0 && now.Sub(time.UnixMilli(instance.ExitedAtMs)) < 3*time.Second {
+			continue
+		}
+		_, _ = terminateProcesses(context.Background(), []int{instance.ProxyPID})
+		instance.ProxyPID = 0
+		changed = true
+	}
+	return changed
+}
+
 func (store *Store) refreshLocked(document *storeDocument, now time.Time) (bool, error) {
 	processes, err := listProcesses(context.Background())
 	if err != nil {
@@ -349,45 +412,70 @@ func (store *Store) refreshLocked(document *storeDocument, now time.Time) (bool,
 		return false, nil
 	}
 	changed := false
-	for index := range document.Instances {
-		instance := &document.Instances[index]
-		resolved, adopted, _ := matchPIDs(*instance, processes, now)
+	claimed := make(map[int]struct{})
+	apply := func(instance *Instance) bool {
+		resolved, adopted, _ := matchPIDs(*instance, processes, now, claimed)
+		for _, pid := range resolved {
+			claimed[pid] = struct{}{}
+		}
 		if resolved == nil {
 			resolved = []int{}
 		}
+		instanceChanged := false
 		if adopted != instance.Adopted {
 			instance.Adopted = adopted
-			changed = true
+			instanceChanged = true
 		}
 		if !samePIDs(instance.PIDs, resolved) {
 			instance.PIDs = resolved
-			changed = true
+			instanceChanged = true
 		}
 		live := len(resolved) > 0
 		if live != instance.Live {
 			instance.Live = live
-			changed = true
+			instanceChanged = true
 		}
 		switch {
 		case live:
 			if instance.Status != StatusRunning {
 				instance.Status = StatusRunning
 				instance.ExitedAtMs = 0
-				changed = true
+				instanceChanged = true
 			}
 		case instance.Status == StatusExited:
 			// keep exited
 		case now.Sub(time.UnixMilli(instance.StartedAtMs)) < 3*time.Second:
 			if instance.Status != StatusStarting {
 				instance.Status = StatusStarting
-				changed = true
+				instanceChanged = true
 			}
 		case instance.Live || instance.Status == StatusRunning:
 			instance.Status = StatusExited
 			instance.ExitedAtMs = now.UnixMilli()
-			changed = true
+			instanceChanged = true
 		default:
 			instance.Status = StatusUnknown
+		}
+		return instanceChanged
+	}
+	// Claim profiled browsers first: their --user-data-dir is an exact identity,
+	// and a direct Chrome row must never absorb them by executable matching.
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ProfileDir == "" {
+			continue
+		}
+		if apply(instance) {
+			changed = true
+		}
+	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ProfileDir != "" {
+			continue
+		}
+		if apply(instance) {
+			changed = true
 		}
 	}
 	return changed, nil

@@ -16,70 +16,158 @@ type Process struct {
 
 // matchPIDs selects the main process(es) for an instance.
 //
-// Chromium launches pass a unique --user-data-dir; helpers share that flag but
-// also carry --type=..., so they are filtered first. Other apps fall back to
-// executable/start-time matching. If no process started in the launch window,
-// a single-instance app has handed off to an existing process; adopt the
-// newest matching one so the desk reflects reality.
-func matchPIDs(instance Instance, processes []Process, now time.Time) ([]int, bool, int64) {
+// Ownership rules:
+//   - a Chromium profile (--user-data-dir) is the strongest identity and is
+//     matched exactly;
+//   - a process belongs to at most one instance (the caller passes `claimed`);
+//   - a launch without a profile claims the unclaimed process whose start time
+//     is closest to the recorded launch time, not every process in a wide
+//     window. The old "now + 10s" window let a direct Chrome row absorb every
+//     proxied Chrome started afterwards, so "kill all" double-counted kills.
+//
+// If no process matches, a single-instance app may have handed off to an
+// existing process; adoption is still restricted to a starting, non-exited row.
+func matchPIDs(instance Instance, processes []Process, now time.Time, claimed map[int]struct{}) ([]int, bool, int64) {
 	if instance.ExitedAtMs > 0 && !instance.Live {
-		// An exited record is history. A later process with the same executable
-		// belongs to a new launch, never to this row.
 		return nil, false, 0
 	}
 	started := time.UnixMilli(instance.StartedAtMs)
-	lowerBound := started.Add(-5 * time.Second)
-	// Keep the matching window anchored to the launch. Using "now + 10s" made
-	// every later process of the same app match an old record, reviving history
-	// rows and duplicating live PIDs.
-	upperBound := started.Add(2 * time.Minute)
-	if upperBound.After(now.Add(10 * time.Second)) {
-		upperBound = now.Add(10 * time.Second)
+	if instance.ProfileDir != "" {
+		var matched []int
+		for _, process := range processes {
+			if process.PID <= 0 || process.Command == "" || isHelperProcess(process.Command) {
+				continue
+			}
+			if _, used := claimed[process.PID]; used {
+				continue
+			}
+			if strings.Contains(process.Command, "--user-data-dir="+instance.ProfileDir) {
+				matched = append(matched, process.PID)
+			}
+		}
+		return matched, false, 0
 	}
-	var matched []int
+
+	var best Process
+	bestDelta := time.Duration(1<<63 - 1)
+	found := false
+	for _, process := range processes {
+		if process.PID <= 0 || process.Command == "" || isHelperProcess(process.Command) {
+			continue
+		}
+		if _, used := claimed[process.PID]; used {
+			continue
+		}
+		if !matchesExecutable(instance, process.Command) {
+			continue
+		}
+		if !instance.Proxied && strings.Contains(process.Command, "app-proxy") {
+			continue
+		}
+		delta := process.StartedAt.Sub(started)
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > 15*time.Second {
+			continue
+		}
+		if !found || delta < bestDelta || (delta == bestDelta && process.StartedAt.After(best.StartedAt)) {
+			best = process
+			bestDelta = delta
+			found = true
+		}
+	}
+	if found {
+		return []int{best.PID}, false, 0
+	}
+	if instance.Status != StatusStarting || instance.ExitedAtMs > 0 || now.Sub(started) > 2*time.Minute {
+		return nil, false, 0
+	}
 	var adoptedStart time.Time
 	for _, process := range processes {
 		if process.PID <= 0 || process.Command == "" || isHelperProcess(process.Command) {
 			continue
 		}
-		if process.StartedAt.Before(lowerBound) || process.StartedAt.After(upperBound) {
-			continue
-		}
-		if matchesInstance(instance, process.Command) {
-			matched = append(matched, process.PID)
-		}
-	}
-	if len(matched) > 0 {
-		return matched, false, 0
-	}
-	// Adoption is only for a launch that is still inside its start window. An
-	// exited record must never revive just because the same app was launched
-	// again later — that would move old history rows back into the live desk.
-	if instance.Status != StatusStarting || instance.ExitedAtMs > 0 || now.Sub(started) > 2*time.Minute {
-		return nil, false, 0
-	}
-	for _, process := range processes {
-		if process.PID <= 0 || process.Command == "" || isHelperProcess(process.Command) {
+		if _, used := claimed[process.PID]; used {
 			continue
 		}
 		if !matchesInstance(instance, process.Command) {
 			continue
 		}
-		// A plain launch must not adopt the desk's proxied browser instance:
-		// both share the executable, only one has the isolated app-proxy profile.
-		if instance.ProfileDir == "" && !instance.Proxied &&
-			strings.Contains(process.Command, "app-proxy") {
+		if !instance.Proxied && strings.Contains(process.Command, "app-proxy") {
 			continue
 		}
 		if adoptedStart.IsZero() || process.StartedAt.After(adoptedStart) {
 			adoptedStart = process.StartedAt
-			matched = []int{process.PID}
+			best = process
 		}
 	}
-	if len(matched) > 0 {
-		return matched, true, adoptedStart.UnixMilli()
+	if !adoptedStart.IsZero() {
+		return []int{best.PID}, true, adoptedStart.UnixMilli()
 	}
 	return nil, false, 0
+}
+
+// expandKillPIDs returns every process that must die with the instance.
+//
+// A Chromium instance owns all processes carrying its exact profile, including
+// helpers (--type=...) that the live-desk matcher filters out. For apps without
+// a profile we never widen to every process of that executable: only the
+// recorded main PIDs (or the closest process in the launch window) are killed.
+func expandKillPIDs(instance Instance, processes []Process, now time.Time) []int {
+	pids := append([]int(nil), instance.PIDs...)
+	if instance.ProfileDir != "" {
+		seen := make(map[int]struct{}, len(pids))
+		for _, pid := range pids {
+			seen[pid] = struct{}{}
+		}
+		for _, process := range processes {
+			if process.PID <= 0 || process.Command == "" {
+				continue
+			}
+			if _, exists := seen[process.PID]; exists {
+				continue
+			}
+			if strings.Contains(process.Command, "--user-data-dir="+instance.ProfileDir) {
+				pids = append(pids, process.PID)
+				seen[process.PID] = struct{}{}
+			}
+		}
+		return pids
+	}
+	if len(pids) > 0 {
+		return pids
+	}
+	started := time.UnixMilli(instance.StartedAtMs)
+	var best int
+	bestDelta := time.Duration(1<<63 - 1)
+	for _, process := range processes {
+		if process.PID <= 0 || process.Command == "" || isHelperProcess(process.Command) {
+			continue
+		}
+		if !matchesExecutable(instance, process.Command) {
+			continue
+		}
+		if !instance.Proxied && strings.Contains(process.Command, "app-proxy") {
+			continue
+		}
+		delta := process.StartedAt.Sub(started)
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > 30*time.Second {
+			continue
+		}
+		if delta < bestDelta {
+			best = process.PID
+			bestDelta = delta
+		}
+	}
+	_ = now
+	if best > 0 {
+		return []int{best}
+	}
+	return pids
 }
 
 func matchesInstance(instance Instance, command string) bool {

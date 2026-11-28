@@ -20,12 +20,20 @@ const (
 
 // SessionCacheEntry 是缓存里的单行。
 type SessionCacheEntry struct {
-	Name           string `json:"name"`
-	Title          string `json:"title"`
-	AgentSessionID string `json:"agentSessionId"`
-	Provider       string `json:"provider"`
-	ProjectPath    string `json:"projectPath"`
-	Live           bool   `json:"live"`
+	Name            string `json:"name"`
+	Title           string `json:"title"`
+	AgentSessionID  string `json:"agentSessionId"`
+	Provider        string `json:"provider"`
+	ProjectPath     string `json:"projectPath"`
+	Live            bool   `json:"live"`
+	Socket          string `json:"socket,omitempty"`
+	NativeOnly      bool   `json:"nativeOnly,omitempty"`
+	AccountRef      string `json:"accountRef,omitempty"`
+	AccountID       string `json:"accountId,omitempty"`
+	TurnState       string `json:"turnState,omitempty"`
+	LastMessage     string `json:"lastMessage,omitempty"`
+	LastMessageRole string `json:"lastMessageRole,omitempty"`
+	LastMessageAt   int64  `json:"lastMessageAt,omitempty"`
 	// Here 表示会话就在当前工作目录（Node 补全用它排序）。
 	Here      bool  `json:"here"`
 	CreatedAt int64 `json:"createdAt,omitempty"`
@@ -81,15 +89,23 @@ func WriteSessionCache(aiHomeDir string, rows []SessionRow, now time.Time) error
 		}
 		projectPath := strings.TrimSpace(row.Path)
 		entries = append(entries, SessionCacheEntry{
-			Name:           name,
-			Title:          strings.TrimSpace(row.Label),
-			AgentSessionID: strings.TrimSpace(row.NativeID),
-			Provider:       row.Provider,
-			ProjectPath:    projectPath,
-			Live:           row.Live,
-			Here:           projectPath != "" && cwd != "" && projectPath == cwd,
-			CreatedAt:      CreatedAtMillis(row),
-			UpdatedAt:      now.UnixMilli(),
+			Name:            name,
+			Title:           strings.TrimSpace(row.Label),
+			AgentSessionID:  strings.TrimSpace(row.NativeID),
+			Provider:        row.Provider,
+			ProjectPath:     projectPath,
+			Live:            row.Live,
+			Socket:          strings.TrimSpace(row.Socket),
+			NativeOnly:      row.NativeOnly,
+			AccountRef:      strings.TrimSpace(row.AccountRef),
+			AccountID:       strings.TrimSpace(row.AccountID),
+			TurnState:       strings.TrimSpace(row.TurnState),
+			LastMessage:     strings.TrimSpace(row.LastMessage),
+			LastMessageRole: strings.TrimSpace(row.LastMessageRole),
+			LastMessageAt:   row.LastMessageAtMS,
+			Here:            projectPath != "" && cwd != "" && projectPath == cwd,
+			CreatedAt:       CreatedAtMillis(row),
+			UpdatedAt:       now.UnixMilli(),
 		})
 	}
 	payload, err := json.Marshal(sessionCacheDocument{At: now.UnixMilli(), Rows: entries})

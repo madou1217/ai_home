@@ -85,19 +85,29 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 	if err != nil {
 		return err
 	}
-	// 与 --list 共用同一个采集入口；picker 的 c/y 才有原生会话 id。
-	rows, err := collectGlobalRowsMode(ctx, runtime, refresh, allProjects...)
-	if err != nil {
-		return err
-	}
-	labels := collectGlobalLabels(ctx, rows, runtime)
 	if !terminalWriterIsTTY(runtime.stdin) || !terminalWriterIsTTY(runtime.stdout) {
+		// 管道/CI 仍输出完整结果。
+		rows, err := collectGlobalRowsMode(ctx, runtime, refresh, allProjects...)
+		if err != nil {
+			return err
+		}
+		labels := collectGlobalLabels(ctx, rows, runtime)
 		writeGlobalSessionGroups(runtime.stdout, rows, labels)
 		return nil
+	}
+	// TTY 首帧先用 30 分钟缓存（或“正在加载”），完整采集在 picker
+	// 起来后由 runSessionPicker 的后台刷新接管。
+	var initialRows []persistent.SessionRow
+	if !refresh {
+		initialRows = cachedGlobalRows(store.AIHomeDir)
+	}
+	if len(initialRows) > 0 {
+		visibleAll, _ := resolveSessionScope(initialRows, runtime, allProjectsRequested(allProjects...))
+		initialRows, _ = scopeGlobalSessionRows(initialRows, visibleAll)
 	}
 	return runSessionPicker(ctx, runtime, pickerStore{
 		store:       store,
 		runtime:     runtime,
 		allProjects: len(allProjects) > 0 && allProjects[0],
-	}, rows, labels)
+	}, initialRows, map[string]string{})
 }

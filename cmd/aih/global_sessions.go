@@ -193,6 +193,45 @@ func codexThreadLockHeld(hostHome, threadID string) bool {
 	return len(lockHolderPIDs(lock)) > 0
 }
 
+// cachedGlobalRows 用 30 分钟内的 ss-rows.json 先渲染首帧；真实采集
+// 在 picker 起来后由后台刷新接管，避免终端空等 2~3 秒。
+func cachedGlobalRows(aiHomeDir string) []persistent.SessionRow {
+	entries := persistent.ReadSessionCache(aiHomeDir, time.Now())
+	if len(entries) == 0 {
+		return nil
+	}
+	rows := make([]persistent.SessionRow, 0, len(entries))
+	for _, entry := range entries {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" {
+			continue
+		}
+		rows = append(rows, persistent.SessionRow{
+			Provider:         strings.TrimSpace(entry.Provider),
+			Name:             name,
+			Label:            strings.TrimSpace(entry.Title),
+			NativeID:         strings.TrimSpace(entry.AgentSessionID),
+			Path:             strings.TrimSpace(entry.ProjectPath),
+			StartPath:        strings.TrimSpace(entry.ProjectPath),
+			Socket:           strings.TrimSpace(entry.Socket),
+			NativeOnly:       entry.NativeOnly || (entry.Socket == "" && strings.TrimSpace(entry.AgentSessionID) != ""),
+			AccountRef:       strings.TrimSpace(entry.AccountRef),
+			AccountID:        strings.TrimSpace(entry.AccountID),
+			TurnState:        strings.TrimSpace(entry.TurnState),
+			LastMessage:      strings.TrimSpace(entry.LastMessage),
+			LastMessageRole:  strings.TrimSpace(entry.LastMessageRole),
+			LastMessageAtMS:  entry.LastMessageAt,
+			Live:             entry.Live,
+			CreatedAtMS:      entry.CreatedAt,
+			LastActivityAtMS: entry.UpdatedAt,
+			LastActiveAtMS:   entry.UpdatedAt,
+		})
+	}
+	ensureUniqueSessionTitles(rows)
+	sortSessionRowsForDisplay(rows)
+	return rows
+}
+
 func allProjectsRequested(values ...bool) bool {
 	return len(values) > 0 && values[0]
 }

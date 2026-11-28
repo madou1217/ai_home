@@ -42,10 +42,12 @@ type pickerState struct {
 	// dismissed 记录本次 picker 里 x/X 移除的已结束会话，防止并发刷新
 	// 在关闭动作之后又把同一行带回来。
 	dismissed map[string]bool
+	// loading 表示首帧来自空缓存、完整采集仍在后台跑。
+	loading bool
 }
 
 func newPickerState(rows []persistent.SessionRow) *pickerState {
-	state := &pickerState{rows: rows}
+	state := &pickerState{rows: rows, loading: len(rows) == 0}
 	state.syncActiveProject()
 	return state
 }
@@ -236,7 +238,11 @@ func buildPickerFrame(state *pickerState, labels map[string]string, width int) (
 	}
 	lines = append(lines, truncateDisplayPreservingANSI("\x1b[90m"+hints+"\x1b[0m", width))
 	if len(state.rows) == 0 {
-		lines = append(lines, "当前没有活跃的持久会话。")
+		if state.loading {
+			lines = append(lines, "正在加载会话…")
+		} else {
+			lines = append(lines, "当前没有活跃的持久会话。")
+		}
 		return lines, selectedLine
 	}
 	lines = append(lines, formatPickerTableHeader(layout, width))
@@ -616,6 +622,7 @@ func runSessionPicker(
 		}()
 	}
 
+	requestRefresh()
 	draw()
 	for {
 		select {
@@ -721,7 +728,10 @@ func runSessionPicker(
 			requestRefresh()
 		case refreshed := <-refreshCh:
 			refreshInFlight = false
+			state.loading = false
 			if refreshed == nil {
+				state.toast = "刷新失败，稍后重试"
+				draw()
 				continue
 			}
 			selectedKey := ""

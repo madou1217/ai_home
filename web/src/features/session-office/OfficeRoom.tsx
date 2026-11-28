@@ -11,12 +11,10 @@ import {
   AimOutlined,
   ApartmentOutlined,
   AppstoreOutlined,
-  CheckOutlined,
   CompassOutlined,
   CompressOutlined,
   CopyOutlined,
   DesktopOutlined,
-  DragOutlined,
   EyeOutlined,
   LeftOutlined,
   MoreOutlined,
@@ -39,24 +37,17 @@ import type {
 } from './session-office-types';
 import type {
   OfficeHoverInfo,
-  OfficeMonitorDragMode,
-  OfficeMonitorIndex,
   OfficeSceneCallbacks,
   OfficeSceneSyncState,
 } from './office-scene-types';
 import {
-  clampOfficeMonitorTransform,
-  DEFAULT_OFFICE_MONITOR_TRANSFORMS,
   readOfficeComputerPreferences,
   readOfficeComputerPreferencesRevision,
-  resetOfficeComputerMonitors,
   subscribeOfficeComputerPreferences,
   updateOfficeComputerPreferences,
   type OfficeComputerPreferences,
-  type OfficeMonitorTransform,
 } from './office-computer-state';
 import { OfficeSceneController } from './office-scene-controller';
-import OfficeMonitorControls from './OfficeMonitorControls';
 import './OfficeRoom.css';
 
 export interface OfficeRoomProps {
@@ -193,15 +184,6 @@ export function OfficeRoom({
   const [hoverInfo, setHoverInfo] = useState<OfficeHoverInfo | null>(null);
   const [contextLost, setContextLost] = useState(false);
   const [webglError, setWebglError] = useState('');
-  const [monitorEditMode, setMonitorEditMode] = useState(false);
-  const [activeEditMonitorIndex, setActiveEditMonitorIndex] = useState<OfficeMonitorIndex>(0);
-  const [monitorDragMode, setMonitorDragMode] = useState<OfficeMonitorDragMode>('xz');
-  const [liveMonitorPreview, setLiveMonitorPreview] = useState<{
-    serverId: string;
-    sessionKey: string;
-    monitorIndex: OfficeMonitorIndex;
-    transform: OfficeMonitorTransform;
-  } | null>(null);
 
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<OfficeSceneController | null>(null);
@@ -231,8 +213,6 @@ export function OfficeRoom({
       setZoneIndex(0);
       setShowAllPods(false);
       setHoverInfo(null);
-      setMonitorEditMode(false);
-      setLiveMonitorPreview(null);
     }
   }, [roomKey]);
 
@@ -320,30 +300,6 @@ export function OfficeRoom({
     return computerPreferencesByKey[activeSession.sessionKey]
       ?? readOfficeComputerPreferences(sid, activeSession.sessionKey);
   }, [activeSession, computerPreferencesByKey, serverId]);
-  const isMonitorEditActive = Boolean(monitorEditMode && activeSession && activeComputerPrefs);
-
-  useEffect(() => {
-    if (!activeComputerPrefs?.dualMonitor) {
-      if (activeEditMonitorIndex === 1) {
-        setActiveEditMonitorIndex(0);
-      }
-      setLiveMonitorPreview((prev) => (prev?.monitorIndex === 1 ? null : prev));
-    }
-  }, [activeComputerPrefs?.dualMonitor, activeEditMonitorIndex]);
-
-  useEffect(() => {
-    setLiveMonitorPreview(null);
-  }, [effectiveSelectedKey, monitorEditMode, resolvedServerId]);
-
-  useEffect(() => {
-    const editingActive = monitorEditMode && Boolean(effectiveSelectedKey);
-    controllerRef.current?.setMonitorEditState(
-      editingActive,
-      activeEditMonitorIndex,
-      monitorDragMode
-    );
-  }, [activeEditMonitorIndex, effectiveSelectedKey, monitorDragMode, monitorEditMode]);
-
   const sceneSyncState = useMemo<OfficeSceneSyncState | null>(() => {
     if (!room) return null;
     return {
@@ -387,17 +343,6 @@ export function OfficeRoom({
     onOpenMonitor,
   };
 
-  const latestMonitorEditRef = useRef({
-    enabled: monitorEditMode && Boolean(effectiveSelectedKey),
-    activeMonitorIndex: activeEditMonitorIndex,
-    dragMode: monitorDragMode,
-  });
-  latestMonitorEditRef.current = {
-    enabled: monitorEditMode && Boolean(effectiveSelectedKey),
-    activeMonitorIndex: activeEditMonitorIndex,
-    dragMode: monitorDragMode,
-  };
-
   const latestSyncStateRef = useRef<OfficeSceneSyncState | null>(sceneSyncState);
   latestSyncStateRef.current = sceneSyncState;
 
@@ -430,34 +375,8 @@ export function OfficeRoom({
         if (effectDisposed) return;
         setHoverInfo(info);
       },
-      onActiveEditMonitorChange: (monitorIndex) => {
+      onCommitMonitorTransform: (originServerId, sessionKey, transform) => {
         if (effectDisposed) return;
-        setActiveEditMonitorIndex(monitorIndex);
-      },
-      onPreviewMonitorTransform: (originServerId, sessionKey, monitorIndex, transform) => {
-        if (effectDisposed) return;
-        if (!originServerId || latestRef.current.serverId !== originServerId) return;
-        const hasSession = latestRef.current.roomSessions.some(
-          (item) => item.sessionKey === sessionKey
-        );
-        if (!hasSession) return;
-        setLiveMonitorPreview({
-          serverId: originServerId,
-          sessionKey,
-          monitorIndex,
-          transform,
-        });
-      },
-      onCommitMonitorTransform: (originServerId, sessionKey, monitorIndex, transform) => {
-        if (effectDisposed) return;
-        setLiveMonitorPreview((prev) => (
-          prev
-          && prev.serverId === originServerId
-          && prev.sessionKey === sessionKey
-          && prev.monitorIndex === monitorIndex
-            ? null
-            : prev
-        ));
         if (!originServerId || latestRef.current.serverId !== originServerId) {
           return;
         }
@@ -471,23 +390,7 @@ export function OfficeRoom({
         if (targetSid !== originServerId) {
           return;
         }
-        const current = readOfficeComputerPreferences(targetSid, sessionKey);
-        const nextMonitors: [OfficeMonitorTransform, OfficeMonitorTransform] = [
-          monitorIndex === 0 ? transform : current.monitors[0],
-          monitorIndex === 1 ? transform : current.monitors[1],
-        ];
-        updateOfficeComputerPreferences(targetSid, sessionKey, { monitors: nextMonitors });
-      },
-      onCancelMonitorTransform: (originServerId, sessionKey, monitorIndex) => {
-        if (effectDisposed) return;
-        setLiveMonitorPreview((prev) => (
-          prev
-          && prev.serverId === originServerId
-          && prev.sessionKey === sessionKey
-          && prev.monitorIndex === monitorIndex
-            ? null
-            : prev
-        ));
+        updateOfficeComputerPreferences(targetSid, sessionKey, { monitor: transform });
       },
       onContextLostChange: (lost) => {
         if (effectDisposed) return;
@@ -506,11 +409,6 @@ export function OfficeRoom({
       if (initialState) {
         controller.syncState(initialState);
       }
-      controller.setMonitorEditState(
-        latestMonitorEditRef.current.enabled,
-        latestMonitorEditRef.current.activeMonitorIndex,
-        latestMonitorEditRef.current.dragMode
-      );
       controllerRef.current = controller;
       setWebglError('');
       setContextLost(false);
@@ -576,10 +474,7 @@ export function OfficeRoom({
 
   const handleOpenSelectedMonitor = useCallback(() => {
     if (!activeSession) return;
-    const originRect = controllerRef.current?.projectStationPartToRect(
-      activeSession.sessionKey,
-      'monitor'
-    );
+    const originRect = controllerRef.current?.projectStationPartToRect(activeSession.sessionKey);
     onOpenMonitor(activeSession, originRect);
   }, [activeSession, onOpenMonitor]);
 
@@ -619,11 +514,6 @@ export function OfficeRoom({
   };
 
   const moreMenuItems: MenuProps['items'] = [
-    {
-      key: 'monitor',
-      icon: isMonitorEditActive ? <CheckOutlined /> : <DragOutlined />,
-      label: isMonitorEditActive ? '完成显示器调整' : '调整显示器',
-    },
     { key: 'copy', icon: <CopyOutlined />, label: '复制标识' },
     ...(onToggleStationPower
       ? [
@@ -638,10 +528,6 @@ export function OfficeRoom({
   ];
 
   const handleMoreMenuClick: MenuProps['onClick'] = ({ key }) => {
-    if (key === 'monitor') {
-      setMonitorEditMode((prev) => !prev);
-      return;
-    }
     if (key === 'copy') {
       handleCopySelectedIdentity();
       return;
@@ -650,49 +536,6 @@ export function OfficeRoom({
       onToggleStationPower?.(activeSession);
     }
   };
-
-  const handleToggleDualMonitor = useCallback((nextDual: boolean) => {
-    if (!activeSession) return;
-    const targetSid = serverId || activeSession.serverId || 'local';
-    updateOfficeComputerPreferences(targetSid, activeSession.sessionKey, {
-      dualMonitor: nextDual,
-    });
-  }, [activeSession, serverId]);
-
-  const handleStepMonitorAxis = useCallback(
-    (axis: keyof OfficeMonitorTransform, delta: number) => {
-      if (!activeSession) return;
-      const targetSid = serverId || activeSession.serverId || 'local';
-      const current = readOfficeComputerPreferences(targetSid, activeSession.sessionKey);
-      const targetIdx: OfficeMonitorIndex =
-        activeEditMonitorIndex === 1 && current.dualMonitor ? 1 : 0;
-      const base = current.monitors[targetIdx];
-      const nextTransform = clampOfficeMonitorTransform(
-        { ...base, [axis]: base[axis] + delta },
-        DEFAULT_OFFICE_MONITOR_TRANSFORMS[targetIdx]
-      );
-      const nextMonitors: [OfficeMonitorTransform, OfficeMonitorTransform] = [
-        targetIdx === 0 ? nextTransform : current.monitors[0],
-        targetIdx === 1 ? nextTransform : current.monitors[1],
-      ];
-      setLiveMonitorPreview(null);
-      updateOfficeComputerPreferences(targetSid, activeSession.sessionKey, {
-        monitors: nextMonitors,
-      });
-    },
-    [activeEditMonitorIndex, activeSession, serverId]
-  );
-
-  const handleResetMonitors = useCallback(() => {
-    if (!activeSession) return;
-    const targetSid = serverId || activeSession.serverId || 'local';
-    setLiveMonitorPreview(null);
-    resetOfficeComputerMonitors(targetSid, activeSession.sessionKey);
-  }, [activeSession, serverId]);
-
-  const handleDoneMonitorEdit = useCallback(() => {
-    setMonitorEditMode(false);
-  }, []);
 
   const registerStationButtonRef = useCallback(
     (sessionKey: string, node: HTMLButtonElement | null) => {
@@ -786,18 +629,6 @@ export function OfficeRoom({
   const isBusyTerminatingOther = Boolean(
     activeSession && terminatingSessionKey && terminatingSessionKey !== activeSession.sessionKey
   );
-  const editMonitorIdx: OfficeMonitorIndex =
-    activeComputerPrefs?.dualMonitor && activeEditMonitorIndex === 1 ? 1 : 0;
-  const displayedMonitorTransform: OfficeMonitorTransform | null = activeSession && activeComputerPrefs
-    ? (
-        liveMonitorPreview
-        && liveMonitorPreview.serverId === resolvedServerId
-        && liveMonitorPreview.sessionKey === activeSession.sessionKey
-        && liveMonitorPreview.monitorIndex === editMonitorIdx
-          ? liveMonitorPreview.transform
-          : activeComputerPrefs.monitors[editMonitorIdx]
-      )
-    : null;
   return (
     <section
       className="office-room-root"
@@ -899,9 +730,7 @@ export function OfficeRoom({
         {/* Lightweight HUD interaction bar */}
         <div className="office-webgl-hud-top" aria-hidden="true">
           <span className="office-webgl-hint">
-            {isMonitorEditActive
-              ? '显示器调整模式：拖拽选中工位显示器移动位置（Shift 旋转 / Alt 调高）· 空白处仍可旋转视角'
-              : '左键拖拽旋转 · 右键平移 · 滚轮缩放 · 点击工位选中 / 点击显示器打开桌面'}
+            左键拖拽旋转视角 · 按住显示器拖动角度 · 右键平移 · 滚轮缩放 · 点击显示器打开桌面
           </span>
           {hoverInfo ? (
             <span className="office-webgl-hover-pill">
@@ -1009,10 +838,7 @@ export function OfficeRoom({
                 {activeComputerPrefs?.power === 'off' ? (
                   <span className="office-selected-chip office-tone--poweroff">已关机</span>
                 ) : null}
-                {activeComputerPrefs?.dualMonitor ? (
-                  <span className="office-selected-chip office-tone--directory">双屏</span>
-                ) : null}
-                <span className="office-selected-preview" title={activeSnippet.text}>
+                                <span className="office-selected-preview" title={activeSnippet.text}>
                   <em>{activeSnippet.tag}</em>
                   <span>{activeSnippet.text}</span>
                 </span>
@@ -1033,7 +859,7 @@ export function OfficeRoom({
                 >
                   <Button
                     size="small"
-                    type={isMonitorEditActive ? 'primary' : 'default'}
+                    type="default"
                     icon={<MoreOutlined />}
                     aria-label="更多工位操作"
                   >
@@ -1056,21 +882,7 @@ export function OfficeRoom({
             </div>
           ) : null}
 
-          {isMonitorEditActive && activeComputerPrefs && displayedMonitorTransform ? (
-            <OfficeMonitorControls
-              dualMonitor={activeComputerPrefs.dualMonitor}
-              activeMonitorIndex={editMonitorIdx}
-              dragMode={monitorDragMode}
-              transform={displayedMonitorTransform}
-              onToggleDualMonitor={handleToggleDualMonitor}
-              onSelectMonitorIndex={setActiveEditMonitorIndex}
-              onChangeDragMode={setMonitorDragMode}
-              onStepAxis={handleStepMonitorAxis}
-              onResetMonitors={handleResetMonitors}
-              onDone={handleDoneMonitorEdit}
-            />
-          ) : null}
-        </footer>
+          </footer>
       ) : null}
     </section>
   );

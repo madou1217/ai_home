@@ -8,8 +8,6 @@ import {
   type OfficeHitKind,
   type OfficeHitTarget,
   type OfficeHoverInfo,
-  type OfficeMonitorDragMode,
-  type OfficeMonitorIndex,
   type OfficeSceneCallbacks,
   type OfficeScenePalette,
   type OfficeSceneSyncState,
@@ -26,10 +24,7 @@ import {
   releaseOfficeWallpaperCacheRef,
   subscribeOfficeWallpaperRasterReady,
 } from './office-computer-wallpapers';
-import {
-  applyDualMonitorTransforms,
-  computeMonitorFocusAnchor,
-} from './office-monitor-rig';
+import { applyMonitorTransform, computeMonitorFocusAnchor } from './office-monitor-rig';
 import {
   createOfficeRoomRig,
   disposeOfficeRoomRig,
@@ -71,24 +66,16 @@ interface PointerTrackState {
   maxDistSq: number;
 }
 
-interface MonitorEditState {
-  enabled: boolean;
-  activeMonitorIndex: OfficeMonitorIndex;
-  dragMode: OfficeMonitorDragMode;
-}
-
 interface MonitorDragSession {
   active: boolean;
   pointerId: number;
   serverId: string;
   sessionKey: string;
-  monitorIndex: OfficeMonitorIndex;
   startClientX: number;
   startClientY: number;
   startTransform: OfficeMonitorTransform;
   currentTransform: OfficeMonitorTransform;
-  dragPlane: THREE.Plane;
-  planeStartHit: THREE.Vector3;
+  moved: boolean;
 }
 
 type PanDirectionKey = 'w' | 'a' | 's' | 'd';
@@ -429,7 +416,6 @@ export class OfficeSceneController {
   private readonly controls: OrbitControls;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointerNdc = new THREE.Vector2();
-  private readonly dragHitPoint = new THREE.Vector3();
 
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly sunLight: THREE.DirectionalLight;
@@ -465,11 +451,6 @@ export class OfficeSceneController {
   };
   private lastClickMaxDistSq = 0;
 
-  private monitorEditState: MonitorEditState = {
-    enabled: false,
-    activeMonitorIndex: 0,
-    dragMode: 'xz',
-  };
   private monitorDrag: MonitorDragSession | null = null;
 
   private surfacePan: { active: boolean; pointerId: number; lastX: number; lastY: number } = {
@@ -895,21 +876,17 @@ export class OfficeSceneController {
   public syncState(state: OfficeSceneSyncState): void {
     if (this.disposed) return;
 
-    // 切换服务器/房间/选中目标或关闭双屏前先围栏回滚进行中的显示器拖拽，防止跨作用域误提交
+    // 切换服务器/房间或会话消失前先围栏回滚进行中的显示器拖拽，防止跨作用域误提交
     if (this.monitorDrag?.active) {
       const drag = this.monitorDrag;
       const nextSessionStillPresent = state.sessions.some(
         (item) => item.sessionKey === drag.sessionKey
       );
-      const nextPrefs =
-        state.computerPreferences[drag.sessionKey] ?? DEFAULT_OFFICE_COMPUTER_PREFERENCES;
       const roomWillChange = this.lastRoomKey !== '' && state.roomKey !== this.lastRoomKey;
       const dragTargetInvalidated =
         drag.serverId !== state.serverId
         || roomWillChange
-        || state.selectedSessionKey !== drag.sessionKey
-        || !nextSessionStillPresent
-        || (drag.monitorIndex === 1 && !nextPrefs.dualMonitor);
+        || !nextSessionStillPresent;
       if (dragTargetInvalidated) {
         this.cancelMonitorDrag();
       }
@@ -950,15 +927,12 @@ export class OfficeSceneController {
       const isSelected = state.selectedSessionKey === session.sessionKey;
       const isHovered = this.hoveredTarget?.sessionKey === session.sessionKey;
       const effectivePrefs = this.getEffectiveStationPreferences(session.sessionKey);
-      const isEditingThisStation = this.monitorEditState.enabled && isSelected;
 
       syncWorkstationPod(stationRig, session, this.currentPalette, {
         isSelected,
         isHovered,
         preferences: effectivePrefs,
         rasterVersion: this.rasterVersion,
-        isEditingThisStation,
-        activeEditMonitorIndex: this.monitorEditState.activeMonitorIndex,
       });
     });
 
@@ -1035,57 +1009,14 @@ export class OfficeSceneController {
     this.syncAnimationSchedule();
   }
 
-  public setMonitorEditState(
-    enabled: boolean,
-    activeMonitorIndex: OfficeMonitorIndex,
-    dragMode: OfficeMonitorDragMode
-  ): void {
-    if (this.disposed) return;
-
-    if (!enabled) {
-      if (this.monitorDrag?.active) {
-        this.cancelMonitorDrag();
-      } else {
-        this.controls.enabled = true;
-      }
-    } else if (
-      this.monitorDrag?.active
-      && activeMonitorIndex !== this.monitorEditState.activeMonitorIndex
-      && this.monitorDrag.monitorIndex !== activeMonitorIndex
-    ) {
-      this.cancelMonitorDrag();
-    }
-
-    const changed =
-      this.monitorEditState.enabled !== enabled
-      || this.monitorEditState.activeMonitorIndex !== activeMonitorIndex
-      || this.monitorEditState.dragMode !== dragMode;
-
-    this.monitorEditState = {
-      enabled,
-      activeMonitorIndex,
-      dragMode,
-    };
-
-    if (changed && this.currentState) {
-      this.resyncAllStationsOnly();
-    }
-  }
-
   public previewStationMonitorTransform(
     sessionKey: string,
-    monitorIndex: OfficeMonitorIndex,
     transform: OfficeMonitorTransform
   ): void {
     if (this.disposed) return;
     const rig = this.stations.get(sessionKey);
     if (!rig) return;
-    const prefs = this.getStationPreferences(sessionKey);
-    const nextMonitors: [OfficeMonitorTransform, OfficeMonitorTransform] = [
-      monitorIndex === 0 ? transform : prefs.monitors[0],
-      monitorIndex === 1 ? transform : prefs.monitors[1],
-    ];
-    applyDualMonitorTransforms(rig.monitorAssembly, nextMonitors, prefs.dualMonitor);
+    applyMonitorTransform(rig.monitorAssembly, transform);
     this.needsStaticRender = true;
     if (this.rafId === null) {
       this.renderSingleFrame();
@@ -1113,8 +1044,7 @@ export class OfficeSceneController {
 
     const { screenTopTarget, screenForward } = computeMonitorFocusAnchor(
       rig.monitorAssembly,
-      rig.targetPosition,
-      0
+      rig.targetPosition
     );
     const horizDist = Math.sqrt(
       Math.max(
@@ -1143,15 +1073,11 @@ export class OfficeSceneController {
     }
   }
 
-  public projectStationPartToRect(
-    sessionKey: string,
-    part: 'monitor',
-    monitorIndex: OfficeMonitorIndex = 0
-  ): DesktopOriginRect | undefined {
+  public projectStationPartToRect(sessionKey: string): DesktopOriginRect | undefined {
     const rig = this.stations.get(sessionKey);
     if (!rig) return undefined;
 
-    const targetObj = part === 'monitor' ? getStationMonitorScreenMesh(rig, monitorIndex) : null;
+    const targetObj = getStationMonitorScreenMesh(rig);
     if (!targetObj) return undefined;
 
     const box = new THREE.Box3().setFromObject(targetObj);
@@ -1247,13 +1173,7 @@ export class OfficeSceneController {
       && drag.sessionKey === sessionKey
       && drag.serverId === this.currentState?.serverId
     ) {
-      return {
-        ...prefs,
-        monitors: [
-          drag.monitorIndex === 0 ? drag.currentTransform : prefs.monitors[0],
-          drag.monitorIndex === 1 ? drag.currentTransform : prefs.monitors[1],
-        ],
-      };
+      return { ...prefs, monitor: drag.currentTransform };
     }
     return prefs;
   }
@@ -1271,8 +1191,6 @@ export class OfficeSceneController {
         isHovered,
         preferences: effectivePrefs,
         rasterVersion: this.rasterVersion,
-        isEditingThisStation: this.monitorEditState.enabled && isSelected,
-        activeEditMonitorIndex: this.monitorEditState.activeMonitorIndex,
       });
     }
     this.needsStaticRender = true;
@@ -1653,7 +1571,6 @@ export class OfficeSceneController {
       let node: THREE.Object3D | null = hit.object;
       let hitKind: OfficeHitKind | undefined;
       let sessionKey: string | undefined;
-      let monitorIndex: OfficeMonitorIndex | undefined;
 
       while (node) {
         if (!node.visible) {
@@ -1666,17 +1583,11 @@ export class OfficeSceneController {
         if (sessionKey === undefined && typeof node.userData.sessionKey === 'string') {
           sessionKey = node.userData.sessionKey;
         }
-        if (
-          monitorIndex === undefined
-          && (node.userData.monitorIndex === 0 || node.userData.monitorIndex === 1)
-        ) {
-          monitorIndex = node.userData.monitorIndex;
-        }
         node = node.parent;
       }
 
       if (hitKind) {
-        return { kind: hitKind, sessionKey, monitorIndex };
+        return { kind: hitKind, sessionKey };
       }
     }
 
@@ -1693,16 +1604,8 @@ export class OfficeSceneController {
       canvas.style.cursor = 'grabbing';
       return;
     }
-    if (
-      this.monitorEditState.enabled
-      && target?.kind === 'monitor'
-      && target.sessionKey === this.currentState?.selectedSessionKey
-    ) {
-      canvas.style.cursor = this.monitorEditState.dragMode === 'yaw'
-        ? 'ew-resize'
-        : this.monitorEditState.dragMode === 'y'
-          ? 'ns-resize'
-          : 'move';
+    if (target?.kind === 'monitor') {
+      canvas.style.cursor = 'ew-resize';
       return;
     }
     canvas.style.cursor = target ? 'pointer' : 'grab';
@@ -1713,8 +1616,7 @@ export class OfficeSceneController {
     const prev = this.hoveredTarget;
     const changed =
       prev?.kind !== target?.kind
-      || prev?.sessionKey !== target?.sessionKey
-      || prev?.monitorIndex !== target?.monitorIndex;
+      || prev?.sessionKey !== target?.sessionKey;
     this.hoveredTarget = target;
 
     this.updateCursorForState(target);
@@ -1756,38 +1658,13 @@ export class OfficeSceneController {
       const prefs = target.sessionKey
         ? this.getStationPreferences(target.sessionKey)
         : DEFAULT_OFFICE_COMPUTER_PREFERENCES;
-      const screenTag = target.monitorIndex === 1 ? '副屏 #2' : '主屏 #1';
-      if (
-        this.monitorEditState.enabled
-        && target.sessionKey === this.currentState?.selectedSessionKey
-      ) {
-        return {
-          kind: 'monitor',
-          sessionKey: target.sessionKey,
-          monitorIndex: target.monitorIndex,
-          label: `${label} · ${screenTag}`,
-          hint: '拖拽调整显示器 · Shift+拖拽旋转 · Alt+拖拽调高',
-          clientX,
-          clientY,
-        };
-      }
-      if (prefs.power === 'off') {
-        return {
-          kind: 'monitor',
-          sessionKey: target.sessionKey,
-          monitorIndex: target.monitorIndex,
-          label,
-          hint: '虚拟电脑已关机 · 点击打开开机面板',
-          clientX,
-          clientY,
-        };
-      }
       return {
         kind: 'monitor',
         sessionKey: target.sessionKey,
-        monitorIndex: target.monitorIndex,
-        label: prefs.dualMonitor ? `${label} · ${screenTag}` : label,
-        hint: '点击打开员工电脑桌面',
+        label,
+        hint: prefs.power === 'off'
+          ? '虚拟电脑已关机 · 点击打开开机面板'
+          : '按住拖动旋转角度 · 点击打开员工电脑桌面',
         clientX,
         clientY,
       };
@@ -1848,25 +1725,11 @@ export class OfficeSceneController {
     if (!rig) return;
 
     const currentMatchesOrigin = this.currentState?.serverId === drag.serverId;
-    if (currentMatchesOrigin) {
-      const authoritativePrefs = this.getStationPreferences(drag.sessionKey);
-      applyDualMonitorTransforms(
-        rig.monitorAssembly,
-        authoritativePrefs.monitors,
-        authoritativePrefs.dualMonitor
-      );
-      return;
-    }
-
-    const fallbackPrefs = this.getStationPreferences(drag.sessionKey);
-    const restoredMonitors: [OfficeMonitorTransform, OfficeMonitorTransform] = [
-      drag.monitorIndex === 0 ? drag.startTransform : fallbackPrefs.monitors[0],
-      drag.monitorIndex === 1 ? drag.startTransform : fallbackPrefs.monitors[1],
-    ];
-    applyDualMonitorTransforms(
+    applyMonitorTransform(
       rig.monitorAssembly,
-      restoredMonitors,
-      fallbackPrefs.dualMonitor
+      currentMatchesOrigin
+        ? this.getStationPreferences(drag.sessionKey).monitor
+        : drag.startTransform
     );
   }
 
@@ -1883,11 +1746,6 @@ export class OfficeSceneController {
 
     this.needsStaticRender = true;
     if (!this.disposed) {
-      this.callbacks.onCancelMonitorTransform?.(
-        drag.serverId,
-        drag.sessionKey,
-        drag.monitorIndex
-      );
       if (!this.contextLost) {
         this.syncAnimationSchedule();
       }
@@ -1901,16 +1759,22 @@ export class OfficeSceneController {
       this.controls.enabled = true;
       return;
     }
+    if (!drag.moved) {
+      const serverMatches = this.currentState?.serverId === drag.serverId;
+      this.cancelMonitorDrag();
+      if (serverMatches) {
+        this.callbacks.onSelectStation(drag.sessionKey);
+        const originRect = this.projectStationPartToRect(drag.sessionKey);
+        this.callbacks.onOpenMonitor(drag.sessionKey, originRect);
+      }
+      return;
+    }
 
-    const nextPrefs = this.getStationPreferences(drag.sessionKey);
     const canCommitOrigin =
       !this.disposed
-      && this.monitorEditState.enabled
       && Boolean(this.currentState)
       && this.currentState?.serverId === drag.serverId
-      && this.currentState?.selectedSessionKey === drag.sessionKey
-      && Boolean(this.currentState?.sessions.some((item) => item.sessionKey === drag.sessionKey))
-      && (drag.monitorIndex === 0 || nextPrefs.dualMonitor);
+      && Boolean(this.currentState?.sessions.some((item) => item.sessionKey === drag.sessionKey));
 
     if (!canCommitOrigin) {
       this.cancelMonitorDrag();
@@ -1921,12 +1785,12 @@ export class OfficeSceneController {
     this.monitorDrag = null;
     this.controls.enabled = true;
     this.controls.enableDamping = !this.currentState?.reducedMotion;
+    this.lastClickMaxDistSq = CLICK_DRAG_THRESHOLD_SQ + 1;
     this.releasePointerCaptureSafe(drag.pointerId);
 
     this.callbacks.onCommitMonitorTransform?.(
       drag.serverId,
       drag.sessionKey,
-      drag.monitorIndex,
       drag.currentTransform
     );
 
@@ -1949,7 +1813,7 @@ export class OfficeSceneController {
     const wantsPan =
       event.button === 2
       || event.button === 1
-      || (event.button === 0 && event.shiftKey && !this.monitorEditState.enabled);
+      || (event.button === 0 && event.shiftKey);
     if (wantsPan) {
       event.preventDefault();
       event.stopPropagation();
@@ -1973,67 +1837,43 @@ export class OfficeSceneController {
     }
     if (event.button !== 0) return;
 
-    if (this.monitorEditState.enabled && this.currentState?.selectedSessionKey) {
-      const target = this.raycastAtClientPoint(event.clientX, event.clientY);
-      if (
-        target?.kind === 'monitor'
-        && target.sessionKey === this.currentState.selectedSessionKey
-      ) {
-        const rig = this.stations.get(target.sessionKey);
-        if (rig) {
-          // 捕获阶段抢占指针，阻止 OrbitControls 接管拖拽
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-          event.preventDefault();
-          this.cancelPointerTrack();
-          this.freezeOrbitMotion();
-          this.controls.enabled = false;
+    const downTarget = this.raycastAtClientPoint(event.clientX, event.clientY);
+    if (downTarget?.kind === 'monitor' && downTarget.sessionKey && this.currentState) {
+      const rig = this.stations.get(downTarget.sessionKey);
+      if (rig) {
+        // 捕获阶段抢占指针，阻止 OrbitControls 接管拖拽；不 cancel click，单击/双击仍可打开桌面。
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.cancelPointerTrack();
+        this.freezeOrbitMotion();
+        this.controls.enabled = false;
 
-          const prefs = this.getStationPreferences(target.sessionKey);
-          const monitorIndex: OfficeMonitorIndex =
-            target.monitorIndex === 1 && prefs.dualMonitor ? 1 : 0;
-          const unit = rig.monitorAssembly.monitors[monitorIndex];
-
-          const worldPos = new THREE.Vector3();
-          unit.screenMesh.getWorldPosition(worldPos);
-          const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -worldPos.y);
-          const planeStartHit = new THREE.Vector3();
-          if (
-            !this.setRayFromClientPoint(event.clientX, event.clientY)
-            || !this.raycaster.ray.intersectPlane(dragPlane, planeStartHit)
-          ) {
-            planeStartHit.copy(worldPos);
-          }
-
-          const startTransform = { ...prefs.monitors[monitorIndex] };
-          try {
-            this.renderer.domElement.setPointerCapture(event.pointerId);
-          } catch {
-            // 合成事件环境下忽略指针捕获异常
-          }
-
-          this.monitorDrag = {
-            active: true,
-            pointerId: event.pointerId,
-            serverId: this.currentState.serverId,
-            sessionKey: target.sessionKey,
-            monitorIndex,
-            startClientX: event.clientX,
-            startClientY: event.clientY,
-            startTransform,
-            currentTransform: { ...startTransform },
-            dragPlane,
-            planeStartHit,
-          };
-
-          this.callbacks.onActiveEditMonitorChange?.(monitorIndex);
-          this.renderer.domElement.style.cursor = 'grabbing';
-          return;
+        const prefs = this.getStationPreferences(downTarget.sessionKey);
+        const startTransform = { ...prefs.monitor };
+        try {
+          this.renderer.domElement.setPointerCapture(event.pointerId);
+        } catch {
+          // 合成事件环境下忽略指针捕获异常
         }
+
+        this.monitorDrag = {
+          active: true,
+          pointerId: event.pointerId,
+          serverId: this.currentState.serverId,
+          sessionKey: downTarget.sessionKey,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startTransform,
+          currentTransform: { ...startTransform },
+          moved: false,
+        };
+
+        this.renderer.domElement.style.cursor = 'grabbing';
+        return;
       }
     }
 
-    this.pointerDownTarget = this.raycastAtClientPoint(event.clientX, event.clientY);
+    this.pointerDownTarget = downTarget;
     this.pointerTrack = {
       active: true,
       startX: event.clientX,
@@ -2063,48 +1903,22 @@ export class OfficeSceneController {
         return;
       }
 
-      const mode: OfficeMonitorDragMode = event.shiftKey
-        ? 'yaw'
-        : event.altKey
-          ? 'y'
-          : this.monitorEditState.dragMode;
-
-      let candidate: OfficeMonitorTransform = { ...drag.currentTransform };
-      if (mode === 'yaw') {
-        const dxPx = event.clientX - drag.startClientX;
-        candidate = {
-          ...drag.startTransform,
-          yaw: drag.startTransform.yaw + dxPx * 0.0085,
-        };
-      } else if (mode === 'y') {
-        const dyPx = event.clientY - drag.startClientY;
-        candidate = {
-          ...drag.startTransform,
-          y: drag.startTransform.y - dyPx * 0.0022,
-        };
-      } else if (
-        this.setRayFromClientPoint(event.clientX, event.clientY)
-        && this.raycaster.ray.intersectPlane(drag.dragPlane, this.dragHitPoint)
-      ) {
-        const deltaX = this.dragHitPoint.x - drag.planeStartHit.x;
-        const deltaZ = this.dragHitPoint.z - drag.planeStartHit.z;
-        candidate = {
-          ...drag.startTransform,
-          x: drag.startTransform.x + deltaX,
-          z: drag.startTransform.z + deltaZ,
-        };
+      const dxPx = event.clientX - drag.startClientX;
+      const dyPx = event.clientY - drag.startClientY;
+      if (!drag.moved && dxPx * dxPx + dyPx * dyPx <= CLICK_DRAG_THRESHOLD_SQ) {
+        return;
       }
+      drag.moved = true;
 
+      const candidate: OfficeMonitorTransform = {
+        ...drag.startTransform,
+        yaw: drag.startTransform.yaw + dxPx * 0.0085,
+      };
       const clamped = clampOfficeMonitorTransform(candidate, drag.startTransform);
       drag.currentTransform = clamped;
 
-      this.previewStationMonitorTransform(drag.sessionKey, drag.monitorIndex, clamped);
-      this.callbacks.onPreviewMonitorTransform?.(
-        drag.serverId,
-        drag.sessionKey,
-        drag.monitorIndex,
-        clamped
-      );
+      this.previewStationMonitorTransform(drag.sessionKey, clamped);
+      this.callbacks.onPreviewMonitorTransform?.(drag.serverId, drag.sessionKey, clamped);
       return;
     }
 
@@ -2162,15 +1976,8 @@ export class OfficeSceneController {
     if (!target.sessionKey) return;
 
     this.callbacks.onSelectStation(target.sessionKey);
-    if (this.monitorEditState.enabled) {
-      return;
-    }
     if (target.kind === 'monitor') {
-      const originRect = this.projectStationPartToRect(
-        target.sessionKey,
-        'monitor',
-        target.monitorIndex ?? 0
-      );
+      const originRect = this.projectStationPartToRect(target.sessionKey);
       this.callbacks.onOpenMonitor(target.sessionKey, originRect);
     }
   };
@@ -2221,23 +2028,14 @@ export class OfficeSceneController {
   };
 
   private readonly handleDoubleClick = (event: MouseEvent): void => {
-    if (
-      this.disposed
-      || this.contextLost
-      || this.monitorEditState.enabled
-      || this.monitorDrag?.active
-    ) {
+    if (this.disposed || this.contextLost || this.monitorDrag?.active) {
       return;
     }
     if (this.pointerTrack.active || this.lastClickMaxDistSq > CLICK_DRAG_THRESHOLD_SQ) return;
     const target = this.raycastAtClientPoint(event.clientX, event.clientY);
     if (!target || !target.sessionKey) return;
     this.callbacks.onSelectStation(target.sessionKey);
-    const originRect = this.projectStationPartToRect(
-      target.sessionKey,
-      'monitor',
-      target.monitorIndex ?? 0
-    );
+    const originRect = this.projectStationPartToRect(target.sessionKey);
     this.callbacks.onOpenMonitor(target.sessionKey, originRect);
   };
 

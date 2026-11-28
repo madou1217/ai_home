@@ -249,9 +249,8 @@ export interface OfficeComputerPowerController {
   durabilityNote: SessionDurabilityNote;
   powerOffComputer: () => void;
   bootComputer: () => void;
-  toggleDualMonitor: () => void;
   updateAppearance: (
-    patch: Partial<Pick<OfficeComputerPreferences, 'wallpaper' | 'dualMonitor' | 'rgbEnabled' | 'rgbColor'>>,
+    patch: Partial<Pick<OfficeComputerPreferences, 'wallpaper' | 'rgbEnabled' | 'rgbColor'>>,
   ) => void;
 }
 
@@ -510,20 +509,10 @@ export function useOfficeComputerPowerController({
   }, [effectiveBootState.phase, isTerminating, scopeId, shouldMountTerminal, terminalHostRef, trimmedServerId]);
 
   const updateAppearance = useCallback((
-    patch: Partial<Pick<OfficeComputerPreferences, 'wallpaper' | 'dualMonitor' | 'rgbEnabled' | 'rgbColor'>>,
+    patch: Partial<Pick<OfficeComputerPreferences, 'wallpaper' | 'rgbEnabled' | 'rgbColor'>>,
   ) => {
     if (isTerminating || !isSessionServerScopeAdmitted(serverId, session) || !session) return;
     updateOfficeComputerPreferences(serverId.trim(), session.sessionKey.trim(), patch);
-  }, [isTerminating, serverId, session]);
-
-  const toggleDualMonitor = useCallback(() => {
-    if (isTerminating || !isSessionServerScopeAdmitted(serverId, session) || !session) return;
-    const sid = serverId.trim();
-    const skey = session.sessionKey.trim();
-    const current = readOfficeComputerPreferences(sid, skey);
-    updateOfficeComputerPreferences(sid, skey, {
-      dualMonitor: !current.dualMonitor,
-    });
   }, [isTerminating, serverId, session]);
 
   const durabilityNote = useMemo(() => describeSessionDurability(session), [session]);
@@ -539,7 +528,6 @@ export function useOfficeComputerPowerController({
     durabilityNote,
     powerOffComputer,
     bootComputer,
-    toggleDualMonitor,
     updateAppearance,
   };
 }

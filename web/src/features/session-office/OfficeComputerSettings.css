@@ -212,70 +212,8 @@
   color: var(--color-muted);
 }
 
-/* ── 单屏 / 双联屏选择卡 ──────────────────────────────────────────────────── */
-.office-cs-monitor-choices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: var(--space-3, 6px);
-}
-
-.office-cs-choice-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2, 4px);
-  min-width: 0;
-  padding: var(--space-4, 8px) var(--space-5, 10px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
-  background: var(--color-surface-raised);
-  color: var(--color-text);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast, 120ms) var(--ease-standard, ease),
-    background-color var(--motion-fast, 120ms) var(--ease-standard, ease);
-}
-
-.office-cs-choice-card:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  background: var(--color-overlay-subtle);
-}
-
-.office-cs-choice-card[data-selected='true'] {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-}
-
-.office-cs-choice-card:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.office-cs-choice-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3, 6px);
-}
-
-.office-cs-choice-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2, 4px);
-  font-size: var(--hos-text-body-sm, 13px);
-  font-weight: var(--weight-semibold, 600);
-  color: var(--color-heading);
-}
-
-.office-cs-choice-title > .anticon,
 .office-cs-check {
   color: var(--color-accent);
-}
-
-.office-cs-choice-desc {
-  font-size: var(--hos-text-micro, 11px);
-  line-height: 1.45;
-  color: var(--color-muted);
 }
 
 /* ── 壁纸主题选择网格 ─────────────────────────────────────────────────────── */
@@ -530,7 +468,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .office-cs-tab,
-  .office-cs-choice-card,
   .office-cs-wallpaper-card,
   .office-cs-rgb-swatch {
     transition: none;

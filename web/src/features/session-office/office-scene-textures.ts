@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import type { OfficeSessionItem, SessionAvailability } from './session-office-types';
 import type { OfficeScenePalette, OfficeSceneSyncState } from './office-scene-types';
 import {
-  OFFICE_WALLPAPER_META,
   type OfficeComputerPowerState,
   type OfficeWallpaperId,
 } from './office-computer-state';
@@ -26,8 +25,6 @@ export interface CanvasTextureBundle {
 export interface MonitorScreenTextureOptions {
   power: OfficeComputerPowerState;
   wallpaper: OfficeWallpaperId;
-  monitorIndex: 0 | 1;
-  dualMonitor: boolean;
   rasterVersion: number;
 }
 
@@ -40,8 +37,6 @@ const SCREEN_H = OFFICE_MONITOR_CANVAS_HEIGHT;
 const DEFAULT_SCREEN_OPTIONS: MonitorScreenTextureOptions = {
   power: 'on',
   wallpaper: 'aurora',
-  monitorIndex: 0,
-  dualMonitor: false,
   rasterVersion: 0,
 };
 
@@ -211,12 +206,6 @@ function getAvailabilityBadge(
   }
 }
 
-function resolveWallpaperMetadata(wallpaperId: OfficeWallpaperId) {
-  return wallpaperId === 'sunset' || wallpaperId === 'midnight' || wallpaperId === 'aurora'
-    ? OFFICE_WALLPAPER_META[wallpaperId]
-    : OFFICE_WALLPAPER_META.aurora;
-}
-
 /** 绘制 1024×640 像素化壁纸背景（兼容光栅化接口），叠加深色遮罩确保高对比可读 */
 function paintPixelatedWallpaper(
   ctx: CanvasRenderingContext2D,
@@ -268,90 +257,6 @@ function renderPoweredOffScreen(
   ctx.textAlign = 'left';
 }
 
-function renderSecondaryCompanionScreen(
-  ctx: CanvasRenderingContext2D,
-  session: OfficeSessionItem,
-  isSelected: boolean,
-  options: MonitorScreenTextureOptions
-): void {
-  const wpMeta = resolveWallpaperMetadata(options.wallpaper);
-  const availBadge = getAvailabilityBadge(session.availability);
-  const displayCwd = formatCompactPath(session.cwd) || '未登记工作目录';
-
-  // 外边框
-  ctx.strokeStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#4c6d94';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(6, 6, SCREEN_W - 12, SCREEN_H - 12);
-
-  // 顶栏（副屏标题 + 会话名）
-  drawPixelPanel(ctx, 20, 20, SCREEN_W - 40, 114, SCREEN_HEADER_BG, '#3d5f8a', '#03060c', 4);
-  ctx.textBaseline = 'middle';
-
-  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
-  ctx.fillText('DISPLAY 2', 42, 77);
-
-  ctx.font = `700 44px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
-  ctx.textAlign = 'right';
-  ctx.fillText(truncateToWidth(ctx, session.shortLabel, SCREEN_W - 300), SCREEN_W - 42, 77);
-  ctx.textAlign = 'left';
-
-  // 中部状态与工作目录卡
-  drawPixelPanel(ctx, 20, 156, SCREEN_W - 40, 214, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
-
-  // 状态徽章
-  const statusPillW = 240;
-  drawPixelPanel(ctx, 42, 178, statusPillW, 56, availBadge.bg, availBadge.color, '#03060c', 3);
-  ctx.fillStyle = availBadge.color;
-  ctx.fillRect(58, 196, 18, 18);
-  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
-  ctx.fillText(availBadge.label, 88, 207);
-
-  ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_TEXT_LABEL;
-  ctx.textAlign = 'right';
-  ctx.fillText(truncateToWidth(ctx, wpMeta.label, 300), SCREEN_W - 42, 207);
-  ctx.textAlign = 'left';
-
-  // CWD 正文
-  ctx.font = `700 26px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
-  ctx.fillText('CWD', 42, 266);
-
-  ctx.font = `700 34px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
-  const cwdLines = wrapCanvasLines(ctx, displayCwd, SCREEN_W - 140, 2);
-  let cwdY = 308;
-  for (const line of cwdLines) {
-    ctx.fillText(line, 42, cwdY);
-    cwdY += 44;
-  }
-
-  // 下部双列 Provider / Model 信息卡
-  const cardY = 392;
-  const cardH = 224;
-  const gap = 22;
-  const halfCardW = Math.floor((SCREEN_W - 40 - gap) / 2);
-
-  drawPixelPanel(ctx, 20, cardY, halfCardW, cardH, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
-  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_TEXT_LABEL;
-  ctx.fillText('PROVIDER', 44, cardY + 46);
-  ctx.font = `700 44px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
-  ctx.fillText(truncateToWidth(ctx, session.provider || session.harness || '—', halfCardW - 48), 44, cardY + 136);
-
-  const rightX = 20 + halfCardW + gap;
-  drawPixelPanel(ctx, rightX, cardY, halfCardW, cardH, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
-  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_TEXT_LABEL;
-  ctx.fillText('MODEL', rightX + 24, cardY + 46);
-  ctx.font = `700 40px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
-  ctx.fillText(truncateToWidth(ctx, session.model || '—', halfCardW - 48), rightX + 24, cardY + 136);
-}
-
 export function createMonitorScreenBundle(anisotropy: number): CanvasTextureBundle {
   return createPixelCanvasBundle(SCREEN_W, SCREEN_H, anisotropy);
 }
@@ -364,7 +269,7 @@ export function updateMonitorScreenTexture(
   options: MonitorScreenTextureOptions = DEFAULT_SCREEN_OPTIONS
 ): boolean {
   if (options.power === 'off') {
-    const offSignature = `off|${palette.mode}|${isSelected ? '1' : '0'}|${options.monitorIndex}`;
+    const offSignature = `off|${palette.mode}|${isSelected ? '1' : '0'}`;
     if (bundle.lastSignature === offSignature) {
       return false;
     }
@@ -380,8 +285,6 @@ export function updateMonitorScreenTexture(
   const signature = [
     'on-v3',
     options.wallpaper,
-    String(options.monitorIndex),
-    options.dualMonitor ? '2' : '1',
     String(options.rasterVersion),
     palette.mode,
     isSelected ? '1' : '0',
@@ -403,12 +306,6 @@ export function updateMonitorScreenTexture(
 
   // 绘制 1024×640 壁纸底图（支持光栅资产热刷新）
   paintPixelatedWallpaper(ctx, options.wallpaper);
-
-  if (options.monitorIndex === 1) {
-    renderSecondaryCompanionScreen(ctx, session, isSelected, options);
-    bundle.texture.needsUpdate = true;
-    return true;
-  }
 
   const availBadge = getAvailabilityBadge(session.availability);
 

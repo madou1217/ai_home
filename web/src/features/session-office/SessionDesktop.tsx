@@ -14,7 +14,6 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
-  ExpandOutlined,
   EyeInvisibleOutlined,
   FolderOutlined,
   GlobalOutlined,
@@ -181,7 +180,6 @@ export function SessionDesktop({
   const [terminalMinimized, setTerminalMinimized] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [settingsTab, setSettingsTab] = useState<ComputerSettingsTab>('settings');
-  const [dualSpanFull, setDualSpanFull] = useState<boolean>(false);
   const [portalOrigin, setPortalOrigin] = useState<DesktopOriginRect | null>(null);
   const [browserWindow, setBrowserWindow] = useState<{ identity: string; minimized: boolean } | null>(null);
 
@@ -237,7 +235,6 @@ export function SessionDesktop({
     durabilityNote,
     powerOffComputer,
     bootComputer,
-    toggleDualMonitor,
     updateAppearance,
   } = useOfficeComputerPowerController({
     open,
@@ -287,7 +284,6 @@ export function SessionDesktop({
 
     if (identityChanged) {
       setSettingsOpen(false);
-      setDualSpanFull(false);
       prevTerminalVisibleRef.current = false;
       lastRefitSignatureRef.current = '';
       if (!justOpened) {
@@ -357,24 +353,7 @@ export function SessionDesktop({
 
   const terminalWanted = isPoweredOn && !terminalMinimized;
 
-  const dualGridActive = preferences.dualMonitor && !dualSpanFull;
-
-  // In single-monitor mode, when Settings is open alongside Terminal, Settings occupies the
-  // second split slot so we never cram 3 panes into one screen.
-  const secondaryWallpaperVisible = Boolean(
-    isPoweredOn
-    && dualGridActive
-    && !settingsOpen
-    && terminalWanted,
-  );
-  const primaryIconsSlotVisible = Boolean(
-    isPoweredOn
-    && dualGridActive
-    && settingsOpen
-    && !terminalWanted,
-  );
-
-  const terminalLayoutSignature = `${layoutMode}|${dualGridActive ? '1' : '0'}|${settingsOpen ? '1' : '0'}|${tabId ?? ''}`;
+  const terminalLayoutSignature = `${layoutMode}|${settingsOpen ? '1' : '0'}|${tabId ?? ''}`;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -415,11 +394,9 @@ export function SessionDesktop({
       setTerminalMinimized(false);
     } else {
       setTerminalMinimized(false);
-      if (!preferences.dualMonitor) {
-        setSettingsOpen(false);
-      }
+      setSettingsOpen(false);
     }
-  }, [isPoweredOn, preferences.dualMonitor]);
+  }, [isPoweredOn]);
 
   const handleRestoreTerminal = useCallback(() => {
     if (!isPoweredOn) {
@@ -500,11 +477,7 @@ export function SessionDesktop({
   const sessionTitle = session?.shortLabel || session?.label || '未选定会话';
   const wallpaperSpec = OFFICE_DESKTOP_WALLPAPER_MAP[preferences.wallpaper];
 
-  const activePaneCount =
-    Number(terminalWanted)
-    + Number(settingsOpen)
-    + Number(secondaryWallpaperVisible)
-    + Number(primaryIconsSlotVisible);
+  const activePaneCount = Number(terminalWanted) + Number(settingsOpen);
   const gridColumns = activePaneCount >= 2 ? 'two' : (activePaneCount === 1 ? 'one' : 'none');
   const allWindowsMinimized = isPoweredOn && gridColumns === 'none';
 
@@ -631,18 +604,6 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-layout-btn"
-              data-active={preferences.dualMonitor ? 'true' : undefined}
-              disabled={!session || isTerminating}
-              aria-pressed={preferences.dualMonitor}
-              onClick={toggleDualMonitor}
-              title="切换单显示器 / 双显示器扩展桌面（与 3D 工位支架同步）"
-            >
-              <DesktopOutlined />
-              <span>{preferences.dualMonitor ? '双显示器: 开' : '双显示器'}</span>
-            </button>
-            <button
-              type="button"
-              className="session-desktop-layout-btn"
               data-active={settingsOpen && settingsTab === 'settings' ? 'true' : undefined}
               onClick={() => handleToggleSettingsTab('settings')}
             >
@@ -756,44 +717,11 @@ export function SessionDesktop({
           </div>
         </header>
 
-        {/* Dual Monitor Bezel Header when dualMonitor is active */}
-        {preferences.dualMonitor ? (
-          <div className="session-desktop-monitor-bezel-bar" aria-label="双显示器编排栏">
-            <div className="session-desktop-bezel-slot">
-              <DesktopOutlined />
-              <strong>DISPLAY 01 · 主显示器</strong>
-              <span>{isPoweredOn ? `${wallpaperSpec.label} · 主工作区` : 'STANDBY · 已熄屏'}</span>
-            </div>
-            <div className="session-desktop-bezel-divider" aria-hidden="true" />
-            <div className="session-desktop-bezel-slot">
-              <DesktopOutlined />
-              <strong>DISPLAY 02 · 扩展副显示器</strong>
-              <span>
-                {isPoweredOn
-                  ? (settingsOpen ? '设置与配置视图' : '扩展壁纸桌面')
-                  : 'STANDBY · 同步待机'}
-              </span>
-              {isPoweredOn && terminalWanted && !settingsOpen ? (
-                <button
-                  type="button"
-                  className="session-desktop-bezel-span-btn"
-                  onClick={() => setDualSpanFull((prev) => !prev)}
-                  title={dualSpanFull ? '恢复双显示器左右分立视图' : '将当前活动窗口跨双屏铺满'}
-                >
-                  {dualSpanFull ? <CompressOutlined /> : <ExpandOutlined />}
-                  <span>{dualSpanFull ? '恢复双屏分立' : '跨双屏铺满'}</span>
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
         {/* Desktop Stage: Wallpaper Backdrop + Standby or Active OS Windows */}
         <main
           className="session-desktop-stage"
           data-wallpaper={preferences.wallpaper}
           data-power={preferences.power}
-          data-dual-monitor={preferences.dualMonitor ? 'true' : 'false'}
         >
           {isPoweredOn && loadedWallpaperAssetUrl ? (
             <div
@@ -836,7 +764,7 @@ export function SessionDesktop({
                   </span>
                   <span className="session-desktop-app-title">电脑设置</span>
                   <span className="session-desktop-app-meta">
-                    {wallpaperSpec.label} · {preferences.dualMonitor ? '双屏' : '单屏'}
+                    {wallpaperSpec.label} · 单屏
                   </span>
                 </button>
 
@@ -895,7 +823,7 @@ export function SessionDesktop({
                         <dt>DISPLAY</dt>
                         <dd>
                           <span>
-                            {wallpaperSpec.label} · {preferences.dualMonitor ? '双联屏' : '单屏'} · RGB {preferences.rgbEnabled ? preferences.rgbColor.toUpperCase() : '关'}
+                            {wallpaperSpec.label} · 单屏 · RGB {preferences.rgbEnabled ? preferences.rgbColor.toUpperCase() : '关'}
                           </span>
                         </dd>
                       </div>
@@ -985,7 +913,6 @@ export function SessionDesktop({
             /* Virtual Workstation Powered-Off Standby Screen (Zero ShellTerminalPanel Mount) */
             <section
               className="session-desktop-standby"
-              data-dual={preferences.dualMonitor ? 'true' : 'false'}
               aria-label="虚拟电脑已关机待机屏幕"
             >
               <div className="session-desktop-standby-screen">
@@ -1103,41 +1030,7 @@ export function SessionDesktop({
                 </div>
               </div>
 
-              {preferences.dualMonitor ? (
-                <div className="session-desktop-standby-screen session-desktop-standby-screen--secondary">
-                  <div className="session-desktop-standby-top">
-                    <span className="session-desktop-status-pill session-desktop-status-pill--standby">
-                      <DesktopOutlined />
-                      <span>DISPLAY 02 · 扩展副屏待机</span>
-                    </span>
-                  </div>
-                  <p className="session-desktop-standby-desc">
-                    双联屏拓扑已保留（壁纸：{wallpaperSpec.label} · 机箱灯效：{preferences.rgbEnabled ? preferences.rgbColor.toUpperCase() : '关闭'}）。开机后自动同步点亮主副双屏。
-                  </p>
-                  <div className="session-desktop-standby-actions">
-                    {session ? (
-                      <button
-                        type="button"
-                        className="session-desktop-btn session-desktop-btn--power-on"
-                        disabled={isTerminating}
-                        onClick={handleBoot}
-                      >
-                        <ThunderboltOutlined />
-                        <span>同步点亮双屏</span>
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="session-desktop-btn"
-                      onClick={() => handleOpenSettingsTab('config')}
-                    >
-                      <ControlOutlined />
-                      <span>查看工位规格</span>
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </section>
+                          </section>
           )}
 
           {/* OS Windows Layer */}
@@ -1145,35 +1038,6 @@ export function SessionDesktop({
             className="session-desktop-windows"
             data-cols={gridColumns}
           >
-            {/* Primary Icons Placeholder when Dual Monitor has only Settings on Display 02 */}
-            {primaryIconsSlotVisible ? (
-              <section
-                className="session-desktop-secondary-surface"
-                aria-label="主显示器壁纸桌面"
-              >
-                <div className="session-desktop-secondary-card">
-                  <div className="session-desktop-secondary-head">
-                    <DesktopOutlined />
-                    <strong>DISPLAY 01 · 主屏桌面待命</strong>
-                    <span className="office-cs-pill">{wallpaperSpec.label}</span>
-                  </div>
-                  <p className="session-desktop-secondary-desc">
-                    当前终端已收起至任务栏，副屏正在展示电脑设置或配置信息。
-                  </p>
-                  <div className="session-desktop-secondary-actions">
-                    <button
-                      type="button"
-                      className="session-desktop-btn session-desktop-btn--primary"
-                      onClick={handleRestoreTerminal}
-                    >
-                      <CodeOutlined />
-                      <span>在主屏恢复会话终端</span>
-                    </button>
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
             {/* Terminal OS Window — constant JSX slot so ShellTerminalPanel never remounts on layout toggles */}
             <section
               className={`session-desktop-window session-desktop-window--terminal${terminalWanted ? '' : ' session-desktop-window--docked'}`}
@@ -1462,68 +1326,7 @@ export function SessionDesktop({
               onBootComputer={handleBoot}
               onUpdateAppearance={updateAppearance}
               onCopyIdentity={onCopyIdentity}
-              onReturnToRoom={onCloseToRoom}
             />
-
-            {/* Secondary Monitor Desktop Surface when Dual Monitor is enabled and Display 02 has no window */}
-            {secondaryWallpaperVisible ? (
-              <aside
-                className="session-desktop-secondary-surface"
-                aria-label="副显示器扩展壁纸桌面"
-              >
-                <div className="session-desktop-secondary-card">
-                  <div className="session-desktop-secondary-head">
-                    <DesktopOutlined />
-                    <strong>DISPLAY 02 · 扩展副显示器</strong>
-                    <span className="office-cs-pill">{wallpaperSpec.label}</span>
-                  </div>
-
-                  <p className="session-desktop-secondary-desc">
-                    双显示器模式已开启，与 3D 工位双联屏支架实时联动。可在副屏调节电脑设置或核对工位配置事实。
-                  </p>
-
-                  {session ? (
-                    <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
-                      <div className="session-desktop-meta-row">
-                        <dt>SESSION</dt>
-                        <dd><code>{session.shortLabel || session.label}</code></dd>
-                      </div>
-                      <div className="session-desktop-meta-row">
-                        <dt>MODEL</dt>
-                        <dd><span>{session.model || '默认模型'}</span></dd>
-                      </div>
-                      <div className="session-desktop-meta-row">
-                        <dt>CHASSIS RGB</dt>
-                        <dd>
-                          <span>
-                            {preferences.rgbEnabled ? `开启 (${preferences.rgbColor.toUpperCase()})` : '关闭'}
-                          </span>
-                        </dd>
-                      </div>
-                    </dl>
-                  ) : null}
-
-                  <div className="session-desktop-secondary-actions">
-                    <button
-                      type="button"
-                      className="session-desktop-btn"
-                      onClick={() => handleOpenSettingsTab('settings')}
-                    >
-                      <SettingOutlined />
-                      <span>在副屏打开电脑设置</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="session-desktop-btn"
-                      onClick={() => handleOpenSettingsTab('config')}
-                    >
-                      <ControlOutlined />
-                      <span>查看电脑配置事实</span>
-                    </button>
-                  </div>
-                </div>
-              </aside>
-            ) : null}
           </div>
           {browserWindowVisible ? (
             <OfficeBrowserWindow

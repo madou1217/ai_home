@@ -12,20 +12,14 @@ export type OfficeSceneThemeMode = 'dark' | 'light';
 
 export type OfficeHitKind = 'station' | 'monitor';
 
-export type OfficeMonitorIndex = 0 | 1;
-
-export type OfficeMonitorDragMode = 'xz' | 'y' | 'yaw';
-
 export interface OfficeHitTarget {
   kind: OfficeHitKind;
   sessionKey?: string;
-  monitorIndex?: OfficeMonitorIndex;
 }
 
 export interface OfficeHoverInfo {
   kind: OfficeHitKind;
   sessionKey?: string;
-  monitorIndex?: OfficeMonitorIndex;
   label: string;
   hint: string;
   clientX: number;
@@ -92,23 +86,15 @@ export interface OfficeSceneCallbacks {
   onSelectStation: (sessionKey: string) => void;
   onOpenMonitor: (sessionKey: string, originRect?: DesktopOriginRect) => void;
   onHoverTarget: (info: OfficeHoverInfo | null) => void;
-  onActiveEditMonitorChange?: (monitorIndex: OfficeMonitorIndex) => void;
   onPreviewMonitorTransform?: (
     serverId: string,
     sessionKey: string,
-    monitorIndex: OfficeMonitorIndex,
     transform: OfficeMonitorTransform
   ) => void;
   onCommitMonitorTransform?: (
     serverId: string,
     sessionKey: string,
-    monitorIndex: OfficeMonitorIndex,
     transform: OfficeMonitorTransform
-  ) => void;
-  onCancelMonitorTransform?: (
-    serverId: string,
-    sessionKey: string,
-    monitorIndex: OfficeMonitorIndex
   ) => void;
   onContextLostChange?: (lost: boolean) => void;
   onInitError?: (message: string) => void;

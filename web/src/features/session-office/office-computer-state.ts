@@ -12,10 +12,10 @@ export interface OfficeMonitorTransform {
 export interface OfficeComputerPreferences {
   power: OfficeComputerPowerState;
   wallpaper: OfficeWallpaperId;
-  dualMonitor: boolean;
   rgbEnabled: boolean;
   rgbColor: string;
-  monitors: [OfficeMonitorTransform, OfficeMonitorTransform];
+  /** Per-station monitor pose; each station stores its own transform. */
+  monitor: OfficeMonitorTransform;
 }
 
 export interface OfficeWallpaperMetadata {
@@ -79,23 +79,21 @@ export const OFFICE_MONITOR_TRANSFORM_BOUNDS = Object.freeze({
   yaw: Object.freeze({ min: 0.10, max: 2.15, step: 0.08 }),
 });
 
-export const DEFAULT_OFFICE_MONITOR_TRANSFORMS: readonly [OfficeMonitorTransform, OfficeMonitorTransform] = Object.freeze([
-  Object.freeze({ x: -0.42, y: 0, z: -0.02, yaw: 1.05 }),
-  Object.freeze({ x: 0.01, y: 0, z: -0.44, yaw: 0.65 }),
-]);
+export const DEFAULT_OFFICE_MONITOR_TRANSFORM: OfficeMonitorTransform = Object.freeze({
+  x: -0.42,
+  y: 0,
+  z: -0.02,
+  yaw: 1.05,
+});
 
 const DEFAULT_RGB_COLOR = '#00e5ff';
 
 export const DEFAULT_OFFICE_COMPUTER_PREFERENCES: OfficeComputerPreferences = freezePreferences({
   power: 'on',
   wallpaper: 'aurora',
-  dualMonitor: false,
   rgbEnabled: true,
   rgbColor: DEFAULT_RGB_COLOR,
-  monitors: [
-    DEFAULT_OFFICE_MONITOR_TRANSFORMS[0],
-    DEFAULT_OFFICE_MONITOR_TRANSFORMS[1],
-  ],
+  monitor: DEFAULT_OFFICE_MONITOR_TRANSFORM,
 });
 
 const STORAGE_KEY_PREFIX = 'aih:office-computer:v1:';
@@ -126,13 +124,9 @@ function freezePreferences(prefs: OfficeComputerPreferences): OfficeComputerPref
   return Object.freeze({
     power: prefs.power,
     wallpaper: prefs.wallpaper,
-    dualMonitor: prefs.dualMonitor,
     rgbEnabled: prefs.rgbEnabled,
     rgbColor: prefs.rgbColor,
-    monitors: Object.freeze([
-      freezeTransform(prefs.monitors[0]),
-      freezeTransform(prefs.monitors[1]),
-    ]) as [OfficeMonitorTransform, OfficeMonitorTransform],
+    monitor: freezeTransform(prefs.monitor),
   });
 }
 
@@ -156,7 +150,7 @@ function clampAxis(
 
 export function clampOfficeMonitorTransform(
   input: Partial<OfficeMonitorTransform> | null | undefined,
-  fallback: OfficeMonitorTransform = DEFAULT_OFFICE_MONITOR_TRANSFORMS[0]
+  fallback: OfficeMonitorTransform = DEFAULT_OFFICE_MONITOR_TRANSFORM
 ): OfficeMonitorTransform {
   const source = input && typeof input === 'object' ? input : {};
   const bounds = OFFICE_MONITOR_TRANSFORM_BOUNDS;
@@ -199,27 +193,21 @@ function sanitizePreferences(
     return fallback;
   }
   const candidate = rawInput as Record<string, unknown>;
-  const rawMonitors = Array.isArray(candidate.monitors) ? candidate.monitors : [];
-  const monitor0 = clampOfficeMonitorTransform(
-    rawMonitors[0] as Partial<OfficeMonitorTransform> | undefined,
-    fallback.monitors[0]
-  );
-  const monitor1 = clampOfficeMonitorTransform(
-    rawMonitors[1] as Partial<OfficeMonitorTransform> | undefined,
-    fallback.monitors[1]
+  // Read the old dual-monitor tuple for migration; only the primary pose survives.
+  const legacyMonitors = Array.isArray(candidate.monitors) ? candidate.monitors : [];
+  const monitor = clampOfficeMonitorTransform(
+    (candidate.monitor ?? legacyMonitors[0]) as Partial<OfficeMonitorTransform> | undefined,
+    fallback.monitor
   );
 
   return freezePreferences({
     power: normalizePower(candidate.power, fallback.power),
     wallpaper: normalizeWallpaper(candidate.wallpaper, fallback.wallpaper),
-    dualMonitor: typeof candidate.dualMonitor === 'boolean'
-      ? candidate.dualMonitor
-      : fallback.dualMonitor,
     rgbEnabled: typeof candidate.rgbEnabled === 'boolean'
       ? candidate.rgbEnabled
       : fallback.rgbEnabled,
     rgbColor: normalizeOfficeRgbColor(candidate.rgbColor, fallback.rgbColor),
-    monitors: [monitor0, monitor1],
+    monitor,
   });
 }
 
@@ -231,11 +219,9 @@ function arePreferencesEqual(a: OfficeComputerPreferences, b: OfficeComputerPref
   return (
     a.power === b.power
     && a.wallpaper === b.wallpaper
-    && a.dualMonitor === b.dualMonitor
     && a.rgbEnabled === b.rgbEnabled
     && a.rgbColor === b.rgbColor
-    && areTransformsEqual(a.monitors[0], b.monitors[0])
-    && areTransformsEqual(a.monitors[1], b.monitors[1])
+    && areTransformsEqual(a.monitor, b.monitor)
   );
 }
 
@@ -404,13 +390,8 @@ export function updateOfficeComputerPreferences(
     ...current,
     ...patch,
   };
-  if (Array.isArray(patch.monitors)) {
-    mergedInput.monitors = [
-      patch.monitors[0] ?? current.monitors[0],
-      patch.monitors[1] ?? current.monitors[1],
-    ];
-  } else {
-    mergedInput.monitors = current.monitors;
+  if (!patch.monitor) {
+    mergedInput.monitor = current.monitor;
   }
 
   const next = sanitizePreferences(mergedInput, current);
@@ -424,12 +405,9 @@ export function updateOfficeComputerPreferences(
   notifyListeners();
 }
 
-export function resetOfficeComputerMonitors(serverId: string, sessionKey: string): void {
+export function resetOfficeComputerMonitor(serverId: string, sessionKey: string): void {
   updateOfficeComputerPreferences(serverId, sessionKey, {
-    monitors: [
-      { ...DEFAULT_OFFICE_MONITOR_TRANSFORMS[0] },
-      { ...DEFAULT_OFFICE_MONITOR_TRANSFORMS[1] },
-    ],
+    monitor: { ...DEFAULT_OFFICE_MONITOR_TRANSFORM },
   });
 }
 

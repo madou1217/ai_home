@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { OfficeSessionItem } from './session-office-types';
-import type { OfficeMonitorIndex, OfficeScenePalette } from './office-scene-types';
+import type { OfficeScenePalette } from './office-scene-types';
 import {
   DEFAULT_OFFICE_COMPUTER_PREFERENCES,
   type OfficeComputerPreferences,
@@ -24,10 +24,10 @@ import {
   type DesktopComputerRig,
 } from './office-computer-model';
 import {
-  createDualMonitorAssemblyRig,
+  createMonitorAssemblyRig,
   DESK_SURFACE_Y,
-  syncDualMonitorAssemblyRig,
-  type DualMonitorAssemblyRig,
+  syncMonitorAssemblyRig,
+  type MonitorAssemblyRig,
 } from './office-monitor-rig';
 import { getSharedVoxelMaterialSet, type VoxelTileId } from './office-voxel-atlas';
 import { VoxelBoxBuilder } from './office-voxel-builder';
@@ -67,7 +67,7 @@ export interface OfficeStationRig {
   sessionKey: string;
   root: THREE.Group;
   targetPosition: THREE.Vector3;
-  monitorAssembly: DualMonitorAssemblyRig;
+  monitorAssembly: MonitorAssemblyRig;
   screenMesh: THREE.Mesh;
   computerRig: DesktopComputerRig;
   selectionFrameMesh: THREE.Mesh;
@@ -83,8 +83,6 @@ export interface StationSyncOptions {
   isHovered: boolean;
   preferences: OfficeComputerPreferences;
   rasterVersion: number;
-  isEditingThisStation: boolean;
-  activeEditMonitorIndex: OfficeMonitorIndex;
 }
 
 function hashKey(value: string): number {
@@ -100,7 +98,7 @@ function hashKey(value: string): number {
  * 在不修改禁止文件 office-computer-model.ts 的前提下，将桌面上的 PC 机箱（含侧透玻璃、RGB 灯条与电源灯）
  * 精准平移至桌子侧后方地面地毯（x ∈ [0.375, 0.625], y ∈ [0.03125, 0.46875], z ∈ [-0.75, -0.375]）：
  * - 严格避开桌腿、椅子、显示器与键盘鼠标；
- * - 任意正视屏幕视角（含单/双屏与全范围偏航角）均保证整块屏幕零遮挡；
+ * - 任意正视屏幕视角（含全范围偏航角）均保证整块屏幕零遮挡；
  * - 完整保留机箱原有合批 Draw Call、RGB/电源灯效材质与 station 拾取标签。
  */
 const ORIGINAL_PC_MIN_X = -0.98;
@@ -195,7 +193,7 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     occludes: false,
   });
 
-  // 2. 橡木书桌桌面（4 条拼板，顶面精确保持 DESK_SURFACE_Y = 0.746，后沿延展至 -0.6875 稳妥承托放大后的单/双屏）
+  // 2. 橡木书桌桌面（4 条拼板，顶面精确保持 DESK_SURFACE_Y = 0.746，后沿延展至 -0.6875 稳妥承托显示器）
   const deskBottomY = DESK_SURFACE_Y - 0.0625; // 0.6835
   const plankStrips: Array<[number, number, VoxelTileId]> = [
     [-0.6875, -0.375, 'oak_planks'],
@@ -417,8 +415,8 @@ export function createWorkstationPod(
   character.root.rotation.y = -Math.PI / 2;
   root.add(character.root);
 
-  // 5. Minecraft 体素单/双显示器组件
-  const monitorAssembly = createDualMonitorAssemblyRig(
+  // 5. Minecraft 体素单显示器组件
+  const monitorAssembly = createMonitorAssemblyRig(
     session.sessionKey,
     anisotropy,
     palette
@@ -430,7 +428,7 @@ export function createWorkstationPod(
     root,
     targetPosition: new THREE.Vector3(),
     monitorAssembly,
-    screenMesh: monitorAssembly.monitors[0].screenMesh,
+    screenMesh: monitorAssembly.monitor.screenMesh,
     computerRig,
     selectionFrameMesh,
     character,
@@ -445,28 +443,18 @@ export function createWorkstationPod(
     isHovered: false,
     preferences: DEFAULT_OFFICE_COMPUTER_PREFERENCES,
     rasterVersion: 0,
-    isEditingThisStation: false,
-    activeEditMonitorIndex: 0,
   });
 
   return rig;
 }
 
-export function getStationMonitorScreenMesh(
-  rig: OfficeStationRig,
-  monitorIndex: OfficeMonitorIndex = 0
-): THREE.Mesh | null {
-  if (monitorIndex === 1 && rig.monitorAssembly.dualMonitor) {
-    return rig.monitorAssembly.monitors[1].screenMesh;
-  }
-  return rig.monitorAssembly.monitors[0]?.screenMesh ?? null;
+export function getStationMonitorScreenMesh(rig: OfficeStationRig): THREE.Mesh | null {
+  return rig.monitorAssembly.monitor.screenMesh;
 }
 
 export function disposeStationTextureBundles(rig: OfficeStationRig): void {
   rig.badgeBundle.texture.dispose();
-  for (const monitor of rig.monitorAssembly.monitors) {
-    monitor.screenBundle.texture.dispose();
-  }
+  rig.monitorAssembly.monitor.screenBundle.texture.dispose();
   disposeOfficeCharacter(rig.character);
 }
 
@@ -481,8 +469,6 @@ export function syncWorkstationPod(
     isHovered,
     preferences,
     rasterVersion,
-    isEditingThisStation,
-    activeEditMonitorIndex,
   } = options;
 
   // 悬停提亮（绝不修改几何形状）
@@ -502,15 +488,12 @@ export function syncWorkstationPod(
     palette
   );
 
-  // 同步单/双显示器位姿、壁纸光栅化与实时预览屏幕
-  syncDualMonitorAssemblyRig(rig.monitorAssembly, session, isSelected, palette, {
+  // 同步显示器位姿、壁纸光栅化与实时预览屏幕
+  syncMonitorAssemblyRig(rig.monitorAssembly, session, isSelected, palette, {
     power: preferences.power,
     wallpaper: preferences.wallpaper,
-    dualMonitor: preferences.dualMonitor,
-    transforms: preferences.monitors,
+    transform: preferences.monitor,
     rasterVersion,
-    isEditingThisStation,
-    activeEditMonitorIndex,
   });
 
   updateDeskBadgeTexture(

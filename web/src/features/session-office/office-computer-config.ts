@@ -395,9 +395,7 @@ export function buildOfficeComputerConfigModel({
     },
   ];
 
-  const poseSummary = preferences.dualMonitor
-    ? `${formatMonitorPose('主屏', preferences.monitors[0])} ｜ ${formatMonitorPose('副屏', preferences.monitors[1])}`
-    : formatMonitorPose('主屏', preferences.monitors[0]);
+  const poseSummary = formatMonitorPose('显示器', preferences.monitor);
 
   const virtualWorkstationSpecs: ComputerConfigEntry[] = [
     {
@@ -410,9 +408,7 @@ export function buildOfficeComputerConfigModel({
     {
       key: 'display-rig',
       label: '显示器配置',
-      value: preferences.dualMonitor
-        ? '双显示器扩展工作台（主屏 Display 01 + 副屏 Display 02 · 双臂支架）'
-        : '单显示器标准工作台（主屏 Display 01 · 单臂人体工学支架）',
+      value: '单显示器工作台（单臂人体工学支架 · 在 3D 场景按住屏幕拖动可调整角度）',
     },
     {
       key: 'scene-pose',

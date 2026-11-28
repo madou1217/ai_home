@@ -13,7 +13,6 @@ import {
   MinusOutlined,
   PoweroffOutlined,
   SettingOutlined,
-  SplitCellsOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import InlineNote from '@/components/ui/InlineNote';
@@ -40,7 +39,7 @@ export type ComputerSettingsTab = 'settings' | 'config';
 
 type AppearancePatch = Pick<
   OfficeComputerPreferences,
-  'wallpaper' | 'dualMonitor' | 'rgbEnabled' | 'rgbColor'
+  'wallpaper' | 'rgbEnabled' | 'rgbColor'
 >;
 
 export interface OfficeComputerSettingsProps {
@@ -61,13 +60,11 @@ export interface OfficeComputerSettingsProps {
   onBootComputer: () => void;
   onUpdateAppearance: (patch: Partial<AppearancePatch>) => void;
   onCopyIdentity: (session: OfficeSessionItem) => void;
-  onReturnToRoom: () => void;
 }
 
 function pickAppearance(preferences: OfficeComputerPreferences): AppearancePatch {
   return {
     wallpaper: preferences.wallpaper,
-    dualMonitor: preferences.dualMonitor,
     rgbEnabled: preferences.rgbEnabled,
     rgbColor: sanitizeRgbHexColor(preferences.rgbColor),
   };
@@ -76,7 +73,6 @@ function pickAppearance(preferences: OfficeComputerPreferences): AppearancePatch
 function appearanceEqual(a: AppearancePatch, b: AppearancePatch): boolean {
   return (
     a.wallpaper === b.wallpaper &&
-    a.dualMonitor === b.dualMonitor &&
     a.rgbEnabled === b.rgbEnabled &&
     a.rgbColor.toLowerCase() === b.rgbColor.toLowerCase()
   );
@@ -176,21 +172,15 @@ function OfficePowerSection({
 interface AppearanceSectionProps {
   draft: AppearancePatch;
   canEditPrefs: boolean;
-  isTerminating: boolean;
   loadedWallpaperAssetUrl: string | null;
-  scenePoseHint: string;
   onPatchDraft: (patch: Partial<AppearancePatch>) => void;
-  onReturnToRoom: () => void;
 }
 
 function OfficeAppearanceSections({
   draft,
   canEditPrefs,
-  isTerminating,
   loadedWallpaperAssetUrl,
-  scenePoseHint,
   onPatchDraft,
-  onReturnToRoom,
 }: AppearanceSectionProps) {
   const handleSelectWallpaper = (wallpaper: OfficeDesktopWallpaperId) => {
     if (!canEditPrefs) return;
@@ -199,74 +189,6 @@ function OfficeAppearanceSections({
 
   return (
     <>
-      <section className="office-cs-section" aria-label="显示器数量设置">
-        <div className="office-cs-section-head">
-          <div className="office-cs-section-heading">
-            <DesktopOutlined />
-            <h4>显示器布局</h4>
-            <SettingStatusTag
-              status="applied"
-              label={draft.dualMonitor ? '双联屏' : '单屏'}
-              compact
-            />
-          </div>
-          <button
-            type="button"
-            className="session-desktop-btn session-desktop-btn--subtle"
-            disabled={isTerminating}
-            onClick={onReturnToRoom}
-            title="返回 3D 办公室场景以拖拽调节显示器空间位置与偏航角度"
-          >
-            <ArrowLeftOutlined />
-            <span>调节 3D 屏位</span>
-          </button>
-        </div>
-
-        <div className="office-cs-monitor-choices" role="group" aria-label="显示器布局模式">
-          <button
-            type="button"
-            className="office-cs-choice-card"
-            data-selected={!draft.dualMonitor ? 'true' : undefined}
-            aria-pressed={!draft.dualMonitor}
-            disabled={!canEditPrefs}
-            onClick={() => onPatchDraft({ dualMonitor: false })}
-          >
-            <div className="office-cs-choice-top">
-              <span className="office-cs-choice-title">
-                <DesktopOutlined />
-                <span>单屏标准台</span>
-              </span>
-              {!draft.dualMonitor ? <CheckOutlined className="office-cs-check" /> : null}
-            </div>
-            <span className="office-cs-choice-desc">
-              Display 01 独立承载终端，3D 工位同步单屏。
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className="office-cs-choice-card"
-            data-selected={draft.dualMonitor ? 'true' : undefined}
-            aria-pressed={draft.dualMonitor}
-            disabled={!canEditPrefs}
-            onClick={() => onPatchDraft({ dualMonitor: true })}
-          >
-            <div className="office-cs-choice-top">
-              <span className="office-cs-choice-title">
-                <SplitCellsOutlined />
-                <span>双联屏扩展</span>
-              </span>
-              {draft.dualMonitor ? <CheckOutlined className="office-cs-check" /> : null}
-            </div>
-            <span className="office-cs-choice-desc">
-              展开主副双屏，3D 工位同步挂载双显示器。
-            </span>
-          </button>
-        </div>
-
-        <p className="office-cs-caption">{scenePoseHint}</p>
-      </section>
-
       <section className="office-cs-section" aria-label="桌面壁纸选择">
         <div className="office-cs-section-head">
           <div className="office-cs-section-heading">
@@ -486,11 +408,10 @@ export default function OfficeComputerSettings({
   onBootComputer,
   onUpdateAppearance,
   onCopyIdentity,
-  onReturnToRoom,
 }: OfficeComputerSettingsProps) {
   const committedAppearance = useMemo(
     () => pickAppearance(preferences),
-    [preferences.dualMonitor, preferences.rgbColor, preferences.rgbEnabled, preferences.wallpaper],
+    [preferences.rgbColor, preferences.rgbEnabled, preferences.wallpaper],
   );
   const [draftAppearance, setDraftAppearance] = useState<AppearancePatch>(committedAppearance);
   const [saveFeedback, setSaveFeedback] = useState('');
@@ -660,11 +581,8 @@ export default function OfficeComputerSettings({
             <OfficeAppearanceSections
               draft={draftAppearance}
               canEditPrefs={canEditPrefs}
-              isTerminating={isTerminating}
               loadedWallpaperAssetUrl={loadedWallpaperAssetUrl}
-              scenePoseHint={configModel.scenePoseHint}
               onPatchDraft={handlePatchDraft}
-              onReturnToRoom={onReturnToRoom}
             />
           </div>
         ) : (

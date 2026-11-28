@@ -4,33 +4,56 @@ import Foundation
 import QuartzCore
 
 /// Floating contextual pill showing the hovered or active category name + count
-/// beside the 38 DIP Optical Dots column. Non-interactive (`hitTest` returns nil).
+/// strictly within the 38 DIP Optical Dots column (§3.1/§3.2, A05/A23) so it never
+/// overflows onto or occludes the first card's body or timestamp. Non-interactive (`hitTest` returns nil).
 final class LumenOpticalDotBubbleView: NSView {
-  private let label = NSTextField(labelWithString: "")
+  /// Maximum pill width strictly inside the 38 DIP optical dots column (2 DIP side margins).
+  static let maxColumnWidth: CGFloat = LumenV15Tokens.opticalDotsColumnWidth - 4
+
+  private let nameLabel = NSTextField(wrappingLabelWithString: "")
+  private let countLabel = NSTextField(labelWithString: "")
+  private var lastCategoryName: String = ""
+  private var lastCount: Int?
+  private var isMultiLineName = false
+  private var targetVisible = false
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
     wantsLayer = true
-    layer?.cornerRadius = 7
+    layer?.cornerRadius = 8
     layer?.cornerCurve = .continuous
     layer?.shadowColor = NSColor(srgbRed: 0.08, green: 0.16, blue: 0.28, alpha: 1).cgColor
     layer?.shadowOpacity = 0.22
-    layer?.shadowRadius = 10
-    layer?.shadowOffset = NSSize(width: 0, height: -3)
+    layer?.shadowRadius = 8
+    layer?.shadowOffset = CGSize(width: 0, height: -2)
     alphaValue = 0
     isHidden = true
 
-    label.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
-    label.alignment = .center
-    label.lineBreakMode = .byClipping
-    label.translatesAutoresizingMaskIntoConstraints = false
-    addSubview(label)
+    nameLabel.font = .systemFont(ofSize: 10, weight: .semibold)
+    nameLabel.alignment = .center
+    nameLabel.maximumNumberOfLines = 2
+    nameLabel.lineBreakMode = .byCharWrapping
+    nameLabel.preferredMaxLayoutWidth = Self.maxColumnWidth - 4
+    nameLabel.translatesAutoresizingMaskIntoConstraints = false
+
+    countLabel.font = .monospacedDigitSystemFont(ofSize: 9.5, weight: .medium)
+    countLabel.alignment = .center
+    countLabel.usesSingleLineMode = true
+    countLabel.lineBreakMode = .byTruncatingTail
+    countLabel.translatesAutoresizingMaskIntoConstraints = false
+
+    addSubview(nameLabel)
+    addSubview(countLabel)
 
     NSLayoutConstraint.activate([
-      label.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-      label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-      label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
-      label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9)
+      nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+      nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+      nameLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+
+      countLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 1),
+      countLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+      countLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+      countLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
     ])
   }
 
@@ -38,26 +61,71 @@ final class LumenOpticalDotBubbleView: NSView {
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+  var preferredHeight: CGFloat {
+    let measured = fittingSize.height
+    let fallback: CGFloat = isMultiLineName ? 45 : 35
+    return measured > 1 ? max(fallback, ceil(measured)) : fallback
+  }
+
   func applyTheme(_ palette: LumenPalette) {
     if palette.isDark {
       layer?.backgroundColor = NSColor(srgbRed: 0.145, green: 0.212, blue: 0.314, alpha: 0.94).cgColor
       layer?.borderWidth = 0.75
-      layer?.borderColor = NSColor(srgbRed: 0.76, green: 0.87, blue: 1.0, alpha: 0.22).cgColor
-      label.textColor = NSColor(srgbRed: 0.93, green: 0.96, blue: 1.0, alpha: 1.0)
+      layer?.borderColor = NSColor(srgbRed: 0.76, green: 0.87, blue: 1.0, alpha: 0.24).cgColor
+      nameLabel.textColor = NSColor(srgbRed: 0.94, green: 0.97, blue: 1.0, alpha: 1.0)
+      countLabel.textColor = NSColor(srgbRed: 0.75, green: 0.84, blue: 0.96, alpha: 0.92)
     } else {
       layer?.backgroundColor = NSColor(srgbRed: 0.137, green: 0.196, blue: 0.286, alpha: 0.92).cgColor
       layer?.borderWidth = 0.75
-      layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
-      label.textColor = NSColor(srgbRed: 0.94, green: 0.97, blue: 1.0, alpha: 1.0)
+      layer?.borderColor = NSColor.white.withAlphaComponent(0.20).cgColor
+      nameLabel.textColor = NSColor(srgbRed: 0.96, green: 0.98, blue: 1.0, alpha: 1.0)
+      countLabel.textColor = NSColor(srgbRed: 0.78, green: 0.86, blue: 0.97, alpha: 0.92)
     }
   }
 
+  func updateCategory(name rawName: String, count: Int) {
+    let clean = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+    if clean == lastCategoryName && lastCount == count {
+      return
+    }
+    lastCategoryName = clean
+    lastCount = count
+
+    let formattedName: String
+    if clean.count == 4 && !clean.contains("\n") && !clean.contains(" ") {
+      formattedName = String(clean.prefix(2)) + "\n" + String(clean.dropFirst(2))
+    } else {
+      formattedName = clean
+    }
+    isMultiLineName = formattedName.contains("\n")
+    nameLabel.font = .systemFont(ofSize: isMultiLineName ? 9.0 : 10.0, weight: .semibold)
+    nameLabel.stringValue = formattedName
+    countLabel.isHidden = false
+    countLabel.stringValue = count > 9999 ? "9999+" : "\(count)"
+    setAccessibilityLabel("\(clean) · \(count)")
+    invalidateIntrinsicContentSize()
+  }
+
   func updateText(_ text: String) {
-    label.stringValue = text
+    let parts = text.components(separatedBy: " · ")
+    if parts.count == 2, let count = Int(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) {
+      updateCategory(name: parts[0], count: count)
+      return
+    }
+    let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    lastCategoryName = clean
+    lastCount = nil
+    isMultiLineName = clean.contains("\n") || clean.count > 3
+    nameLabel.font = .systemFont(ofSize: isMultiLineName ? 9.0 : 10.0, weight: .semibold)
+    nameLabel.stringValue = clean
+    countLabel.stringValue = ""
+    countLabel.isHidden = true
+    setAccessibilityLabel(clean)
     invalidateIntrinsicContentSize()
   }
 
   func setVisible(_ visible: Bool, animated: Bool) {
+    targetVisible = visible
     if visible { isHidden = false }
     let duration: TimeInterval = (animated && LumenMotion.isEnabled) ? 0.16 : 0.01
     NSAnimationContext.runAnimationGroup({ ctx in
@@ -65,7 +133,7 @@ final class LumenOpticalDotBubbleView: NSView {
       self.animator().alphaValue = visible ? 1.0 : 0.0
     }, completionHandler: { [weak self] in
       guard let self else { return }
-      if !visible && self.alphaValue <= 0.01 {
+      if !self.targetVisible && self.alphaValue <= 0.01 {
         self.isHidden = true
       }
     })
@@ -81,7 +149,7 @@ final class LumenOpticalDotBubbleView: NSView {
 final class LumenOrbitOpticalDotsView: NSView {
   private let categories = LumenLogicalCategory.allCases // 10 fixed logical categories
   private let visibleCount = LumenV15Tokens.opticalDotsVisibleCount // 5
-  private let stepHeight: CGFloat = 32
+  private let stepHeight: CGFloat = 26 // matches V15 HTML --step: 26px so in-column pill fits cleanly above dots
   private let dotDiameter: CGFloat = 5
 
   private var dotLayers: [CALayer] = []
@@ -100,6 +168,7 @@ final class LumenOrbitOpticalDotsView: NSView {
   // Wheel accumulation state (42pt threshold, 180ms reset)
   private var wheelAccumulator: CGFloat = 0
   private var lastWheelTimestamp: TimeInterval = 0
+  private var lastLaidOutHeight: CGFloat = 0
 
   /// Optional external bubble view hosted above the rail so it never gets clipped by the 38 DIP column.
   weak var bubbleView: LumenOpticalDotBubbleView?
@@ -311,6 +380,16 @@ final class LumenOrbitOpticalDotsView: NSView {
   override func layout() {
     super.layout()
     layoutDots(animated: false)
+    if abs(bounds.height - lastLaidOutHeight) > 0.5 {
+      lastLaidOutHeight = bounds.height
+      if isAwake {
+        let displayIdx = hoveredIndex ?? keyboardFocusedIndex ?? activeIndex
+        DispatchQueue.main.async { [weak self] in
+          guard let self, self.isAwake else { return }
+          self.emitBubble(forIndex: displayIdx, visible: true)
+        }
+      }
+    }
   }
 
   private func windowOriginY() -> CGFloat {
@@ -493,17 +572,52 @@ final class LumenOrbitOpticalDotsView: NSView {
     return countsByCategory[categories[index], default: 0]
   }
 
+  /// Computes an auto-avoiding vertical center inside the 38 DIP optical-dots column so the
+  /// floating category pill never overlaps any dot, never clips at panel edges, and never
+  /// extends horizontally onto the card rail (§3.1/§3.2, A05/A23).
+  private func resolvedBubbleCenterY(forDotIndex index: Int, bubbleHeight: CGFloat) -> CGFloat {
+    let columnH = bounds.height
+    guard columnH > 1 else { return 26 }
+    let clampedH = max(28, bubbleHeight)
+    let halfH = clampedH / 2.0
+    let edgeMargin: CGFloat = 4
+    let dotVisualClearance: CGFloat = 8
+    let dotsTop = windowOriginY()
+    let dotsBottom = dotsTop + CGFloat(visibleCount) * stepHeight
+    let topDotEdge = dotsTop + stepHeight / 2.0 - 5.5
+    let bottomDotEdge = dotsBottom - stepHeight / 2.0 + 5.5
+
+    let minCenterY = edgeMargin + halfH
+    let maxCenterY = max(minCenterY, columnH - edgeMargin - halfH)
+
+    let aboveCenter = min(dotsTop - 2.0 - halfH, topDotEdge - dotVisualClearance - halfH)
+    let belowCenter = max(dotsBottom + 2.0 + halfH, bottomDotEdge + dotVisualClearance + halfH)
+
+    if aboveCenter >= minCenterY {
+      return aboveCenter
+    }
+    if belowCenter <= maxCenterY {
+      return belowCenter
+    }
+    let dotY = dotCenterY(for: index)
+    return (dotY >= columnH / 2.0) ? minCenterY : maxCenterY
+  }
+
   private func emitBubble(forIndex index: Int, visible: Bool) {
     guard index >= 0, index < categories.count else { return }
     let range = visibleRange()
     guard range.contains(index) else {
-      onBubblePositionChanged?(dotCenterY(for: activeIndex), "", false)
+      let fallbackH = bubbleView?.preferredHeight ?? 35
+      onBubblePositionChanged?(resolvedBubbleCenterY(forDotIndex: activeIndex, bubbleHeight: fallbackH), "", false)
       return
     }
     let cat = categories[index]
     let n = count(for: index)
+    bubbleView?.updateCategory(name: cat.label, count: n)
+    let bubbleH = bubbleView?.preferredHeight ?? (cat.label.count >= 4 ? 45 : 35)
+    let centerY = resolvedBubbleCenterY(forDotIndex: index, bubbleHeight: bubbleH)
     let text = "\(cat.label) · \(n)"
-    onBubblePositionChanged?(dotCenterY(for: index), text, visible)
+    onBubblePositionChanged?(centerY, text, visible)
   }
 
   // MARK: Pointer & Wheel Interaction

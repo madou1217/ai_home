@@ -164,14 +164,29 @@ struct LumenClipboardItem: Codable, Equatable {
     }
   }
 
+  var hasKnownSourceApp: Bool {
+    !LumenSourceAppResolver.isUnknown(sourceApp)
+  }
+
+  /// Display name for the application source (S01/S02, A10).
+  /// Never falls back to `sourceDevice`; empty `sourceApp` always displays "来源未知".
   var sourceLabel: String {
-    if !sourceApp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      return sourceApp
+    LumenSourceAppResolver.displayName(for: sourceApp)
+  }
+
+  /// Human-readable device label exclusively for the Inspector "来源设备" field.
+  /// Resolves local device UUID to `status.deviceName` when available.
+  var sourceDeviceLabel: String? {
+    let clean = sourceDevice.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return nil }
+    if let status = LumenClipboardStore.shared.status {
+      let localID = status.deviceId.trimmingCharacters(in: .whitespacesAndNewlines)
+      let localName = status.deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !localID.isEmpty && !localName.isEmpty && localID.caseInsensitiveCompare(clean) == .orderedSame {
+        return localName
+      }
     }
-    if !sourceDevice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      return sourceDevice
-    }
-    return "来源未知"
+    return clean
   }
 
   var formattedSize: String {

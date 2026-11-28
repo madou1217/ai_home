@@ -800,7 +800,7 @@ final class LumenHistoryRowView: NSView {
     excerptLabel.textColor = palette.muted
     excerptLabel.stringValue = rowSubtitle(for: item, identity: identity)
 
-    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+    if let appIcon = LumenSourceAppIconCache.shared.icon(for: item) {
       sourceIconView.image = appIcon
       sourceIconView.isHidden = false
       sourceFallback.isHidden = true
@@ -808,7 +808,7 @@ final class LumenHistoryRowView: NSView {
       sourceIconView.isHidden = true
       sourceFallback.isHidden = false
       sourceFallback.layer?.backgroundColor = palette.sourceBadgeColor(for: item.sourceLabel).cgColor
-      sourceLetter.stringValue = String(item.sourceLabel.prefix(1)).uppercased()
+      sourceLetter.stringValue = item.hasKnownSourceApp ? String(item.sourceLabel.prefix(1)).uppercased() : "?"
     }
     sourceLabel.stringValue = item.sourceLabel
     sourceLabel.toolTip = item.sourceLabel
@@ -992,7 +992,7 @@ final class LumenGalleryCardItem: NSCollectionViewItem {
     timeLabel.stringValue = item.relativeTime
     timeLabel.textColor = palette.muted
 
-    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+    if let appIcon = LumenSourceAppIconCache.shared.icon(for: item) {
       sourceIconView.image = appIcon
       sourceIconView.isHidden = false
       sourceDot.isHidden = true
@@ -1002,6 +1002,7 @@ final class LumenGalleryCardItem: NSCollectionViewItem {
       sourceDot.layer?.backgroundColor = palette.sourceBadgeColor(for: item.sourceLabel).cgColor
     }
     sourceLabel.stringValue = item.sourceLabel
+    sourceLabel.toolTip = item.sourceLabel
     sourceLabel.textColor = palette.muted
     pinIcon.isHidden = !item.pinned
     pinIcon.image = LumenVectorGlyphs.actionImage(.pinFilled, size: 12, color: palette.accent)
@@ -1512,7 +1513,7 @@ final class LumenInspectorView: NSView {
     row.alignment = .centerY
     row.spacing = 6
 
-    if let appIcon = LumenSourceAppIconCache.shared.icon(forSourceApp: item.sourceLabel) {
+    if let appIcon = LumenSourceAppIconCache.shared.icon(for: item) {
       let iv = NSImageView(image: appIcon)
       iv.imageScaling = .scaleProportionallyDown
       iv.translatesAutoresizingMaskIntoConstraints = false
@@ -1533,11 +1534,14 @@ final class LumenInspectorView: NSView {
     let label = NSTextField(labelWithString: "\(item.sourceLabel) · \(item.relativeTime)")
     label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
     label.textColor = palette.muted
+    label.toolTip = item.sourceLabel
     row.addArrangedSubview(label)
     return row
   }
 
-  /// Non-redundant metadata strip (§13.1, A32): NEVER repeats Content Type, Pin status, or Source.
+  /// Non-redundant metadata strip (§13.1, A32, S01/S02, A10):
+  /// NEVER repeats Content Type, Pin status, or Source App.
+  /// Device identifier / name appears ONLY here under "来源设备".
   private func makeNonRedundantMetaRow(item: LumenClipboardItem, identity: LumenContentIdentity, palette: LumenPalette) -> NSView {
     var entries: [(String, String)] = []
     entries.append(("大小", item.formattedSize))
@@ -1556,11 +1560,11 @@ final class LumenInspectorView: NSView {
       entries.append(("次数", "\(item.seenCount) 次"))
     }
 
-    let row = NSStackView()
-    row.orientation = .horizontal
-    row.alignment = .centerY
-    row.spacing = 18
-    row.translatesAutoresizingMaskIntoConstraints = false
+    let metricsRow = NSStackView()
+    metricsRow.orientation = .horizontal
+    metricsRow.alignment = .centerY
+    metricsRow.spacing = 18
+    metricsRow.translatesAutoresizingMaskIntoConstraints = false
 
     for (k, v) in entries {
       let kl = NSTextField(labelWithString: k)
@@ -1573,9 +1577,42 @@ final class LumenInspectorView: NSView {
       pair.orientation = .horizontal
       pair.alignment = .firstBaseline
       pair.spacing = 6
-      row.addArrangedSubview(pair)
+      metricsRow.addArrangedSubview(pair)
     }
-    return row
+
+    guard let deviceName = item.sourceDeviceLabel else {
+      return metricsRow
+    }
+
+    let container = NSStackView()
+    container.orientation = .vertical
+    container.alignment = .leading
+    container.spacing = 8
+    container.translatesAutoresizingMaskIntoConstraints = false
+    container.addArrangedSubview(metricsRow)
+
+    let devKey = NSTextField(labelWithString: "来源设备")
+    devKey.font = .systemFont(ofSize: 11, weight: .regular)
+    devKey.textColor = palette.muted
+    devKey.setContentCompressionResistancePriority(.required, for: .horizontal)
+    devKey.setContentHuggingPriority(.required, for: .horizontal)
+
+    let devVal = NSTextField(labelWithString: deviceName)
+    devVal.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+    devVal.textColor = palette.ink
+    devVal.lineBreakMode = .byTruncatingMiddle
+    devVal.toolTip = deviceName
+    devVal.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    let deviceRow = NSStackView(views: [devKey, devVal])
+    deviceRow.orientation = .horizontal
+    deviceRow.alignment = .firstBaseline
+    deviceRow.spacing = 8
+    deviceRow.translatesAutoresizingMaskIntoConstraints = false
+    container.addArrangedSubview(deviceRow)
+    deviceRow.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor).isActive = true
+
+    return container
   }
 
   private func makeHeroPreview(item: LumenClipboardItem, identity: LumenContentIdentity, palette: LumenPalette) -> NSView {

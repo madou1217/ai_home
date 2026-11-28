@@ -606,8 +606,11 @@ final class OrbitViewport {
     let dotsW = opticalDots.widthAnchor.constraint(equalToConstant: LumenV15Tokens.opticalDotsColumnWidth)
     dotsWidthConstraint = dotsW
 
-    let bubbleLeading = dotBubble.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor, constant: LumenV15Tokens.opticalDotsColumnWidth + 4)
-    let bubbleCenterY = dotBubble.centerYAnchor.constraint(equalTo: backdrop.topAnchor, constant: 120)
+    // Constrain hover label strictly within the 38 DIP optical-dots column (x ∈ [2, 36])
+    // so it never overflows onto or occludes the first card (§3.1/§3.2, A05/A23).
+    let bubbleLeading = dotBubble.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor, constant: 2)
+    let bubbleWidth = dotBubble.widthAnchor.constraint(equalToConstant: LumenOpticalDotBubbleView.maxColumnWidth)
+    let bubbleCenterY = dotBubble.centerYAnchor.constraint(equalTo: backdrop.topAnchor, constant: 48)
     bubbleLeadingConstraint = bubbleLeading
     bubbleCenterYConstraint = bubbleCenterY
 
@@ -631,6 +634,7 @@ final class OrbitViewport {
       emptyLabel.centerYAnchor.constraint(equalTo: railViewport.centerYAnchor),
 
       bubbleLeading,
+      bubbleWidth,
       bubbleCenterY,
 
       toastView.topAnchor.constraint(equalTo: backdrop.topAnchor, constant: 10),
@@ -642,7 +646,9 @@ final class OrbitViewport {
       if !text.isEmpty {
         self.dotBubble.updateText(text)
       }
-      self.bubbleCenterYConstraint?.constant = centerY
+      if let constraint = self.bubbleCenterYConstraint, abs(constraint.constant - centerY) > 0.25 {
+        constraint.constant = centerY
+      }
       self.dotBubble.setVisible(visible && !text.isEmpty, animated: true)
     }
   }
@@ -668,7 +674,7 @@ final class OrbitViewport {
     let showDots = next.showsOpticalDots && edgePosition == "bottom"
     opticalDots.isHidden = !showDots
     dotsWidthConstraint?.constant = showDots ? LumenV15Tokens.opticalDotsColumnWidth : 0
-    bubbleLeadingConstraint?.constant = LumenV15Tokens.opticalDotsColumnWidth + 4
+    bubbleLeadingConstraint?.constant = 2
     if !showDots {
       opticalDots.resetTransientState()
       dotBubble.setVisible(false, animated: false)

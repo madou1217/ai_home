@@ -119,7 +119,10 @@ struct LumenPalette {
   let orbitCardTop: NSColor
   let orbitCardBottom: NSColor
   let orbitCardBorder: NSColor
+  let orbitCardHoverBorder: NSColor
   let orbitCardSelectedBorder: NSColor
+  let orbitCardInnerHighlight: NSColor
+  let orbitCardShadowColor: NSColor
   let orbitCardSelectedGlow: NSColor
   let orbitKeyBadgeBackground: NSColor
   let orbitKeyBadgeText: NSColor
@@ -161,11 +164,14 @@ struct LumenPalette {
     orbitBackdropTop: NSColor(srgbRed: 0.890, green: 0.945, blue: 0.996, alpha: 0.42),
     orbitBackdropBottom: NSColor(srgbRed: 0.620, green: 0.718, blue: 0.867, alpha: 0.56),
     orbitTopSheen: NSColor(srgbRed: 0.950, green: 0.985, blue: 1.0, alpha: 0.88),
-    orbitCardTop: NSColor(srgbRed: 0.988, green: 0.992, blue: 1.0, alpha: 0.94),
-    orbitCardBottom: NSColor(srgbRed: 0.875, green: 0.914, blue: 0.969, alpha: 0.90),
-    orbitCardBorder: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 0.65),
-    orbitCardSelectedBorder: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 0.98),
-    orbitCardSelectedGlow: NSColor(srgbRed: 0.690, green: 0.847, blue: 1.0, alpha: 0.85),
+    orbitCardTop: NSColor(srgbRed: 0.992, green: 0.996, blue: 1.0, alpha: 0.96),
+    orbitCardBottom: NSColor(srgbRed: 0.914, green: 0.941, blue: 0.980, alpha: 0.93),
+    orbitCardBorder: NSColor(srgbRed: 0.416, green: 0.518, blue: 0.663, alpha: 0.34),
+    orbitCardHoverBorder: NSColor(srgbRed: 0.365, green: 0.486, blue: 0.678, alpha: 0.48),
+    orbitCardSelectedBorder: NSColor(srgbRed: 0.369, green: 0.545, blue: 0.902, alpha: 0.88),
+    orbitCardInnerHighlight: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 0.82),
+    orbitCardShadowColor: NSColor(srgbRed: 0.067, green: 0.145, blue: 0.275, alpha: 1.0),
+    orbitCardSelectedGlow: NSColor(srgbRed: 0.565, green: 0.753, blue: 0.988, alpha: 0.85),
     orbitKeyBadgeBackground: NSColor(srgbRed: 0.353, green: 0.451, blue: 0.612, alpha: 0.12),
     orbitKeyBadgeText: NSColor(srgbRed: 0.396, green: 0.463, blue: 0.576, alpha: 1.0),
     orbitKeyBadgeSelectedBackground: NSColor(srgbRed: 0.396, green: 0.537, blue: 0.843, alpha: 1.0),
@@ -198,11 +204,14 @@ struct LumenPalette {
     orbitBackdropTop: NSColor(srgbRed: 0.082, green: 0.165, blue: 0.278, alpha: 0.66),
     orbitBackdropBottom: NSColor(srgbRed: 0.063, green: 0.114, blue: 0.212, alpha: 0.82),
     orbitTopSheen: NSColor(srgbRed: 0.761, green: 0.871, blue: 1.0, alpha: 0.70),
-    orbitCardTop: NSColor(srgbRed: 0.220, green: 0.298, blue: 0.420, alpha: 0.88),
-    orbitCardBottom: NSColor(srgbRed: 0.125, green: 0.192, blue: 0.294, alpha: 0.90),
-    orbitCardBorder: NSColor(srgbRed: 0.647, green: 0.765, blue: 0.929, alpha: 0.32),
+    orbitCardTop: NSColor(srgbRed: 0.212, green: 0.282, blue: 0.392, alpha: 0.94),
+    orbitCardBottom: NSColor(srgbRed: 0.125, green: 0.180, blue: 0.271, alpha: 0.95),
+    orbitCardBorder: NSColor(srgbRed: 0.624, green: 0.722, blue: 0.875, alpha: 0.38),
+    orbitCardHoverBorder: NSColor(srgbRed: 0.722, green: 0.827, blue: 0.969, alpha: 0.56),
     orbitCardSelectedBorder: NSColor(srgbRed: 0.812, green: 0.922, blue: 1.0, alpha: 0.96),
-    orbitCardSelectedGlow: NSColor(srgbRed: 0.631, green: 0.792, blue: 1.0, alpha: 0.70),
+    orbitCardInnerHighlight: NSColor(srgbRed: 0.878, green: 0.941, blue: 1.0, alpha: 0.14),
+    orbitCardShadowColor: NSColor(srgbRed: 0.012, green: 0.027, blue: 0.075, alpha: 1.0),
+    orbitCardSelectedGlow: NSColor(srgbRed: 0.631, green: 0.792, blue: 1.0, alpha: 0.72),
     orbitKeyBadgeBackground: NSColor(srgbRed: 0.667, green: 0.769, blue: 1.0, alpha: 0.14),
     orbitKeyBadgeText: NSColor(srgbRed: 0.722, green: 0.800, blue: 0.922, alpha: 1.0),
     orbitKeyBadgeSelectedBackground: NSColor(srgbRed: 0.459, green: 0.588, blue: 0.855, alpha: 1.0),
@@ -229,7 +238,13 @@ struct LumenPalette {
   }
 
   func sourceBadgeColor(for source: String) -> NSColor {
-    let lower = source.lowercased()
+    let clean = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    if clean.isEmpty || clean == "来源未知" || clean == "Unknown" {
+      return isDark
+        ? NSColor(srgbRed: 0.420, green: 0.490, blue: 0.588, alpha: 1)
+        : NSColor(srgbRed: 0.510, green: 0.588, blue: 0.706, alpha: 1)
+    }
+    let lower = clean.lowercased()
     if lower.contains("code") || lower.contains("xcode") || lower.contains("cursor") {
       return NSColor(srgbRed: 0.337, green: 0.541, blue: 0.792, alpha: 1)
     }
@@ -239,8 +254,11 @@ struct LumenPalette {
     if lower.contains("chrome") || lower.contains("safari") || lower.contains("arc") || lower.contains("firefox") {
       return NSColor(srgbRed: 0.412, green: 0.620, blue: 0.569, alpha: 1)
     }
-    if lower.contains("finder") {
+    if lower.contains("finder") || lower.contains("访达") {
       return NSColor(srgbRed: 0.482, green: 0.620, blue: 0.812, alpha: 1)
+    }
+    if lower.contains("wechat") || lower.contains("微信") {
+      return NSColor(srgbRed: 0.157, green: 0.678, blue: 0.439, alpha: 1)
     }
     if lower.contains("notes") || lower.contains("备忘") {
       return NSColor(srgbRed: 0.886, green: 0.678, blue: 0.349, alpha: 1)

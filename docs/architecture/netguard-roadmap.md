@@ -115,6 +115,7 @@
 
 ### 2.4 Windows GUI 验收
 
+- [x] App Desk 严格启动 Windows 端到端（独立测试 Server）：Edge 通过 `--proxy-server` 走 18081，guard PID 写入台账、desk 可见、kill 后 guard 退出
 - [x] 双 Chrome 真机（同一 guard 保护两棵进程树）：A 配 `--proxy-server=http://127.0.0.1:18081`，页面正文为百度真实内容；B `--no-proxy-server`，正文为空、标题退化为 `baidu.com`；proxy 日志只出现 A 的 `CONNECT www.baidu.com:443`；`blocked=70`
 - [ ] Claude/Codex/Gemini/AGY 桌面 App 各启动两个实例（不同账号/JP+SG）
 - [ ] App 内所有 TCP 请求走各自代理
@@ -241,16 +242,16 @@
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
 | 严格进程级网络控制（跨平台） | 中 | 22% | 🚧 Phase 1/2/3 |
-| Windows per-instance GUI（JP/SG） | WinDivert IPv4 TCP+UDP、双 Chrome 代理/直连真机通过；WFP 待加载 | 30% | 🚧 Phase 2 |
+| Windows per-instance GUI（JP/SG） | App Desk 严格启动端到端通过；双 Chrome 代理/直连通过；WFP 待加载 | 40% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+三 CLI 启动已验证 | 40% | 🚧 Phase 3 |
 | macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
 | DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
 | LaunchProfile / preflight | App Desk 持久化+预填+代理预检真机通过 | 50% | 🚧 Phase 6 |
-| 统一实例台账 / 可观测 | App Desk Guard 台账+启停真机通过 | 45% | 🚧 Phase 7 |
+| 统一实例台账 / 可观测 | App Desk Guard 台账+启停+Windows 端到端通过 | 55% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈33%** | 🚧 |
+| **总目标** | — | **≈35%** | 🚧 |
 
 ---
 

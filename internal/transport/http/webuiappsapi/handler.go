@@ -427,7 +427,14 @@ func (handler *Handler) startGuard(instance appsessions.Instance) (appsessions.I
 	instance.GuardPID = pid
 	instance.GuardBackend = backend
 	instance.GuardActive = true
-	_ = appsessions.New(handler.aiHomeDir).SetGuard(instance.ID, pid, backend, "")
+	if err := appsessions.New(handler.aiHomeDir).SetGuard(instance.ID, pid, backend, ""); err != nil {
+		appguard.Stop(pid)
+		instance.GuardPID = 0
+		instance.GuardBackend = ""
+		instance.GuardActive = false
+		instance.GuardError = "记录 Guard 失败: " + err.Error()
+		return instance, instance.GuardError
+	}
 	return instance, ""
 }
 

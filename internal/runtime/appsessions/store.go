@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/appguard"
 	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 )
 
@@ -260,7 +261,7 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 		if guardPIDReferenced(document.Instances, pid) {
 			continue
 		}
-		_, _ = terminateProcesses(ctx, []int{pid})
+		appguard.Stop(pid)
 	}
 	if err := store.saveLocked(document); err != nil {
 		return results, err
@@ -474,7 +475,7 @@ func (store *Store) reapProxyEntriesLocked(document *storeDocument, now time.Tim
 		if instance.ExitedAtMs > 0 && now.Sub(time.UnixMilli(instance.ExitedAtMs)) < 3*time.Second {
 			continue
 		}
-		_, _ = terminateProcesses(context.Background(), []int{instance.GuardPID})
+		appguard.Stop(instance.GuardPID)
 		instance.GuardPID = 0
 		instance.GuardActive = false
 		changed = true

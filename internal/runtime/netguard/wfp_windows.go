@@ -27,6 +27,11 @@ const (
 // permitting loopback (the instance's proxy listener and AIH's local
 // gateway/OAuth callbacks).
 //
+// DNS note: Windows resolves names through Dnscache (svchost); those queries
+// carry svchost's PID, not the instance's. Per-process enforcement therefore
+// cannot stop resolver traffic at this layer — that belongs to the Phase 5
+// DNS policy.
+//
 // The driver keeps one global PID set, so the process-wide controller unions
 // the process trees of every live guard and pushes the union on each change.
 type WFPGuard struct {

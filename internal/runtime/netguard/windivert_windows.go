@@ -39,7 +39,9 @@ var (
 	winDivertSendProc       *syscall.Proc
 	iphlpapi                = syscall.NewLazyDLL("iphlpapi.dll")
 	procGetExtendedTcpTable = iphlpapi.NewProc("GetExtendedTcpTable")
+	procGetExtendedUdpTable = iphlpapi.NewProc("GetExtendedUdpTable")
 	processSnapshotFlag     = uintptr(0x00000002) // TH32CS_SNAPPROCESS
+	winDivertDebug          = strings.TrimSpace(os.Getenv("AIH_NETGUARD_DEBUG")) != ""
 )
 
 type processEntry32 struct {
@@ -55,18 +57,27 @@ type processEntry32 struct {
 	ExeFile         [260]uint16
 }
 
-// WinDivertGuard is the Windows P0 prototype adapter.
+// WinDivertGuard is the Windows strict adapter that works with the signed
+// WinDivert driver (no test signing or reboot).
 //
-// It drops outbound non-loopback IPv4 TCP packets whose owning process belongs
-// to the instance tree, using the Windows owner table as the 5-tuple → PID
-// bridge (WinDivert's NETWORK layer does not support processId). Apps that use
-// the local proxy continue to work because loopback is outside the filter;
-// apps that bypass it fail closed.
+// It drops outbound non-loopback IPv4/IPv6 TCP and UDP packets whose owning
+// process belongs to the instance tree, using the Windows owner tables as the
+// 5-tuple → PID bridge (WinDivert's NETWORK layer does not support processId).
+// Apps that use the local proxy continue to work because loopback is outside
+// the filter; apps that bypass it fail closed, including direct UDP/QUIC from
+// the protected process tree.
 //
-// Scope/limits of this prototype: only IPv4 TCP is enforced. UDP attribution
-// (including DNS), IPv6, suspended launch and sub-250ms child races are not
-// solved. UDP is deliberately not captured until the owner-table reinjection
-// is correct; the WFP callout adapter owns the final strict contract.
+// DNS note: Windows resolves names through the Dnscache service (svchost), so
+// an application's DNS query is sent by svchost and cannot be attributed to
+// the instance at this layer. Blocking local DNS therefore needs the Phase 5
+// DNS policy; this guard only stops direct UDP including direct DNS queries
+// the protected process itself makes.
+//
+// Limits: ICMP/raw-IP packets cannot be attributed to a PID at this layer and
+// are not blocked; a packet sent between process creation and the owner-table
+// entry is not attributed; process-ID reuse is handled by refreshing the PID
+// set but not verified against process start time. The WFP callout adapter
+// (wfp_windows.go) is the kernel-grade backend once test signing is available.
 type WinDivertGuard struct {
 	options Options
 
@@ -313,38 +324,98 @@ func (guard *WinDivertGuard) drain(handle uintptr) {
 // processId; the owner table is the supported bridge between the 5-tuple and
 // the instance's process tree.
 func (guard *WinDivertGuard) packetBelongsToInstance(packet []byte) bool {
-	if len(packet) < 20 {
+	protocol, port, ok := transportSource(packet)
+	if !ok {
 		return false
 	}
-	version := packet[0] >> 4
-	if version != 4 {
-		// IPv6 attribution is not implemented in P0; leave it for the WFP
-		// adapter rather than pretending it is blocked.
-		return false
+	family := uint16(syscall.AF_INET)
+	if packet[0]>>4 == 6 {
+		family = syscall.AF_INET6
 	}
-	headerLen := int(packet[0]&0x0f) * 4
-	if headerLen < 20 || len(packet) < headerLen+4 {
-		return false
-	}
-	protocol := packet[9]
-	if protocol != 6 && protocol != 17 {
-		return false
-	}
-	srcPort := binary.BigEndian.Uint16(packet[headerLen : headerLen+2])
-	pid := lookupOwnerPID(protocol, srcPort)
+	pid := lookupOwnerPID(family, protocol, port)
 	if pid <= 0 {
+		if winDivertDebug {
+			fmt.Fprintf(os.Stderr, "windivert unattributed v=%d proto=%d port=%d\n", packet[0]>>4, protocol, port)
+		}
 		return false
 	}
 	guard.mu.Lock()
 	_, target := guard.pids[pid]
 	guard.mu.Unlock()
+	if winDivertDebug {
+		fmt.Fprintf(os.Stderr, "windivert packet v=%d proto=%d port=%d pid=%d protected=%v\n", packet[0]>>4, protocol, port, pid, target)
+	}
 	return target
+}
+
+// transportSource extracts the transport protocol and source port from an
+// IPv4 or IPv6 packet, walking the common IPv6 extension headers.
+func transportSource(packet []byte) (byte, uint16, bool) {
+	if len(packet) < 1 {
+		return 0, 0, false
+	}
+	switch packet[0] >> 4 {
+	case 4:
+		if len(packet) < 20 {
+			return 0, 0, false
+		}
+		headerLen := int(packet[0]&0x0f) * 4
+		if headerLen < 20 || len(packet) < headerLen+4 {
+			return 0, 0, false
+		}
+		protocol := packet[9]
+		if protocol != 6 && protocol != 17 {
+			return 0, 0, false
+		}
+		return protocol, binary.BigEndian.Uint16(packet[headerLen : headerLen+2]), true
+	case 6:
+		if len(packet) < 40 {
+			return 0, 0, false
+		}
+		next := packet[6]
+		offset := 40
+		for hops := 0; hops < 8; hops++ {
+			switch next {
+			case 0, 43, 60: // hop-by-hop, routing, destination options
+				if offset+2 > len(packet) {
+					return 0, 0, false
+				}
+				length := (int(packet[offset+1]) + 1) * 8
+				next = packet[offset]
+				offset += length
+			case 44: // fragment
+				if offset+8 > len(packet) {
+					return 0, 0, false
+				}
+				next = packet[offset]
+				offset += 8
+			case 51: // authentication header
+				if offset+2 > len(packet) {
+					return 0, 0, false
+				}
+				length := (int(packet[offset+1]) + 2) * 4
+				next = packet[offset]
+				offset += length
+			case 6, 17:
+				if offset+4 > len(packet) {
+					return 0, 0, false
+				}
+				return next, binary.BigEndian.Uint16(packet[offset : offset+2]), true
+			default:
+				return 0, 0, false
+			}
+			if offset > len(packet) {
+				return 0, 0, false
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 // lookupOwnerPID maps a local TCP/UDP port to its owning PID. Results are
 // cached briefly; the tables are queried only for ports not seen before.
-func lookupOwnerPID(protocol byte, port uint16) int {
-	key := fmt.Sprintf("%d:%d", protocol, port)
+func lookupOwnerPID(family uint16, protocol byte, port uint16) int {
+	key := ownerKey{family: family, protocol: protocol, port: port}
 	if value, ok := ownerCache.Load(key); ok {
 		entry := value.(ownerCacheEntry)
 		if entry.pid > 0 && time.Since(entry.at) < 3*time.Second {
@@ -353,14 +424,20 @@ func lookupOwnerPID(protocol byte, port uint16) int {
 	}
 	var pid int
 	if protocol == 6 {
-		pid = tcpOwnerPID(port)
+		pid = tcpOwnerPID(family, port)
 	} else {
-		pid = udpOwnerPID(port)
+		pid = udpOwnerPID(family, port)
 	}
 	if pid > 0 {
 		ownerCache.Store(key, ownerCacheEntry{pid: pid, at: time.Now()})
 	}
 	return pid
+}
+
+type ownerKey struct {
+	family   uint16
+	protocol byte
+	port     uint16
 }
 
 type ownerCacheEntry struct {
@@ -370,76 +447,57 @@ type ownerCacheEntry struct {
 
 var ownerCache sync.Map
 
-func tcpOwnerPID(port uint16) int {
+const (
+	tcpTableOwnerPIDAll = 5
+	udpTableOwnerPID    = 1
+)
+
+func tcpOwnerPID(family uint16, port uint16) int {
+	if family == syscall.AF_INET6 {
+		return queryOwnerPID(procGetExtendedTcpTable, family, tcpTableOwnerPIDAll, 56, 20, 52, port)
+	}
+	return queryOwnerPID(procGetExtendedTcpTable, family, tcpTableOwnerPIDAll, 24, 8, 20, port)
+}
+
+func udpOwnerPID(family uint16, port uint16) int {
+	if family == syscall.AF_INET6 {
+		return queryOwnerPID(procGetExtendedUdpTable, family, udpTableOwnerPID, 28, 20, 24, port)
+	}
+	return queryOwnerPID(procGetExtendedUdpTable, family, udpTableOwnerPID, 12, 4, 8, port)
+}
+
+func queryOwnerPID(proc *syscall.LazyProc, family uint16, tableClass uint32, rowSize, portOffset, pidOffset int, port uint16) int {
 	var size uint32
-	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, syscall.AF_INET, 5, 0)
+	proc.Call(0, uintptr(unsafe.Pointer(&size)), 0, uintptr(family), uintptr(tableClass), 0)
 	if size == 0 {
 		return 0
 	}
 	buffer := make([]byte, size)
-	result, _, _ := procGetExtendedTcpTable.Call(
+	result, _, _ := proc.Call(
 		uintptr(unsafe.Pointer(&buffer[0])),
 		uintptr(unsafe.Pointer(&size)),
-		0, syscall.AF_INET, 5, 0,
+		0, uintptr(family), uintptr(tableClass), 0,
 	)
 	if result != 0 {
 		return 0
 	}
-	return findTCPOwner(buffer, port)
+	return findOwner(buffer, rowSize, portOffset, pidOffset, port)
 }
 
-func findTCPOwner(buffer []byte, port uint16) int {
+func findOwner(buffer []byte, rowSize, portOffset, pidOffset int, port uint16) int {
 	if len(buffer) < 4 {
 		return 0
 	}
 	count := int(binary.LittleEndian.Uint32(buffer[:4]))
 	offset := 4
-	const rowSize = 24
 	for index := 0; index < count && offset+rowSize <= len(buffer); index++ {
 		row := buffer[offset : offset+rowSize]
-		localPort := binary.LittleEndian.Uint32(row[8:12])
+		localPort := binary.LittleEndian.Uint32(row[portOffset : portOffset+4])
 		if byteSwap16(uint16(localPort)) != port {
 			offset += rowSize
 			continue
 		}
-		return int(binary.LittleEndian.Uint32(row[20:24]))
-	}
-	return 0
-}
-
-func udpOwnerPID(port uint16) int {
-	var size uint32
-	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, syscall.AF_INET, 1, 0)
-	if size == 0 {
-		return 0
-	}
-	buffer := make([]byte, size)
-	result, _, _ := procGetExtendedTcpTable.Call(
-		uintptr(unsafe.Pointer(&buffer[0])),
-		uintptr(unsafe.Pointer(&size)),
-		0, syscall.AF_INET, 1, 0,
-	)
-	if result != 0 {
-		return 0
-	}
-	return findUDPOwner(buffer, port)
-}
-
-func findUDPOwner(buffer []byte, port uint16) int {
-	if len(buffer) < 4 {
-		return 0
-	}
-	count := int(binary.LittleEndian.Uint32(buffer[:4]))
-	offset := 4
-	const rowSize = 12
-	for index := 0; index < count && offset+rowSize <= len(buffer); index++ {
-		row := buffer[offset : offset+rowSize]
-		localPort := binary.LittleEndian.Uint32(row[4:8])
-		if byteSwap16(uint16(localPort)) != port {
-			offset += rowSize
-			continue
-		}
-		return int(binary.LittleEndian.Uint32(row[8:12]))
+		return int(binary.LittleEndian.Uint32(row[pidOffset : pidOffset+4]))
 	}
 	return 0
 }

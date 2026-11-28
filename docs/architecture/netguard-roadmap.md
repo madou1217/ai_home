@@ -62,14 +62,17 @@
 - [x] 改为 5-tuple → Windows TCP/UDP owner table → PID 的桥接方案
 - [x] 目标进程 IPv4 TCP 直连阻断（真机：目标 `DIRECT_ERROR`，`blocked=3`）
 - [x] 非目标进程不受影响（真机：另一个进程 `DIRECT_OK 200`）
-- [ ] UDP owner table 命中（真机：owner-table 重注入会让目标 UDP 超时但 blocked=0，系统 UDP 也可能被误伤；当前 P0 过滤器明确只采集 TCP，UDP 不声称已控制）
-- [ ] IPv6 外部流量归因/阻断（P0 未实现）
-- [ ] 启动 suspended / Job Object：消除初始进程跟踪竞态
-- [ ] 代理 loopback 放行验证（过滤器排除 loopback，但未做正向请求验收）
-- [ ] 代理断开 fail closed 验收（当前 guard 只阻断；与入口 fail closed 联调未做）
-- [ ] 子进程验收（当前有 250ms 轮询 watcher，测试客户端未跑通）
+- [x] UDP owner table 命中（真机：目标 UDP 53 请求超时，`blocked=4` 中含 UDP；修复点：UDP 必须调用 `GetExtendedUdpTable`，不能复用 TCP 表函数）
+- [x] IPv4 UDP 归因/阻断（真机：目标进程直接 `UdpClient.Send` 到 223.5.5.5:53 无响应；非目标 UDP 正常）
+- [x] 子进程继承验收（真机：根 `cmd.exe` 被保护，其 `powershell` 子进程 TCP/UDP 均被阻断，loopback 正常）
+- [x] 代理 loopback 放行验证（真机：受保护进程连接 127.0.0.1:18080 成功）
+- [x] 代理断开 fail closed 验收（guard 阻断外部，进程只能走 loopback；入口断开时请求失败，未直连）
+- [ ] IPv6 外部流量归因/阻断（代码已实现 AF_INET6 TCP/UDP owner table 与 IPv6 扩展头解析；该真机无全局 IPv6 地址，未验收）
+- [ ] ICMP/raw IP 归因（NETWORK 层无法按 PID 归因，未阻断）
+- [ ] 启动 suspended / Job Object：消除初始进程跟踪竞态（当前 250ms watcher）
+- [ ] DNS 经 Dnscache 的归因（Windows DNS 客户端在 svchost 中发包，按 PID 阻断无法覆盖；Phase 5 处理）
 
-**WinDivert 结论**：它是 P0 的**可运行原型**，但 WinDivert 无法提供内核级 processId 归因；UDP/IPv6/竞态无法达到“精确 per-instance”验收。长期必须用 WFP callout。
+**WinDivert 结论**：已从“IPv4 TCP 原型”升级为 Windows 的**可用严格后端**（IPv4 TCP+UDP、子进程、loopback 放行、fail closed，真机通过）。仍缺 IPv6 真机验证、ICMP/raw、启动竞态与 DNS/Dnscache；WFP callout（已编译/签名/安装）在内核归因与 IPv6/ICMP 上更完整，待 test signing 重启后加载对比。
 
 ### 2.1a WFP 前置条件（构建链已通，加载待重启）
 
@@ -225,8 +228,8 @@
 | 代理选择 / 临时入口 / 稳定端口 / 健康 | 高 | 90% | ✅ 基础完成 |
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
-| 严格进程级网络控制（跨平台） | 中 | 18% | 🚧 Phase 1/2/3 |
-| Windows per-instance GUI（JP/SG） | P0 TCP + WFP 驱动可编译/签名/安装 | 15% | 🚧 Phase 2 |
+| 严格进程级网络控制（跨平台） | 中 | 22% | 🚧 Phase 1/2/3 |
+| Windows per-instance GUI（JP/SG） | WinDivert IPv4 TCP+UDP 子进程真机通过；WFP 待加载 | 22% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+三 CLI 启动已验证 | 40% | 🚧 Phase 3 |
 | macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
@@ -235,7 +238,7 @@
 | 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈24%** | 🚧 |
+| **总目标** | — | **≈26%** | 🚧 |
 
 ---
 
@@ -258,8 +261,8 @@
 
 ## 当前状态
 
-- 当前阶段：**Windows WFP 驱动已编译+签名+安装；待 test signing 重启后加载验收**
-- 已完成：Phase 0；Phase 1 契约代码；P0 IPv4 TCP；WFP 驱动构建链/驱动骨架/用户态控制；macOS CLI sandbox；Linux cgroup 阻断
+- 当前阶段：**Windows WinDivert 严格后端已真机通过（IPv4 TCP+UDP、子进程、loopback、fail closed）；WFP 驱动待 testsigning 重启加载**
+- 已完成：Phase 0；Phase 1 契约代码；WinDivert IPv4 TCP+UDP/子进程阻断；WFP 驱动构建链/驱动骨架/用户态控制；macOS CLI sandbox；Linux cgroup 阻断
 - 未开始：Phase 2.2 P1 透明 TCP、Phase 3.2 vendor GUI、Phase 5–9
 - 最近更新：2026-11-28
-- 证据：Windows 目标 `DIRECT_ERROR`/`blocked=3`、非目标 `DIRECT_OK 200`；`aih-netguard.sys` 9,728 B、签名 `Valid`、`sc create` 成功、`sc start` = 577（testsigning 未开）；macOS 代理 204、`--noproxy '*'` 拒绝、双实例 AU/SG；Linux cgroup 目标 timeout、loopback 200、其他 301
+- 证据：Windows 受保护子进程 TCP/UDP 外联 `TIMEOUT`、loopback `OK`、非目标 `NON_TARGET_TCP True`、`blocked=4`；`aih-netguard.sys` 9,728 B、签名 `Valid`、`sc start` = 577（testsigning 未开）；macOS 代理 204、`--noproxy '*'` 拒绝、双实例 AU/SG；Linux cgroup 目标 timeout、loopback 200、其他 301

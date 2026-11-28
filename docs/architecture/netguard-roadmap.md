@@ -149,7 +149,8 @@
 
 - [x] Chromium GUI 直接可执行 + sandbox 原型：Chrome 启动、建立到 6152 的连接；外层 sandbox 拒绝直连
 - [x] 需要 `--no-sandbox` 才能避免 Chromium 嵌套 sandbox 初始化失败（安全降级，需决策）
-- [ ] Vendor Electron App / AGY `open -a` 路径改造
+- [x] Chromium GUI 沙箱启动（opt-in `AIH_NETGUARD_SANDBOX_GUI=1`）：直接执行 bundle 可执行文件 + sandbox-exec + `--no-sandbox`；真机 Chrome 全部 TCP 只连 127.0.0.1:6152，无外部连接
+- [ ] Vendor Electron App / AGY `open -a` 路径改造（LaunchServices/TCC/更新器）
 - [ ] 窗口/TCC/单实例/OAuth 深链/更新器验证
 - [ ] 无法满足时决策 Network Extension（签名扩展）
 - [ ] 系统 XPC/nsurlsessiond/更新器边界文档化

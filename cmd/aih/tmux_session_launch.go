@@ -82,6 +82,9 @@ func maybeRunInTmux(
 		}
 		return true, fmt.Errorf("创建 tmux 会话失败: %w", err)
 	}
+	// 进程退出后保留 dead pane：ss 能看到“已结束”并给出真实错误，
+	// 而不是 attach 失败后只剩一句 exit status 1。
+	_ = exec.Command(tmuxPath, "-L", socket, "set-option", "-t", name, "remain-on-exit", "on").Run()
 	defer func() {
 		if registry == nil {
 			return
@@ -97,6 +100,9 @@ func maybeRunInTmux(
 	attach.Stdout = runtime.stdout
 	attach.Stderr = runtime.stderr
 	if err := attach.Run(); err != nil {
+		if output, captureErr := exec.Command(tmuxPath, "-L", socket, "capture-pane", "-p", "-t", "="+name).Output(); captureErr == nil && len(output) > 0 {
+			_, _ = runtime.stderr.Write(output)
+		}
 		return true, err
 	}
 	return true, nil

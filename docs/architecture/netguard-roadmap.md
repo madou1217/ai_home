@@ -253,7 +253,7 @@
 | 代理断链 fail closed | 高 | 85% | ✅ 基础完成 |
 | 进程归属 / 结束家族 / 孤儿回收 | 高 | 85% | ✅ 基础完成 |
 | 严格进程级网络控制（跨平台） | 中 | 30% | 🚧 Phase 1/2/3 |
-| Windows per-instance GUI（JP/SG） | WFP 阻断曾真机通过但已因蓝屏停用；当前 WinDivert 严格启动可用 | 50% | 🚧 Phase 2 |
+| Windows per-instance GUI（JP/SG） | 稳定版 WFP 已恢复并回归通过；redirect 试验停用 | 55% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+Claude/Codex 真实 API 通过 | 50% | 🚧 Phase 3 |
 | macOS GUI strict | App Desk 严格启动走 sandbox-exec，台账/进程真机通过 | 45% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
@@ -262,7 +262,7 @@
 | 统一实例台账 / 可观测 | App Desk Guard + Provider open-app/原生 CLI 台账 | 65% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈48%** | 🚧 |
+| **总目标** | — | **≈50%** | 🚧 |
 
 ---
 

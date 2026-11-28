@@ -78,7 +78,6 @@ function buildEvidencedSessionStubs(
   serverId: string,
   directorySessions: TerminalDirectorySession[],
   interactiveTabs: WebTerminalTab[],
-  unavailableTabs: WebTerminalTab[],
   excludedKeys: ReadonlySet<string>,
 ): OfficeSessionItem[] {
   const seen = new Set<string>();
@@ -120,9 +119,6 @@ function buildEvidencedSessionStubs(
     );
   }
   for (const tab of interactiveTabs) {
-    pushStub(tab.sessionKey, tab.harness || '', tab.nativeSessionId);
-  }
-  for (const tab of unavailableTabs) {
     pushStub(tab.sessionKey, tab.harness || '', tab.nativeSessionId);
   }
   return stubs;
@@ -222,11 +218,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     return manager.tabs.filter((tab) => !terminatedSessionKeys.has(tab.sessionKey));
   }, [manager.tabs, terminatedSessionKeys]);
 
-  const effectiveUnavailableTabs = useMemo<WebTerminalTab[]>(() => {
-    if (terminatedSessionKeys.size === 0) return manager.unavailableTabs;
-    return manager.unavailableTabs.filter((tab) => !terminatedSessionKeys.has(tab.sessionKey));
-  }, [manager.unavailableTabs, terminatedSessionKeys]);
-
   const [query, setQuery] = useState('');
   const [providerFilter, setProviderFilter] = useState('all');
 
@@ -280,13 +271,11 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       manager.serverId,
       effectiveDirectorySessions,
       effectiveInteractiveTabs,
-      effectiveUnavailableTabs,
       excludedSessionKeys,
     ),
     [
       effectiveDirectorySessions,
       effectiveInteractiveTabs,
-      effectiveUnavailableTabs,
       excludedSessionKeys,
       manager.serverId,
     ],
@@ -348,24 +337,12 @@ export function useSessionOfficeData(): SessionOfficeDataState {
         dir ? dir.status === 'running' : true,
       );
     }
-    for (const tab of effectiveUnavailableTabs) {
-      const dir = dirByKey.get(tab.sessionKey);
-      consider(
-        tab.sessionKey,
-        dir?.provider || tab.harness,
-        dir?.nativeSessionId || tab.nativeSessionId,
-        dir?.cwd ?? tab.cwd,
-        false,
-      );
-    }
-
     const allTargets = [...targetsByKey.values()];
     allTargets.sort((a, b) => Number(b.isRunning) - Number(a.isRunning));
     return allTargets;
   }, [
     effectiveDirectorySessions,
     effectiveInteractiveTabs,
-    effectiveUnavailableTabs,
     excludedSessionKeys,
     manager.serverId,
   ]);
@@ -442,7 +419,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       serverId: manager.serverId,
       directorySessions: effectiveDirectorySessions,
       interactiveTabs: effectiveInteractiveTabs,
-      unavailableTabs: effectiveUnavailableTabs,
       hiddenSessionKeys: excludedSessionKeys,
       previewsByCacheKey: previewCache,
       query,
@@ -451,7 +427,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     [
       effectiveDirectorySessions,
       effectiveInteractiveTabs,
-      effectiveUnavailableTabs,
       excludedSessionKeys,
       manager.serverId,
       previewCache,
@@ -678,13 +653,10 @@ export function useSessionOfficeData(): SessionOfficeDataState {
 
   const hideSession = useCallback((sessionId: string) => {
     const tab = effectiveInteractiveTabs.find((item) => item.id === sessionId || item.sessionKey === sessionId);
-    const unavailableTab = effectiveUnavailableTabs.find(
-      (item) => item.id === sessionId || item.sessionKey === sessionId,
-    );
     const dirSession = effectiveDirectorySessions.find(
       (item) => `web-terminal:${item.sessionKey}` === sessionId || item.sessionKey === sessionId,
     );
-    const targetSessionKey = tab?.sessionKey || unavailableTab?.sessionKey || dirSession?.sessionKey;
+    const targetSessionKey = tab?.sessionKey || dirSession?.sessionKey;
     if (!targetSessionKey) return;
 
     setHiddenState((current) => {
@@ -704,7 +676,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     if (tab) {
       manager.closeTab(tab.id);
     }
-  }, [effectiveDirectorySessions, effectiveInteractiveTabs, effectiveUnavailableTabs, manager]);
+  }, [effectiveDirectorySessions, effectiveInteractiveTabs, manager]);
 
   const restoreHiddenSessions = useCallback(() => {
     setHiddenState({ serverId: manager.serverId, keys: [] });
@@ -741,7 +713,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     rooms: workspace.rooms,
     filteredRooms: workspace.filteredRooms,
     allSessions: workspace.allSessions,
-    unavailableSessions: workspace.unavailableSessions,
     hiddenCount: hiddenKeysList.length,
     providerOptions: workspace.providerOptions,
     query,

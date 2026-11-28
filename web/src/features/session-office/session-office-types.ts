@@ -42,7 +42,6 @@ export interface OfficeProjectRoom {
   isFallbackRoom: boolean;
   sessions: OfficeSessionItem[];
   runningCount: number;
-  unavailableCount: number;
   exitedCount: number;
 }
 
@@ -72,7 +71,6 @@ export interface SessionOfficeDataState {
   rooms: OfficeProjectRoom[];
   filteredRooms: OfficeProjectRoom[];
   allSessions: OfficeSessionItem[];
-  unavailableSessions: OfficeSessionItem[];
   hiddenCount: number;
   providerOptions: string[];
   query: string;

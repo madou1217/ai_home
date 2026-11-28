@@ -824,9 +824,6 @@ export function OfficeRoom({
 
           <div className="office-room-counters">
             <span className="office-pill office-pill--ok">运行 {room.runningCount}</span>
-            {room.unavailableCount > 0 ? (
-              <span className="office-pill office-pill--warn">保留 {room.unavailableCount}</span>
-            ) : null}
             {room.exitedCount > 0 ? (
               <span className="office-pill">已退 {room.exitedCount}</span>
             ) : null}

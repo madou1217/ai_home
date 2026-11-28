@@ -18,7 +18,6 @@ export interface BuildOfficeWorkspaceInput {
   serverId: string;
   directorySessions: TerminalDirectorySession[];
   interactiveTabs: WebTerminalTab[];
-  unavailableTabs: WebTerminalTab[];
   hiddenSessionKeys: ReadonlySet<string>;
   previewsByCacheKey: ReadonlyMap<string, SessionPreviewCacheEntry>;
   query: string;
@@ -29,7 +28,6 @@ export interface OfficeWorkspaceSnapshot {
   rooms: OfficeProjectRoom[];
   filteredRooms: OfficeProjectRoom[];
   allSessions: OfficeSessionItem[];
-  unavailableSessions: OfficeSessionItem[];
   providerOptions: string[];
 }
 
@@ -179,33 +177,21 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
     interactiveByKey.set(tab.sessionKey, tab);
   }
 
-  const unavailableByKey = new Map<string, WebTerminalTab>();
-  for (const tab of input.unavailableTabs) {
-    if (!tab.sessionKey || input.hiddenSessionKeys.has(tab.sessionKey)) continue;
-    unavailableByKey.set(tab.sessionKey, tab);
-  }
-
   const allKeys = new Set<string>([
     ...dirByKey.keys(),
     ...interactiveByKey.keys(),
-    ...unavailableByKey.keys(),
   ]);
 
   const draftItems: OfficeSessionItem[] = [];
   for (const sessionKey of allKeys) {
     const dir = dirByKey.get(sessionKey);
     const interactiveTab = interactiveByKey.get(sessionKey);
-    const unavailableTab = unavailableByKey.get(sessionKey);
 
     let availability: SessionAvailability;
     let canAttachTerminal = false;
     let tab: WebTerminalTab | undefined;
 
-    if (unavailableTab) {
-      availability = 'unavailable';
-      canAttachTerminal = false;
-      tab = unavailableTab;
-    } else if (interactiveTab) {
+    if (interactiveTab) {
       availability = 'interactive';
       canAttachTerminal = true;
       tab = interactiveTab;
@@ -298,13 +284,10 @@ function buildProjectRooms(sessions: OfficeSessionItem[]): OfficeProjectRoom[] {
   const rooms: OfficeProjectRoom[] = [];
   for (const [projectKey, roomSessions] of sessionsByProject.entries()) {
     let runningCount = 0;
-    let unavailableCount = 0;
     let exitedCount = 0;
     for (const session of roomSessions) {
       if (session.availability === 'interactive' || session.availability === 'directory-only') {
         runningCount += 1;
-      } else if (session.availability === 'unavailable') {
-        unavailableCount += 1;
       } else if (session.availability === 'exited') {
         exitedCount += 1;
       }
@@ -318,7 +301,6 @@ function buildProjectRooms(sessions: OfficeSessionItem[]): OfficeProjectRoom[] {
       isFallbackRoom,
       sessions: roomSessions,
       runningCount,
-      unavailableCount,
       exitedCount,
     });
   }
@@ -379,13 +361,10 @@ function filterProjectRooms(
     if (matchingSessions.length === 0) continue;
 
     let runningCount = 0;
-    let unavailableCount = 0;
     let exitedCount = 0;
     for (const session of matchingSessions) {
       if (session.availability === 'interactive' || session.availability === 'directory-only') {
         runningCount += 1;
-      } else if (session.availability === 'unavailable') {
-        unavailableCount += 1;
       } else if (session.availability === 'exited') {
         exitedCount += 1;
       }
@@ -395,7 +374,6 @@ function filterProjectRooms(
       ...room,
       sessions: matchingSessions,
       runningCount,
-      unavailableCount,
       exitedCount,
     });
   }
@@ -406,8 +384,6 @@ export function buildOfficeWorkspaceModel(input: BuildOfficeWorkspaceInput): Off
   const allSessions = buildJoinedSessions(input);
   const rooms = buildProjectRooms(allSessions);
   const filteredRooms = filterProjectRooms(rooms, input.query, input.providerFilter);
-  const unavailableSessions = allSessions.filter((session) => session.availability === 'unavailable');
-
   const providerSet = new Set<string>();
   for (const session of allSessions) {
     const provider = session.provider || session.harness || '';
@@ -419,7 +395,6 @@ export function buildOfficeWorkspaceModel(input: BuildOfficeWorkspaceInput): Off
     rooms,
     filteredRooms,
     allSessions,
-    unavailableSessions,
     providerOptions,
   };
 }

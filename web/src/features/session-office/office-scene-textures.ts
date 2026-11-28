@@ -596,7 +596,7 @@ export function updateRoomTerminalTexture(
     palette.mode,
     String(state.totalSessionCount),
     String(state.runningCount),
-    String(state.sessions.filter((session) => session.availability === 'unavailable').length),
+    String(state.sessions.filter((session) => session.availability === 'exited').length),
   ].join('|');
   if (bundle.lastSignature === sig) return false;
   bundle.lastSignature = sig;
@@ -626,10 +626,10 @@ export function updateRoomTerminalTexture(
     ctx.textAlign = 'left';
   };
 
-  const unavailable = state.sessions.filter((session) => session.availability === 'unavailable').length;
+  const exited = state.sessions.filter((session) => session.availability === 'exited').length;
   drawStat('工位', String(state.totalSessionCount), 72, '#ffffff');
   drawStat('运行', String(state.runningCount), 134, state.runningCount > 0 ? palette.successHex : '#ffffff');
-  drawStat('暂不可用', String(unavailable), 196, unavailable > 0 ? palette.warningHex : '#ffffff');
+  drawStat('已退', String(exited), 196, exited > 0 ? palette.warningHex : '#ffffff');
 
   ctx.font = `700 20px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = palette.accentHex;

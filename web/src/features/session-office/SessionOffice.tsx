@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
-  DownOutlined,
   ExclamationCircleOutlined,
   EyeOutlined,
   FolderOutlined,
   PlusOutlined,
   ReloadOutlined,
-  RightOutlined,
 } from '@ant-design/icons';
 import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
@@ -88,7 +85,6 @@ export default function SessionOffice({
     rooms,
     filteredRooms,
     allSessions,
-    unavailableSessions,
     hiddenCount,
     providerOptions,
     query,
@@ -117,7 +113,6 @@ export default function SessionOffice({
   const [desktopOriginRect, setDesktopOriginRect] = useState<DesktopOriginRect | null>(null);
   const [zoomingSessionId, setZoomingSessionId] = useState<string | null>(null);
 
-  const [unavailableExpanded, setUnavailableExpanded] = useState(true);
 
   const [confirmTarget, setConfirmTarget] = useState<OfficeSessionItem | null>(null);
   const [confirmError, setConfirmError] = useState<string>('');
@@ -609,55 +604,6 @@ export default function SessionOffice({
             )}
           </div>
 
-          {unavailableSessions.length > 0 ? (
-            <div className="session-office-sidebar-footer">
-              <section className="session-office-unavailable" aria-label="暂不可接入的原会话">
-                <button
-                  type="button"
-                  className="session-office-unavailable-toggle"
-                  aria-expanded={unavailableExpanded}
-                  onClick={() => setUnavailableExpanded((prev) => !prev)}
-                >
-                  <span className="session-office-unavailable-label">
-                    <span className="hud-led hud-led--warn" aria-hidden="true" />
-                    <span>暂不可接入的原会话 ({unavailableSessions.length})</span>
-                  </span>
-                  {unavailableExpanded ? <DownOutlined /> : <RightOutlined />}
-                </button>
-
-                {unavailableExpanded ? (
-                  <div className="session-office-unavailable-body">
-                    <div className="session-office-unavailable-note">
-                      标识已保留 · 不会自动重启或替换
-                    </div>
-                    <ul className="session-office-unavailable-list">
-                      {unavailableSessions.map((session) => (
-                        <li key={session.id} className="session-office-unavailable-item">
-                          <div className="session-office-unavailable-info">
-                            <strong title={session.label}>{session.label}</strong>
-                            <span className="session-office-unavailable-cwd" title={session.cwd || '无工作目录'}>
-                              {session.cwd || '无工作目录'}
-                            </span>
-                            <code title={session.sessionKey}>
-                              {session.nativeSessionId || session.sessionKey}
-                            </code>
-                          </div>
-                          <Button
-                            size="small"
-                            type="text"
-                            icon={<CopyOutlined />}
-                            onClick={() => handleCopyIdentity(session)}
-                          >
-                            复制原标识
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </section>
-            </div>
-          ) : null}
         </aside>
 
         <section className="session-office-stage" aria-label="项目三维办公空间">

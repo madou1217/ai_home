@@ -7,6 +7,13 @@ const { spawn } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 // 锁放到共享缓存旁边：不同 worktree 构建同一个项目时串行，避免并发写同一份 webpack 缓存。
 const { buildQueueLockPath, pruneWebpackCaches } = require('./shared-cache.cjs');
+// 构建指纹：打包器据此判断 web/dist 能否复用。模块缺失（例如 web 被单独检出）时
+// 退化成不写戳，只让打包器下次重建，不影响构建本身。
+let computeWebFingerprint = () => '';
+let writeWebStamp = () => {};
+try {
+  ({ computeWebFingerprint, writeWebStamp } = require(path.resolve(__dirname, '..', '..', 'scripts', 'package', 'web-fingerprint.js')));
+} catch (_error) { /* 没有打包器脚本 */ }
 const lockPath = buildQueueLockPath(root);
 const pollMs = 250;
 const maxWaitMs = 30 * 60 * 1000;
@@ -97,10 +104,14 @@ async function main() {
     // 「Web UI not built」。
     const staging = STAGING_DIR;
     await fs.rm(path.join(root, staging), { recursive: true, force: true });
+    // 指纹必须在构建前取：它描述“这份 dist 由哪份输入构建而来”，
+    // 打包器据此判断能否复用（见 scripts/package/web-fingerprint.js）。
+    const fingerprint = computeWebFingerprint(root);
     const env = { ...process.env, AIH_WEB_OUT_DIR: staging };
     await run(process.execPath, [path.join(root, 'scripts', 'build.cjs')], env);
     await run(process.execPath, [path.join(root, 'scripts', 'stamp-sw-cache.cjs')], env);
     await verifyBuildOutput(path.join(root, staging));
+    writeWebStamp(path.join(root, staging), fingerprint);
     await swapIntoPlace(path.join(root, staging), path.join(root, 'dist'));
   } catch (error) {
     await fs.rm(path.join(root, STAGING_DIR), { recursive: true, force: true }).catch(() => {});

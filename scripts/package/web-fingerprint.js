@@ -27,7 +27,10 @@ const INPUT_ENTRIES = [
   'eslint.config.js'
 ];
 
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'output', '.cache', '.umi', '.git']);
+// Umi 会在构建时把生成的代码写进 web/src/.umi-production（以及 .umi / .umi-development），
+// 这些目录属于产物，不参与指纹；否则每次构建都会改变指纹，缓存永远命不中。
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'output', '.cache', '.git']);
+const isSkippedDir = (name) => SKIP_DIRS.has(name) || name.startsWith('.umi');
 
 function hashFile(file) {
   const hash = crypto.createHash('sha256');
@@ -43,7 +46,7 @@ function collect(directory, relative, entries) {
     const stat = fs.lstatSync(absolute);
     if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
-      if (SKIP_DIRS.has(name)) continue;
+      if (isSkippedDir(name)) continue;
       collect(absolute, rel, entries);
       continue;
     }

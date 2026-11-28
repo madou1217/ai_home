@@ -312,6 +312,15 @@ func lstatMaybe(path string) (os.FileInfo, error) {
 }
 
 func atomicWriteFile(filePath string, data []byte, defaultPerm os.FileMode) error {
+	// 各 AI 指令文件可能是共用真源的软链（如 ~/.gemini/GEMINI.md -> ~/AGENTS.md）。
+	// 写入要穿透软链改真源，不能把链接替换成普通文件，否则统一布局会被写坏。
+	if linkInfo, linkErr := os.Lstat(filePath); linkErr == nil && linkInfo.Mode()&os.ModeSymlink != 0 {
+		resolved, resolveErr := filepath.EvalSymlinks(filePath)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		filePath = resolved
+	}
 	info, err := lstatMaybe(filePath)
 	if err != nil {
 		return err

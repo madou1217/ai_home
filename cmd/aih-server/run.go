@@ -12,6 +12,7 @@ import (
 	"os"
 	goruntime "runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -19,6 +20,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
+	"github.com/madou1217/ai_home/internal/runtime/agentinstructions"
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
@@ -131,6 +133,9 @@ func run(
 	}
 	// 宿主受管 Codex 配置是常驻启动路径的共享事实；在装配网关前统一自愈一次。
 	healHostCodexAuthCommand(runtime)
+	// 全局 AI 指令文件统一到 <hostHome>/AGENTS.md：每次启动自愈一次，新装或
+	// 重装的 CLI 也会自动接上软链，不需要人工维护。
+	ensureGlobalAgentInstructions(runtime)
 	managementKey := config.managementKey
 	clientKey := config.clientKey
 	traceRemoteControl := config.codexHooks.traceRemoteControl
@@ -329,4 +334,35 @@ func validateCommandRuntime(runtime commandRuntime) error {
 		return errInvalidCommandConfig
 	}
 	return nil
+}
+
+// ensureGlobalAgentInstructions 把各 AI CLI 的全局指令文件统一到
+// <hostHome>/AGENTS.md。失败只记日志：指令文件不可用不应阻塞 server 启动。
+func ensureGlobalAgentInstructions(runtime commandRuntime) {
+	hostHome := ""
+	if value, ok := runtime.lookupEnv("AIH_HOST_HOME"); ok {
+		hostHome = strings.TrimSpace(value)
+	}
+	if hostHome == "" {
+		home, err := runtime.userHomeDir()
+		if err != nil {
+			log.Printf("global agent instructions skipped: %v", err)
+			return
+		}
+		hostHome = home
+	}
+	result, err := agentinstructions.Ensure(context.Background(), agentinstructions.Options{
+		HostHome: hostHome,
+		Logf:     log.Printf,
+	})
+	if err != nil {
+		log.Printf("global agent instructions unavailable: %v", err)
+		return
+	}
+	if len(result.Linked) > 0 || len(result.Migrated) > 0 {
+		log.Printf(
+			"global agent instructions synced: canonical=%s linked=%d migrated=%d",
+			result.Canonical, len(result.Linked), len(result.Migrated),
+		)
+	}
 }

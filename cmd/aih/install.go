@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/agentinstructions"
 	"github.com/madou1217/ai_home/internal/runtime/completion"
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/manual"
@@ -65,6 +66,15 @@ func runInstallCommand(ctx context.Context, arguments []string, runtime commandR
 			Output:      runtime.stderr,
 		},
 	)
+	// 安装期就把各 AI 的全局指令文件接到 <hostHome>/AGENTS.md。server 启动时
+	// 还会自愈一次；这里做是为了 --no-service 的安装也能立即生效。
+	if err == nil {
+		installHostHome := strings.TrimSpace(*hostHome)
+		if installHostHome == "" {
+			installHostHome = strings.TrimSpace(result.Receipt.HostHome)
+		}
+		ensureHostAgentInstructions(ctx, runtime, installHostHome)
+	}
 	// 安装成功后把命令手册落到安装目录；它不是发布包里手写的 HTML，
 	// 而是由补全命令树在安装现场生成的构建产物。
 	if err == nil && strings.TrimSpace(result.Receipt.Home) != "" {
@@ -85,4 +95,30 @@ func runInstallCommand(ctx context.Context, arguments []string, runtime commandR
 		_, _ = fmt.Fprintln(runtime.stdout, "AIH 已安装，可运行 aih help 或打开 WebUI。")
 	}
 	return err
+}
+
+// ensureHostAgentInstructions 把各 AI 的全局指令文件统一到 <hostHome>/AGENTS.md。
+// 失败只提示，不影响安装结果。
+func ensureHostAgentInstructions(ctx context.Context, runtime commandRuntime, hostHome string) {
+	hostHome = strings.TrimSpace(hostHome)
+	if hostHome == "" {
+		return
+	}
+	result, err := agentinstructions.Ensure(ctx, agentinstructions.Options{
+		HostHome: hostHome,
+		Logf: func(format string, args ...any) {
+			_, _ = fmt.Fprintf(runtime.stderr, format+"\n", args...)
+		},
+	})
+	if err != nil {
+		_, _ = fmt.Fprintln(runtime.stderr, "[aih] 全局 AI 指令文件同步失败（不影响安装）："+err.Error())
+		return
+	}
+	if len(result.Linked) > 0 || len(result.Migrated) > 0 {
+		_, _ = fmt.Fprintf(
+			runtime.stderr,
+			"[aih] 全局 AI 指令文件已统一到 %s（链接 %d，迁移 %d）\n",
+			result.Canonical, len(result.Linked), len(result.Migrated),
+		)
+	}
 }

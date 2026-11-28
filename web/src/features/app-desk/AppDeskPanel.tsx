@@ -686,7 +686,7 @@ export default function AppDeskPanel() {
     }
   };
 
-  const handleLaunch = async () => {
+  const handleLaunch = async (force = false) => {
     if (!launchReady || launching) return;
     setLaunching(true);
     try {
@@ -694,7 +694,8 @@ export default function AppDeskPanel() {
         id: launchAppId,
         proxy: launchProxyMode !== 'direct',
         proxyUrl: launchProxyMode === 'custom' ? launchCustomUrl : undefined,
-        proxySelector: launchProxyMode === 'selector' ? launchSelectorValue : undefined
+        proxySelector: launchProxyMode === 'selector' ? launchSelectorValue : undefined,
+        force
       });
       if (!mountedRef.current) return;
       const proxyText = result.proxySelector
@@ -709,7 +710,24 @@ export default function AppDeskPanel() {
       void fetchDesk();
     } catch (error: unknown) {
       if (!mountedRef.current) return;
-      const text = describeAppDeskError(error, '启动应用失败');
+      const info = extractAppDeskError(error, '启动应用失败');
+      if (info.code === 'preflight_failed' && !force) {
+        Modal.confirm({
+          title: '代理入口预检未通过',
+          content: (
+            <div>
+              <p>{info.message}</p>
+              <p>继续启动后，应用只会走该代理；入口仍不可用时会直接失败，不会回退直连。</p>
+            </div>
+          ),
+          okText: '仍然启动',
+          cancelText: '取消',
+          okType: 'danger',
+          onOk: () => handleLaunch(true)
+        });
+        return;
+      }
+      const text = info.message || describeAppDeskError(error, '启动应用失败');
       showFeedback('error', `启动失败：${text}`);
       message.error(text);
     } finally {

@@ -211,6 +211,7 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		ProxySelector string `json:"proxySelector"`
 		NetworkMode   string `json:"networkMode"`
 		Remember      *bool  `json:"remember"`
+		Force         bool   `json:"force"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes))
 	decoder.DisallowUnknownFields()
@@ -267,6 +268,26 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 			}
 		}
 	}
+	preflightWarning := ""
+	if proxyURL != "" {
+		health, detail := appproxyhealth.Check(request.Context(), proxyURL)
+		if health != "ok" {
+			if !payload.Force {
+				writeJSON(response, http.StatusConflict, map[string]any{
+					"ok":      false,
+					"error":   "preflight_failed",
+					"message": "代理入口不可用：" + detail,
+					"preflight": map[string]any{
+						"proxyUrl": proxyURL,
+						"health":   health,
+						"detail":   detail,
+					},
+				})
+				return
+			}
+			preflightWarning = "代理入口不可用（已按请求继续）：" + detail
+		}
+	}
 	mode, err := handler.launcher.OpenWithProxy(request.Context(), app, applaunch.ProxyOptions{
 		URL:         proxyURL,
 		AIHomeDir:   handler.aiHomeDir,
@@ -309,6 +330,10 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		"proxyRegion":   entry.Region,
 		"proxyPid":      entry.PID,
 		"instance":      instance,
+		"preflight": map[string]any{
+			"ok":      preflightWarning == "",
+			"warning": preflightWarning,
+		},
 	}
 	if profileErr != nil {
 		responsePayload["profileError"] = profileErr.Error()

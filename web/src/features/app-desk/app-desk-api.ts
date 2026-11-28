@@ -99,6 +99,13 @@ export interface LocalAppLaunchInput {
   proxyUrl?: string;
   /** 节点/地区选择器；与 proxyUrl 互斥，由服务端按候选解析。 */
   proxySelector?: string;
+  /** 预检失败后用户选择“仍然启动”。 */
+  force?: boolean;
+}
+
+export interface AppDeskPreflightWarning {
+  ok: boolean;
+  warning?: string;
 }
 
 export interface LocalAppLaunchResponse {
@@ -109,6 +116,7 @@ export interface LocalAppLaunchResponse {
   proxySelector?: string;
   proxyRegion?: string;
   proxyPid?: number;
+  preflight?: AppDeskPreflightWarning;
 }
 
 export interface AppDeskKillResult {
@@ -135,11 +143,18 @@ export interface AppDeskKillResponse {
 }
 
 
+export interface AppDeskPreflightFailure {
+  proxyUrl?: string;
+  health?: string;
+  detail?: string;
+}
+
 export interface AppDeskErrorInfo {
   code?: string;
   message: string;
   status?: number;
   proxy?: AppDeskProxyStatus;
+  preflight?: AppDeskPreflightFailure;
 }
 
 const PUBLIC_BASE = '/webui/apps/desk';
@@ -261,6 +276,7 @@ export function extractAppDeskError(error: unknown, fallback = '请求失败'): 
         error?: string;
         message?: string;
         proxy?: Partial<AppDeskProxyStatus>;
+        preflight?: AppDeskPreflightFailure;
       };
     };
   })?.response;
@@ -274,7 +290,8 @@ export function extractAppDeskError(error: unknown, fallback = '请求失败'): 
     code,
     message,
     status: response?.status,
-    proxy
+    proxy,
+    preflight: response?.data?.preflight
   };
 }
 

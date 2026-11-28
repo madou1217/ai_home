@@ -172,7 +172,7 @@
 - [ ] per-instance 透明 TCP 重定向（当前为阻断；App 需使用代理）
 - [ ] 外部 UDP/QUIC/DNS 策略（cgroup 规则会 drop；系统 resolver 旁路待验证）
 - [ ] CLI strict 四家真实 API 验收
-- [x] 进程树验收：AWS 真机用子进程继承 cgroup，DNS/网络策略生效（GUI 显示未测，无桌面会话）
+- [x] Linux GUI 进程树验收：Xvfb + xterm 真机，已有子进程显式加入 cgroup；代理 200、直连超时、guard pids=3
 - [ ] 多实例不同代理验收
 - [ ] 与 Docker/Colima/VPN/Tailscale 规则冲突处理
 - [ ] 容器/VM 不在宿主进程树范围的文档化
@@ -258,13 +258,13 @@
 | Windows per-instance GUI（JP/SG） | 稳定版 WFP 已恢复并回归通过；redirect 试验停用 | 55% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+Claude/Codex 真实 API 通过 | 50% | 🚧 Phase 3 |
 | macOS GUI strict | App Desk sandbox-exec；Chrome/ChatGPT/VS Code 真机通过 | 55% | 🚧 Phase 3 |
-| Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
+| Linux CLI/GUI strict | cgroup 阻断 + Xvfb GUI 进程树真机通过 | 35% | 🚧 Phase 4 |
 | DNS Guard | Linux redirect→DoH 真机通过 | 30% | 🚧 Phase 5 |
 | LaunchProfile / preflight | App Desk 持久化+预填+代理预检真机通过 | 50% | 🚧 Phase 6 |
 | 统一实例台账 / 可观测 | App Desk Guard + Provider open-app/原生 CLI 台账 | 65% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈52%** | 🚧 |
+| **总目标** | — | **≈54%** | 🚧 |
 
 ---
 

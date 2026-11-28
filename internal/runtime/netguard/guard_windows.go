@@ -21,8 +21,9 @@ func New(options Options) (Guard, error) {
 	case "windivert":
 		return NewWinDivertGuard(options)
 	case "":
-		// WFP is loaded but its loopback exemption is still being fixed;
-		// keep the proven WinDivert backend as the default until then.
+		if wfpDeviceAvailable() {
+			return NewWFPGuard(options)
+		}
 		return NewWinDivertGuard(options)
 	default:
 		return nil, fmt.Errorf("未知 AIH_NETGUARD_BACKEND %q（可选 wfp / windivert）", backend)

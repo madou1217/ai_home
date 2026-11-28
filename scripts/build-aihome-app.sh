@@ -21,6 +21,9 @@ swiftc -O -target "$TARGET" -o "$APP/Contents/MacOS/ai-home" \
   "$ROOT/native/clipboard/LumenWorkspaceViews.swift" \
   "$ROOT/native/clipboard/ClipboardWorkspaceWindow.swift" \
   "$ROOT/native/clipboard/LumenOrbitViews.swift" \
+  "$ROOT/native/clipboard/LumenOrbitOpticalDotsView.swift" \
+  "$ROOT/native/clipboard/LumenOrbitDissolveEffect.swift" \
+  "$ROOT/native/clipboard/LumenOrbitViewport.swift" \
   "$ROOT/native/clipboard/QuickOrbitWindow.swift" \
   "$ROOT/native/aihome-app/main.swift" \
   -framework AppKit -framework ApplicationServices -framework CoreGraphics \

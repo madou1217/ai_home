@@ -2,6 +2,7 @@ package legacy
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"io"
@@ -69,6 +70,11 @@ func readClaudeProject(hostHome, projectDirName string, knownPaths []string, his
 		sessionPath := filepath.Join(projectDir, fileName)
 		sessionID := strings.TrimSuffix(fileName, ".jsonl")
 		title, cwd, sawMainThread := scanClaudeSession(sessionPath)
+		// Claude Code 自己维护的 session name（ai-title）优先于首条用户消息；
+		// 它通常写在文件尾部，读最后 64KB 足够，不能为了它重扫 24MB transcript。
+		if aiTitle := readClaudeAITitle(sessionPath); aiTitle != "" {
+			title = aiTitle
+		}
 		if resolvedCwd == "" && cwd != "" {
 			resolvedCwd = cwd
 		}
@@ -196,6 +202,52 @@ func skipClaudeTitle(text string) bool {
 		}
 	}
 	return false
+}
+
+// readClaudeAITitle 读取 Claude 自己生成的 session name。
+// ai-title 记录写在 transcript 尾部（通常最后几十 KB），只读尾窗口并取最后一条。
+func readClaudeAITitle(filePath string) string {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	const tailBytes = 64 * 1024
+	start := info.Size() - tailBytes
+	if start < 0 {
+		start = 0
+	}
+	if _, err := file.Seek(start, io.SeekStart); err != nil {
+		return ""
+	}
+	raw, err := io.ReadAll(file)
+	if err != nil {
+		return ""
+	}
+	lines := bytes.Split(raw, []byte("\n"))
+	if start > 0 && len(lines) > 1 {
+		lines = lines[1:]
+	}
+	const marker = `"type":"ai-title"`
+	title := ""
+	for _, line := range lines {
+		if !bytes.Contains(line, []byte(marker)) {
+			continue
+		}
+		var record struct {
+			AITitle string `json:"aiTitle"`
+		}
+		if json.Unmarshal(line, &record) == nil {
+			if value := strings.TrimSpace(record.AITitle); value != "" {
+				title = value
+			}
+		}
+	}
+	return truncateTitle(title)
 }
 
 func readClaudeHistory(hostHome string) map[string]claudeHistoryEntry {

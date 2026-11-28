@@ -34,6 +34,7 @@ var macSources = []string{
 	"native/clipboard/LumenPreviewRenderers.swift",
 	"native/clipboard/LumenPreviewZipRenderer.swift",
 	"native/clipboard/LumenPreviewURLRenderer.swift",
+	"native/clipboard/LumenPreviewFolderRenderer.swift",
 	"native/clipboard/LumenPreviewWindow.swift",
 	"native/clipboard/LumenWorkspaceViews.swift",
 	"native/clipboard/ClipboardWorkspaceWindow.swift",

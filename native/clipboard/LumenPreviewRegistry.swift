@@ -114,6 +114,9 @@ struct LumenPreviewItem: Equatable {
     if !collectionChildren.isEmpty {
       return "\(collectionChildren.count) 个项目"
     }
+    if identity.subtype == "folder" || identity.subtype == "package" {
+      return "未知"
+    }
     if byteSize > 0 {
       return LumenFormatters.byteCount(byteSize)
     }
@@ -212,8 +215,11 @@ struct LumenPreviewItem: Equatable {
   private static func fromIndexedFile(item: LumenClipboardItem, index: Int, path: String, seedIndex: Int) -> LumenPreviewItem {
     let cleanPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
     let url = URL(fileURLWithPath: cleanPath)
-    let exists = FileManager.default.fileExists(atPath: cleanPath)
-    let size = (try? FileManager.default.attributesOfItem(atPath: cleanPath)[.size] as? Int64) ?? 0
+    var isDir: ObjCBool = false
+    let exists = FileManager.default.fileExists(atPath: cleanPath, isDirectory: &isDir)
+    let size: Int64 = (exists && !isDir.boolValue)
+      ? ((try? FileManager.default.attributesOfItem(atPath: cleanPath)[.size] as? Int64) ?? 0)
+      : 0
     let identity = LumenContentIdentityRegistry.shared.identity(forFilePath: cleanPath, materialized: exists || item.materialized)
     return LumenPreviewItem(
       id: "\(item.id)#\(index)",
@@ -247,12 +253,16 @@ struct LumenPreviewItem: Equatable {
 
   static func fromLocalURLs(_ urls: [URL]) -> [LumenPreviewItem] {
     urls.enumerated().map { idx, url in
-      let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+      var isDir: ObjCBool = false
+      let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+      let size: Int64 = (exists && !isDir.boolValue)
+        ? ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0)
+        : 0
       let identity = LumenContentIdentityRegistry.shared.identity(forFilePath: url.path)
       return LumenPreviewItem(
         id: "local:\(url.path)",
         title: url.lastPathComponent,
-        subtitle: "本地文件",
+        subtitle: (exists && isDir.boolValue) ? "本地文件夹" : "本地文件",
         kind: previewKind(for: identity, filePath: url.path),
         identity: identity,
         clipboardItem: nil,
@@ -431,7 +441,11 @@ final class LumenPreviewRegistry {
   }
 
   func resolve(for item: LumenPreviewItem) -> LumenPreviewRenderer {
-    if let match = renderers.first(where: { $0.canRender(item) }) {
+    resolve(for: item, excluding: [])
+  }
+
+  func resolve(for item: LumenPreviewItem, excluding excludedIDs: Set<String>) -> LumenPreviewRenderer {
+    if let match = renderers.first(where: { !excludedIDs.contains($0.rendererID) && $0.canRender(item) }) {
       return match
     }
     return LumenFileFallbackRenderer()
@@ -446,6 +460,7 @@ final class LumenPreviewRegistry {
 
   private func registerDefaultRenderers() {
     register(LumenPDFRenderer())
+    register(LumenFolderRenderer())
     register(LumenAudioRenderer())
     register(LumenVideoRenderer())
     register(LumenZipRenderer())

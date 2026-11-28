@@ -694,8 +694,8 @@ final class LumenContentIdentityRegistry {
         glyphID: "folder",
         displayName: "文件夹",
         category: .otherFile,
-        rendererID: "native.file",
-        availability: existsOnDisk ? .unsupported : .missing,
+        rendererID: "native.appkit.folder",
+        availability: existsOnDisk ? .ready : .missing,
         colorHex: "#bd9652"
       )
     }

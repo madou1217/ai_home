@@ -178,6 +178,13 @@ struct LumenClipboardItem: Codable, Equatable {
     if kind == "file" && files.count > 1 {
       return "\(files.count) 项文件"
     }
+    if kind == "file", let path = primaryFilePath {
+      var isDir: ObjCBool = false
+      let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
+      if path.hasSuffix("/") || (exists && isDir.boolValue) {
+        return "未知"
+      }
+    }
     if byteSize <= 0 {
       if kind == "file" {
         if let path = primaryFilePath,

@@ -19,6 +19,7 @@ swiftc -O -target "$TARGET" -o "$APP/Contents/MacOS/ai-home" \
   "$ROOT/native/clipboard/LumenPreviewRenderers.swift" \
   "$ROOT/native/clipboard/LumenPreviewZipRenderer.swift" \
   "$ROOT/native/clipboard/LumenPreviewURLRenderer.swift" \
+  "$ROOT/native/clipboard/LumenPreviewFolderRenderer.swift" \
   "$ROOT/native/clipboard/LumenPreviewWindow.swift" \
   "$ROOT/native/clipboard/LumenWorkspaceViews.swift" \
   "$ROOT/native/clipboard/ClipboardWorkspaceWindow.swift" \

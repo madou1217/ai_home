@@ -142,9 +142,9 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
   func openLocalFilePicker() {
     let openPanel = NSOpenPanel()
     openPanel.canChooseFiles = true
-    openPanel.canChooseDirectories = false
+    openPanel.canChooseDirectories = true
     openPanel.allowsMultipleSelection = true
-    openPanel.title = "选择本地文件进行预览"
+    openPanel.title = "选择本地文件或文件夹进行预览"
     if panel.isVisible {
       openPanel.beginSheetModal(for: panel) { [weak self] response in
         if response == .OK, !openPanel.urls.isEmpty {

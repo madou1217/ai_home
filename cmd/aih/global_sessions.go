@@ -240,14 +240,17 @@ func codexLockOrigin(hostHome, threadID string) (string, []int) {
 		return "", nil
 	}
 	for _, pid := range live {
-		if !processHasAIHAncestor(pid) {
+		if !processHasAIHCodexAncestor(pid) {
 			return persistent.SessionOriginExternalCodex, live
 		}
 	}
 	return persistent.SessionOriginAIHNative, live
 }
 
-func processHasAIHAncestor(pid int) bool {
+// processHasAIHCodexAncestor 只认“由 AIH 的 Codex 启动器/本地 app-server”
+// 产生的进程；不能因为外层是 aih-go codebuddy/claude 就把用户在该终端里
+// 手动启动的 native codex 也算成 aih 管理。
+func processHasAIHCodexAncestor(pid int) bool {
 	seen := make(map[int]bool)
 	for current := pid; current > 1 && !seen[current]; {
 		seen[current] = true
@@ -257,9 +260,19 @@ func processHasAIHAncestor(pid int) bool {
 		}
 		fields := strings.Fields(strings.TrimSpace(string(command)))
 		if len(fields) > 0 {
-			switch strings.ToLower(filepath.Base(strings.Trim(fields[0], "\"'"))) {
-			case "aih", "aih-go", "aih-server":
-				return true
+			base := strings.ToLower(filepath.Base(strings.Trim(fields[0], "\"'")))
+			switch base {
+			case "aih-server":
+				if strings.Contains(strings.ToLower(strings.Join(fields[1:], " ")), "codex") {
+					return true
+				}
+			case "aih", "aih-go":
+				for _, argument := range fields[1:] {
+					token := strings.ToLower(strings.TrimSpace(argument))
+					if token == "codex" || strings.Contains(token, "__codex") {
+						return true
+					}
+				}
 			}
 		}
 		parent, parentErr := processParentPID(current)

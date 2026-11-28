@@ -61,7 +61,7 @@ func runCodexTakeover(arguments []string, runtime commandRuntime) error {
 		if processIsCurrentOrAncestor(pid) {
 			return fmt.Errorf("thread %s 由当前 Codex 会话（pid=%d）持有；为避免结束当前会话，不能从其子进程自动接管", threadID, pid)
 		}
-		if !isCodexProcess(pid) || !processHasAIHAncestor(pid) {
+		if !isCodexProcess(pid) || !processHasAIHCodexAncestor(pid) {
 			return fmt.Errorf("thread %s 的持有者 pid=%d 不是 aih 管理的 Codex 进程，拒绝结束", threadID, pid)
 		}
 	}
@@ -283,7 +283,7 @@ func ensureCodexResumeAvailable(threadID string, runtime commandRuntime) error {
 		return nil
 	}
 	for _, pid := range live {
-		if !processHasAIHAncestor(pid) {
+		if !processHasAIHCodexAncestor(pid) {
 			return fmt.Errorf("thread %s 正被非 aih Codex 进程 pid=%d 持有；请先退出该 Codex 会话，再 resume", threadID, pid)
 		}
 	}

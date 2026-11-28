@@ -493,11 +493,11 @@ final class LumenContentIdentityRegistry {
 
   func identity(for item: LumenClipboardItem) -> LumenContentIdentity {
     // 1. User-confirmed override takes top priority (§18.1)
-    if let override = userOverrides[item.id] {
-      if override.family == .code {
-        return makeCodeIdentity(language: override.language ?? "unknown", confidence: .confirmed, availability: .ready)
+    if let userOverride = userOverrides[item.id] {
+      if userOverride.family == .code {
+        return makeCodeIdentity(language: userOverride.language ?? "unknown", confidence: .confirmed, availability: .ready)
       }
-      if override.family == .text {
+      if userOverride.family == .text {
         return makeTextIdentity(confidence: .confirmed)
       }
     }

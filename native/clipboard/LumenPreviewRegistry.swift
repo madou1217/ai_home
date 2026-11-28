@@ -26,35 +26,35 @@ enum LumenPreviewKind: Equatable {
     case .pdf: return "PDF 文档"
     case .office(let fmt):
       switch fmt.lowercased() {
-      case "docx": return "Word 文档"
-      case "xlsx": return "Excel 工作簿"
-      case "pptx": return "PowerPoint 演示文稿"
+      case "docx", "doc", "odt": return "Word 文档"
+      case "xlsx", "xls", "ods": return "Excel 表格"
+      case "pptx", "ppt", "odp": return "PowerPoint 演示文稿"
       default: return "Office 文档"
       }
     case .audio: return "音频"
     case .video: return "视频"
     case .collection: return "文件集合"
-    case .file: return "文件"
+    case .file: return "其他文件"
     }
   }
 
   var badgeCode: String {
     switch self {
     case .text: return "TXT"
-    case .code(let lang): return lang.uppercased()
+    case .code(let lang): return lang == "unknown" ? "CODE" : lang.uppercased()
     case .image: return "IMG"
     case .color: return "HEX"
     case .link: return "URL"
     case .pdf: return "PDF"
     case .office(let fmt):
       switch fmt.lowercased() {
-      case "docx": return "DOC"
-      case "xlsx": return "XLS"
-      case "pptx": return "PPT"
-      default: return "OFF"
+      case "docx", "doc", "odt": return "DOC"
+      case "xlsx", "xls", "ods": return "XLS"
+      case "pptx", "ppt", "odp": return "PPT"
+      default: return "DOC"
       }
-    case .audio: return "MP3"
-    case .video: return "MP4"
+    case .audio: return "AUD"
+    case .video: return "VID"
     case .collection: return "SET"
     case .file: return "FILE"
     }
@@ -69,11 +69,13 @@ enum LumenPreviewKind: Equatable {
 }
 
 /// Unified preview target consumable by any renderer in the registry.
+/// Carries the single-source `LumenContentIdentity` (§18.1, §18.2) alongside `LumenPreviewKind`.
 struct LumenPreviewItem: Equatable {
   let id: String
   let title: String
   let subtitle: String
   let kind: LumenPreviewKind
+  let identity: LumenContentIdentity
   let clipboardItem: LumenClipboardItem?
   let fileIndex: Int?
   let localURL: URL?
@@ -105,51 +107,52 @@ struct LumenPreviewItem: Equatable {
     if let text = inlineText {
       return LumenFormatters.byteCount(Int64(text.utf8.count))
     }
-    return clipboardItem?.formattedSize ?? "内容预览"
+    return clipboardItem?.formattedSize ?? "未知"
+  }
+
+  /// Maps a single-source `LumenContentIdentity` + optional file extension to the native renderer kind.
+  static func previewKind(for identity: LumenContentIdentity, filePath: String? = nil) -> LumenPreviewKind {
+    let ext = filePath.map { URL(fileURLWithPath: $0).pathExtension.lowercased() } ?? ""
+    switch identity.family {
+    case .collection:
+      return .collection
+    case .document:
+      if identity.subtype == "pdf" || ext == "pdf" { return .pdf }
+      if LumenClassifier.officeExtensions.contains(ext) { return .office(format: ext) }
+      if identity.subtype == "csv" || ext == "csv" { return .text }
+      return .file
+    case .image:
+      return .image
+    case .audio:
+      return .audio
+    case .video:
+      return .video
+    case .color:
+      return .color
+    case .link:
+      return .link
+    case .code:
+      return .code(language: identity.language ?? "unknown")
+    case .text:
+      return .text
+    case .archive, .file:
+      return .file
+    }
   }
 
   static func classify(filePath: String) -> LumenPreviewKind {
-    let ext = URL(fileURLWithPath: filePath).pathExtension.lowercased()
-    if ext == "pdf" { return .pdf }
-    if LumenClassifier.officeExtensions.contains(ext) { return .office(format: ext) }
-    if LumenClassifier.imageExtensions.contains(ext) { return .image }
-    if LumenClassifier.audioExtensions.contains(ext) { return .audio }
-    if LumenClassifier.videoExtensions.contains(ext) { return .video }
-    if LumenClassifier.codeExtensions.contains(ext) {
-      return .code(language: LumenClassifier.detectLanguage(fileName: filePath, content: ""))
-    }
-    if LumenClassifier.textExtensions.contains(ext) { return .text }
-    return .file
+    let id = LumenContentIdentityRegistry.shared.identity(forFilePath: filePath)
+    return previewKind(for: id, filePath: filePath)
   }
 
   static func classify(item: LumenClipboardItem) -> LumenPreviewKind {
-    switch item.kind {
-    case "image":
-      return .image
-    case "link":
-      return .link
-    case "file":
-      if item.files.count > 1 {
-        return .collection
-      }
-      if let path = item.primaryFilePath {
-        return classify(filePath: path)
-      }
-      return .file
-    default:
-      let text = item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines)
-      if LumenClassifier.parseHexColor(text) != nil {
-        return .color
-      }
-      if LumenClassifier.looksLikeCode(text) {
-        return .code(language: LumenClassifier.detectLanguage(fileName: nil, content: text))
-      }
-      return .text
-    }
+    let id = item.contentIdentity
+    return previewKind(for: id, filePath: item.primaryFilePath)
   }
 
   static func fromClipboardItem(_ item: LumenClipboardItem, seedIndex: Int = 0) -> LumenPreviewItem {
-    let kind = classify(item: item)
+    let identity = item.contentIdentity
+    let kind = previewKind(for: identity, filePath: item.primaryFilePath)
     if item.kind == "file" && item.files.count > 1 {
       let children = item.files.enumerated().map { idx, path in
         fromIndexedFile(item: item, index: idx, path: path, seedIndex: idx)
@@ -159,6 +162,7 @@ struct LumenPreviewItem: Equatable {
         title: item.displayTitle,
         subtitle: "\(item.sourceLabel) · \(item.relativeTime)",
         kind: .collection,
+        identity: identity,
         clipboardItem: item,
         fileIndex: nil,
         localURL: nil,
@@ -179,6 +183,7 @@ struct LumenPreviewItem: Equatable {
       title: item.displayTitle,
       subtitle: "\(item.sourceLabel) · \(item.relativeTime)",
       kind: kind,
+      identity: identity,
       clipboardItem: item,
       fileIndex: item.kind == "file" ? 0 : nil,
       localURL: singleURL,
@@ -194,11 +199,13 @@ struct LumenPreviewItem: Equatable {
     let url = URL(fileURLWithPath: cleanPath)
     let exists = FileManager.default.fileExists(atPath: cleanPath)
     let size = (try? FileManager.default.attributesOfItem(atPath: cleanPath)[.size] as? Int64) ?? 0
+    let identity = LumenContentIdentityRegistry.shared.identity(forFilePath: cleanPath, materialized: exists || item.materialized)
     return LumenPreviewItem(
       id: "\(item.id)#\(index)",
       title: url.lastPathComponent,
       subtitle: item.sourceLabel,
-      kind: classify(filePath: cleanPath),
+      kind: previewKind(for: identity, filePath: cleanPath),
+      identity: identity,
       clipboardItem: item,
       fileIndex: index,
       localURL: exists ? url : nil,
@@ -226,11 +233,13 @@ struct LumenPreviewItem: Equatable {
   static func fromLocalURLs(_ urls: [URL]) -> [LumenPreviewItem] {
     urls.enumerated().map { idx, url in
       let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+      let identity = LumenContentIdentityRegistry.shared.identity(forFilePath: url.path)
       return LumenPreviewItem(
         id: "local:\(url.path)",
         title: url.lastPathComponent,
         subtitle: "本地文件",
-        kind: classify(filePath: url.path),
+        kind: previewKind(for: identity, filePath: url.path),
+        identity: identity,
         clipboardItem: nil,
         fileIndex: nil,
         localURL: url,

@@ -51,9 +51,15 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
   private let rootView = LumenPreviewDropView()
   private let headerBar = NSView()
   private let headerLine = NSView()
+  private let headerGlyph = LumenIdentityGlyphView(size: 20)
   private let titleLabel = NSTextField(labelWithString: "")
   private let subtitleLabel = NSTextField(labelWithString: "")
+  private let prevBtn = LumenIconActionButton(glyph: .chevronLeft, glyphSize: 16, tip: "上一项 (←)")
   private let counterLabel = NSTextField(labelWithString: "")
+  private let nextBtn = LumenIconActionButton(glyph: .chevronRight, glyphSize: 16, tip: "下一项 (→)")
+  private let importBtn = LumenIconActionButton(glyph: .plus, glyphSize: 16, tip: "导入本地文件")
+  private let copyBtn = LumenIconActionButton(glyph: .copy, glyphSize: 16, tip: "复制 (⌘C)")
+  private let maxBtn = LumenIconActionButton(glyph: .expand, glyphSize: 16, tip: "最大化/还原")
   private let queueContainer = NSView()
   private let queueHeaderLabel = NSTextField(labelWithString: "")
   private let queueScroll = NSScrollView()
@@ -73,6 +79,7 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
   private var savedFrame: NSRect?
   private var transitionToken = 0
   private var themeObserverID: UUID?
+  private var copyResetWork: DispatchWorkItem?
 
   var onToast: ((String) -> Void)?
 
@@ -106,6 +113,7 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
   }
 
   deinit {
+    copyResetWork?.cancel()
     if let id = themeObserverID {
       LumenClipboardStore.shared.removeObserver(id)
     }
@@ -232,32 +240,46 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     headerLine.wantsLayer = true
     headerLine.translatesAutoresizingMaskIntoConstraints = false
 
+    headerGlyph.translatesAutoresizingMaskIntoConstraints = false
+
     titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
     titleLabel.lineBreakMode = .byTruncatingTail
     titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    subtitleLabel.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
+    subtitleLabel.font = .systemFont(ofSize: 11, weight: .medium)
     subtitleLabel.lineBreakMode = .byTruncatingTail
     subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    let identityStack = NSStackView(views: [titleLabel, subtitleLabel])
-    identityStack.orientation = .vertical
-    identityStack.alignment = .leading
-    identityStack.spacing = 2
+    let textIdentityStack = NSStackView(views: [titleLabel, subtitleLabel])
+    textIdentityStack.orientation = .vertical
+    textIdentityStack.alignment = .leading
+    textIdentityStack.spacing = 1
+
+    let identityStack = NSStackView(views: [headerGlyph, textIdentityStack])
+    identityStack.orientation = .horizontal
+    identityStack.alignment = .centerY
+    identityStack.spacing = 9
     identityStack.translatesAutoresizingMaskIntoConstraints = false
 
-    let prevBtn = makeHeaderIconButton("chevron.left", tip: "上一项 (←)", action: #selector(stepPrevClicked))
-    let nextBtn = makeHeaderIconButton("chevron.right", tip: "下一项 (→)", action: #selector(stepNextClicked))
-    let importBtn = makeHeaderIconButton("plus", tip: "导入本地文件", action: #selector(importLocalClicked))
-    let copyBtn = makeHeaderIconButton("doc.on.doc", tip: "复制 (⌘C)", action: #selector(copyActiveClicked))
-    let maxBtn = makeHeaderIconButton("arrow.up.left.and.arrow.down.right", tip: "最大化/还原", action: #selector(toggleMaximize))
+    prevBtn.onClick = { [weak self] in self?.stepPrevClicked() }
+    nextBtn.onClick = { [weak self] in self?.stepNextClicked() }
+    importBtn.onClick = { [weak self] in self?.importLocalClicked() }
+    copyBtn.onClick = { [weak self] in self?.copyActiveClicked() }
+    maxBtn.onClick = { [weak self] in self?.toggleMaximize() }
+
+    for btn in [prevBtn, nextBtn, importBtn, copyBtn, maxBtn] {
+      btn.translatesAutoresizingMaskIntoConstraints = false
+      btn.widthAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorActionHitSize).isActive = true
+      btn.heightAnchor.constraint(equalToConstant: LumenV15Tokens.inspectorActionHitSize).isActive = true
+    }
 
     counterLabel.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
     counterLabel.translatesAutoresizingMaskIntoConstraints = false
 
     let actionsStack = NSStackView(views: [prevBtn, counterLabel, nextBtn, importBtn, copyBtn, maxBtn])
     actionsStack.orientation = .horizontal
-    actionsStack.spacing = 6
+    actionsStack.alignment = .centerY
+    actionsStack.spacing = 5
     actionsStack.translatesAutoresizingMaskIntoConstraints = false
 
     headerBar.addSubview(identityStack)
@@ -337,6 +359,9 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
       headerBar.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
       headerBar.heightAnchor.constraint(equalToConstant: 56),
 
+      headerGlyph.widthAnchor.constraint(equalToConstant: 20),
+      headerGlyph.heightAnchor.constraint(equalToConstant: 20),
+
       identityStack.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor, constant: 78),
       identityStack.centerYAnchor.constraint(equalTo: headerBar.centerYAnchor),
       identityStack.trailingAnchor.constraint(lessThanOrEqualTo: actionsStack.leadingAnchor, constant: -14),
@@ -394,19 +419,21 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     ])
   }
 
-  private func makeHeaderIconButton(_ symbol: String, tip: String, action: Selector) -> NSButton {
-    let btn = NSButton()
-    btn.isBordered = false
-    btn.wantsLayer = true
-    btn.image = LumenIcons.symbol(symbol, size: 14, weight: .medium, description: tip)
-    btn.toolTip = tip
-    btn.target = self
-    btn.action = action
-    btn.layer?.cornerRadius = 8
-    btn.translatesAutoresizingMaskIntoConstraints = false
-    btn.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    btn.heightAnchor.constraint(equalToConstant: 30).isActive = true
-    return btn
+  private func updateHeaderButtonsTheme() {
+    let palette = LumenPalette.current()
+    let showNav = queue.count > 1
+    prevBtn.isHidden = !showNav
+    nextBtn.isHidden = !showNav
+    counterLabel.isHidden = !showNav
+    prevBtn.configure(palette: palette, enabled: showNav && activeIndex > 0)
+    nextBtn.configure(palette: palette, enabled: showNav && activeIndex < queue.count - 1)
+    importBtn.configure(palette: palette)
+    copyBtn.configure(palette: palette)
+    maxBtn.configure(
+      glyph: isMaximized ? .restore : .expand,
+      tip: isMaximized ? "还原窗口大小" : "最大化预览窗口",
+      palette: palette
+    )
   }
 
   private func applyTheme() {
@@ -427,6 +454,7 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     queueHeaderLabel.textColor = palette.muted
     footerLeftLabel.textColor = palette.muted
     footerHintsLabel.textColor = palette.muted
+    updateHeaderButtonsTheme()
     if !queue.isEmpty {
       queueTable.reloadData()
       mountActiveRenderer(animated: false)
@@ -442,6 +470,7 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     queueWidthConstraint?.constant = showQueue ? 236 : 0
     let audioOnly = !queue.isEmpty && queue.allSatisfy { $0.kind == .audio }
     queueHeaderLabel.stringValue = "\(audioOnly ? "播放队列" : "文件集合") · \(queue.count)"
+    updateHeaderButtonsTheme()
   }
 
   private func mountActiveRenderer(animated: Bool) {
@@ -449,10 +478,12 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     let item = queue[activeIndex]
     let palette = LumenPalette.current()
 
+    headerGlyph.configure(identity: item.identity, isDark: palette.isDark, size: 20)
     titleLabel.stringValue = item.title
-    subtitleLabel.stringValue = "QUICK LOOK  /  \(item.kind.displayLabel.uppercased())"
+    subtitleLabel.stringValue = item.identity.displayName
     counterLabel.stringValue = "\(activeIndex + 1) / \(queue.count)"
-    footerLeftLabel.stringValue = "\(item.kind.displayLabel) · \(item.sizeLabel)"
+    footerLeftLabel.stringValue = "\(item.identity.displayName) · \(item.sizeLabel)"
+    updateHeaderButtonsTheme()
 
     activeRendererView?.teardown()
     activeRendererView?.removeFromSuperview()
@@ -506,12 +537,27 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     selectQueueIndex(next)
   }
 
+  private func flashCopyConfirmed() {
+    copyResetWork?.cancel()
+    let palette = LumenPalette.current()
+    copyBtn.configure(glyph: .check, tip: "已复制", palette: palette, toggledOn: true)
+    let work = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.copyBtn.configure(glyph: .copy, tip: "复制 (⌘C)", palette: LumenPalette.current(), toggledOn: false)
+    }
+    copyResetWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: work)
+  }
+
   private func copyPreviewItem(_ item: LumenPreviewItem) {
     if let clip = item.clipboardItem {
       LumenClipboardStore.shared.copyToOSClipboard(id: clip.id) { [weak self] result in
         switch result {
-        case .success: self?.onToast?("已复制到剪贴板")
-        case .failure(let err): self?.onToast?("复制失败：\(err.localizedDescription)")
+        case .success:
+          self?.flashCopyConfirmed()
+          self?.onToast?("已复制到剪贴板")
+        case .failure(let err):
+          self?.onToast?("复制失败：\(err.localizedDescription)")
         }
       }
       return
@@ -520,6 +566,7 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
       let pb = NSPasteboard.general
       pb.clearContents()
       pb.writeObjects([url as NSURL])
+      flashCopyConfirmed()
       onToast?("已复制文件引用")
     }
   }
@@ -543,6 +590,7 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
         panel.setFrame(target, display: true, animate: LumenMotion.isEnabled)
       }
     }
+    updateHeaderButtonsTheme()
   }
 
   @objc private func queueRowClicked() {
@@ -620,32 +668,43 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     let thumbBox = NSView()
     thumbBox.wantsLayer = true
     thumbBox.layer?.cornerRadius = 7
-    thumbBox.layer?.backgroundColor = palette.surfaceElevated.cgColor
+    thumbBox.layer?.cornerCurve = .continuous
+    thumbBox.layer?.borderWidth = 1
+    thumbBox.layer?.borderColor = palette.border.withAlphaComponent(0.6).cgColor
     thumbBox.layer?.masksToBounds = true
     thumbBox.translatesAutoresizingMaskIntoConstraints = false
 
-    if item.kind == .audio {
-      let miniCover = LumenAlbumCoverView()
-      miniCover.seedIndex = item.seedIndex
-      miniCover.badgeText = ""
-      miniCover.translatesAutoresizingMaskIntoConstraints = false
-      thumbBox.addSubview(miniCover)
+    let identity = item.identity
+    let tint = identity.tintColor(isDark: palette.isDark)
+
+    if identity.family == .color,
+       let raw = item.inlineText ?? item.clipboardItem?.effectiveText,
+       let swatch = LumenColorMath.parseAnyColor(raw) {
+      thumbBox.layer?.backgroundColor = swatch.cgColor
+    } else if identity.family == .image,
+              let img = LumenPreviewCache.shared.image(for: item.cacheKey) ?? item.clipboardItem?.decodedThumbnailImage() {
+      thumbBox.layer?.backgroundColor = palette.surfaceElevated.cgColor
+      let iv = NSImageView(image: img)
+      iv.imageScaling = .scaleProportionallyUpOrDown
+      iv.translatesAutoresizingMaskIntoConstraints = false
+      thumbBox.addSubview(iv)
       NSLayoutConstraint.activate([
-        miniCover.topAnchor.constraint(equalTo: thumbBox.topAnchor),
-        miniCover.leadingAnchor.constraint(equalTo: thumbBox.leadingAnchor),
-        miniCover.trailingAnchor.constraint(equalTo: thumbBox.trailingAnchor),
-        miniCover.bottomAnchor.constraint(equalTo: thumbBox.bottomAnchor)
+        iv.topAnchor.constraint(equalTo: thumbBox.topAnchor),
+        iv.leadingAnchor.constraint(equalTo: thumbBox.leadingAnchor),
+        iv.trailingAnchor.constraint(equalTo: thumbBox.trailingAnchor),
+        iv.bottomAnchor.constraint(equalTo: thumbBox.bottomAnchor)
       ])
     } else {
-      let badge = NSTextField(labelWithString: item.kind.badgeCode)
-      badge.font = .monospacedSystemFont(ofSize: 9.5, weight: .bold)
-      badge.textColor = palette.accent
-      badge.alignment = .center
-      badge.translatesAutoresizingMaskIntoConstraints = false
-      thumbBox.addSubview(badge)
+      thumbBox.layer?.backgroundColor = tint.withAlphaComponent(palette.isDark ? 0.16 : 0.10).cgColor
+      let glyph = LumenIdentityGlyphView(size: 20)
+      glyph.configure(identity: identity, isDark: palette.isDark, size: 20)
+      glyph.translatesAutoresizingMaskIntoConstraints = false
+      thumbBox.addSubview(glyph)
       NSLayoutConstraint.activate([
-        badge.centerXAnchor.constraint(equalTo: thumbBox.centerXAnchor),
-        badge.centerYAnchor.constraint(equalTo: thumbBox.centerYAnchor)
+        glyph.centerXAnchor.constraint(equalTo: thumbBox.centerXAnchor),
+        glyph.centerYAnchor.constraint(equalTo: thumbBox.centerYAnchor),
+        glyph.widthAnchor.constraint(equalToConstant: 20),
+        glyph.heightAnchor.constraint(equalToConstant: 20)
       ])
     }
 
@@ -655,7 +714,7 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
     nameLabel.lineBreakMode = .byTruncatingMiddle
     nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
-    let subLabel = NSTextField(labelWithString: "\(item.kind.displayLabel) · \(item.sizeLabel)")
+    let subLabel = NSTextField(labelWithString: "\(identity.displayName) · \(item.sizeLabel)")
     subLabel.font = .systemFont(ofSize: 10)
     subLabel.textColor = palette.muted
     subLabel.lineBreakMode = .byTruncatingTail

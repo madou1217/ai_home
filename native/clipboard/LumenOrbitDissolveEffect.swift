@@ -594,7 +594,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
       let curl = sin(ff * .pi) * 5.0
       let px = frame.minX + p.u * frame.width + p.dx * k + sin(p.seed + ff * 3.0) * curl
       let py = frame.minY + p.v * frame.height + p.dy * k + cos(p.seed + ff * 3.0) * curl
-      let alpha = pow(sin(.pi * ff), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
+      let alpha = pow(max(0, sin(.pi * ff)), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
       let sz = p.size * (1.0 - 0.35 * ff) * 8.0
       if let sprite = LumenSoftParticleSpriteCache.shared.sprite(r: p.r, g: p.g, b: p.b, glowEnabled: job.glowEnabled) {
         ctx.setAlpha(alpha)
@@ -638,7 +638,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
       let curl = sin(ff * .pi) * 8.0
       let px = frame.minX + p.u * frame.width + p.dx * ease + sin(p.seed + ff * 3.5) * curl
       let py = frame.minY + p.v * frame.height + p.dy * ease + cos(p.seed + ff * 3.5) * curl
-      let alpha = pow(sin(.pi * ff), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
+      let alpha = pow(max(0, sin(.pi * ff)), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
       let sz = p.size * (1.0 - 0.35 * ff) * 8.0
       if let sprite = LumenSoftParticleSpriteCache.shared.sprite(r: p.r, g: p.g, b: p.b, glowEnabled: job.glowEnabled) {
         ctx.setAlpha(alpha)

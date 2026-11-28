@@ -99,12 +99,17 @@ func collectGlobalRowsMode(
 	// 状态，后者只补没有进程的 thread，避免同一个会话出现两行。
 	appendNativeProviderRows(ctx, runtime, &rows)
 	appendNativeCodexRows(ctx, runtime, &rows)
-	appendRecentNativeSessionRows(ctx, runtime, &rows, allProjectsRequested(allProjects...))
+	// 范围规则：显式 --all-projects 或当前位于 $HOME 时显示全部；当前目录
+	// 有会话时只显示当前项目；当前目录没有会话时回退到全部，避免用户
+	// 站在空目录里以为所有会话都丢了。
+	visibleAll, _ := resolveSessionScope(rows, runtime, allProjectsRequested(allProjects...))
+	appendRecentNativeSessionRows(ctx, runtime, &rows, visibleAll)
 	applyNativeTurnStates(store.AIHomeDir, rows)
+	rows = filterDismissedSessionRows(rows, readSSDismissed(store.AIHomeDir, now))
 	ensureUniqueSessionTitles(rows)
 	sortSessionRowsForDisplay(rows)
 	_ = persistent.WriteSessionCache(store.AIHomeDir, rows, now)
-	return scopeGlobalSessionRows(rows, allProjects...)
+	return scopeGlobalSessionRows(rows, visibleAll)
 }
 
 // appendNativeCodexRows 把 Go 原生 Codex 进程对应的 state.sqlite 会话投影到 ss。
@@ -181,8 +186,8 @@ func allProjectsRequested(values ...bool) bool {
 	return len(values) > 0 && values[0]
 }
 
-func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects ...bool) ([]persistent.SessionRow, error) {
-	if len(allProjects) > 0 && allProjects[0] {
+func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects bool) ([]persistent.SessionRow, error) {
+	if allProjects {
 		return rows, nil
 	}
 	cwd, err := os.Getwd()
@@ -190,6 +195,42 @@ func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects ...bool) (
 		return nil, err
 	}
 	return persistent.FilterSessionsByCwd(rows, cwd), nil
+}
+
+func resolveSessionScope(rows []persistent.SessionRow, runtime commandRuntime, explicitAll bool) (bool, string) {
+	if explicitAll {
+		return true, "全部项目"
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return true, "全部项目"
+	}
+	if isSessionHomeDir(cwd, runtime) {
+		return true, "全部项目（HOME）"
+	}
+	if len(persistent.FilterSessionsByCwd(rows, cwd)) > 0 {
+		return false, "当前项目"
+	}
+	return true, "全部项目（当前目录无会话）"
+}
+
+func isSessionHomeDir(cwd string, runtime commandRuntime) bool {
+	candidates := make([]string, 0, 3)
+	if home, err := runtime.userHomeDir(); err == nil {
+		candidates = append(candidates, home)
+	}
+	if host := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_HOST_HOME")); host != "" {
+		candidates = append(candidates, host)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, home)
+	}
+	for _, home := range candidates {
+		if strings.TrimSpace(home) != "" && sessionproject.MatchesCwd(home, cwd) {
+			return true
+		}
+	}
+	return false
 }
 
 // sessionGroup 是一个项目下的会话集合。
@@ -303,7 +344,7 @@ func writeGlobalSessionGroups(
 		}
 		_ = writer.Flush()
 	}
-	_, _ = fmt.Fprintln(output, "\n提示（● 运行中 / ◐ 等待输入 / ○ 空闲 / ✔ 已结束）：Enter=进入，c=复制ID，y=复制命令，d=详情，x=关闭选中，X=关闭闲置。")
+	_, _ = fmt.Fprintln(output, "\n提示（● 运行中 / ◐ 等待输入 / ○ 空闲 / ✕ 已结束）：Enter=进入，c=复制ID，y=复制命令，d=详情，x=关闭选中，X=关闭空闲/已结束。")
 }
 
 // sessionStatus 把「进程是否存活」和「轮次是否在跑」收敛成一个状态。
@@ -318,11 +359,11 @@ func globalSessionState(row persistent.SessionRow) sessionStatus {
 	// tmux 会话即使没有客户端附着，pane 仍在，可以直接 attach；原生行
 	// 没有进程就是已结束，只能 resume。两者不能共用"空闲"。
 	if row.PaneDead {
-		return sessionStatus{Kind: "ended", Icon: "✔", Label: "已结束"}
+		return sessionStatus{Kind: "ended", Icon: "✕", Label: "已结束"}
 	}
 	alive := row.Live || strings.TrimSpace(row.Socket) != "" || row.PanePID > 0
 	if !alive {
-		return sessionStatus{Kind: "ended", Icon: "✔", Label: "已结束"}
+		return sessionStatus{Kind: "ended", Icon: "✕", Label: "已结束"}
 	}
 	switch strings.ToLower(strings.TrimSpace(row.TurnState)) {
 	case "working":

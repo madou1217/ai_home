@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/term"
@@ -34,10 +35,32 @@ type pickerState struct {
 	selected int
 	detail   bool
 	toast    string
+	// animationFrame 驱动运行中转圈；headerFrame 驱动切项目时的目录动效。
+	animationFrame int
+	activeProject  string
+	headerFrame    int
+	// dismissed 记录本次 picker 里 x/X 移除的已结束会话，防止并发刷新
+	// 在关闭动作之后又把同一行带回来。
+	dismissed map[string]bool
 }
 
 func newPickerState(rows []persistent.SessionRow) *pickerState {
-	return &pickerState{rows: rows}
+	state := &pickerState{rows: rows}
+	state.syncActiveProject()
+	return state
+}
+
+func (state *pickerState) syncActiveProject() {
+	row := state.current()
+	if row == nil {
+		state.activeProject = ""
+		return
+	}
+	project := sessionProjectPath(*row)
+	if project != state.activeProject {
+		state.activeProject = project
+		state.headerFrame = 0
+	}
 }
 
 func (state *pickerState) move(delta int) {
@@ -53,6 +76,7 @@ func (state *pickerState) move(delta int) {
 		next = len(state.rows) - 1
 	}
 	state.selected = next
+	state.syncActiveProject()
 }
 
 func (state *pickerState) current() *persistent.SessionRow {
@@ -132,58 +156,76 @@ type pickerColumnLayout struct {
 	account  int
 	title    int
 	id       int
+	updated  int
 }
 
 func resolvePickerLayout(width int) pickerColumnLayout {
-	if width < 48 {
-		width = 48
+	if width <= 0 {
+		width = 100
 	}
 	if width > 240 {
 		width = 240
 	}
-	layout := pickerColumnLayout{status: 1, provider: 11, account: 12, id: 8}
-	// 先保标题；ID 是辅助列，宽度不够时先让位。
+	layout := pickerColumnLayout{status: 4, provider: 11, account: 12, id: 8, updated: 5}
+	// 先保标题；窗口越窄越先丢辅助列。极窄时只留状态+标题，
+	// 不能像以前那样硬撑 48 列把整行折成两行。
 	for {
-		fixed := 2 + layout.status + layout.provider + layout.account + layout.id + 4*2
+		fixed := 2 + layout.status + layout.provider + layout.account + layout.id + layout.updated + 5*2
 		layout.title = width - fixed
 		if layout.title >= 18 {
 			break
+		}
+		if layout.updated > 0 {
+			layout.updated = 0
+			continue
 		}
 		if layout.id > 0 {
 			layout.id = 0
 			continue
 		}
-		if layout.account > 6 {
-			layout.account = 6
+		if layout.account > 0 {
+			layout.account = 0
 			continue
 		}
-		if layout.provider > 8 {
-			layout.provider = 8
+		if layout.provider > 0 {
+			layout.provider = 0
 			continue
 		}
-		layout.title = 18
+		layout.title = maxInt(1, width-2-layout.status)
 		break
 	}
 	return layout
 }
 
+var runningSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var waitingSpinnerFrames = []string{"◐", "◓", "◑", "◒"}
+var projectRainbowColors = []int{196, 202, 226, 46, 51, 33, 129}
+
 // buildPickerLines 生成一帧的纯文本行（颜色只包在单元格内部，宽度按
 // 可见字符计算，避免中文/ANSI 导致列错位）。
 func buildPickerLines(state *pickerState, labels map[string]string, width int) []string {
+	lines, _ := buildPickerFrame(state, labels, width)
+	return lines
+}
+
+// buildPickerFrame 额外返回选中行在整帧里的行号，供终端变矮时滚动窗口。
+func buildPickerFrame(state *pickerState, labels map[string]string, width int) ([]string, int) {
 	layout := resolvePickerLayout(width)
 	lines := make([]string, 0, len(state.rows)+8)
+	selectedLine := 0
 	header := fmt.Sprintf("[aih] 活跃持久会话（%d）", len(state.rows))
-	legend := "  \x1b[32m●\x1b[0m 运行中  \x1b[33m◐\x1b[0m 等待输入  \x1b[90m○\x1b[0m 空闲  \x1b[90m✔\x1b[0m 已结束"
+	legend := "  \x1b[32m⠿\x1b[0m 运行中  \x1b[33m◐\x1b[0m 等待输入  \x1b[90m○\x1b[0m 空闲  \x1b[90m✕\x1b[0m 已结束"
 	lines = append(lines, truncateDisplayPreservingANSI(header+legend, width))
-	hints := "↑/↓ 选择 · Enter 进入 · d 详情 · c 复制ID · y 复制命令 · x 关闭 · X 关闲置 · q 退出"
+	hints := "↑/↓ 选择 · Enter 进入 · d 详情 · c 复制ID · y 复制命令 · x 关闭 · X 关空闲/已结束 · q 退出"
 	if displayWidth(hints) > width {
 		hints = "↑/↓ · Enter · d · c · y · x · X · q"
 	}
 	lines = append(lines, truncateDisplayPreservingANSI("\x1b[90m"+hints+"\x1b[0m", width))
 	if len(state.rows) == 0 {
 		lines = append(lines, "当前没有活跃的持久会话。")
-		return lines
+		return lines, selectedLine
 	}
+	lines = append(lines, formatPickerTableHeader(layout, width))
 
 	projectCounts := make(map[string]int, len(state.rows))
 	for _, row := range state.rows {
@@ -196,10 +238,13 @@ func buildPickerLines(state *pickerState, labels map[string]string, width int) [
 			if currentProject != "" {
 				lines = append(lines, "")
 			}
-			lines = append(lines, formatPickerProjectHeader(project, projectCounts[project], width))
+			lines = append(lines, formatPickerProjectHeader(project, projectCounts[project], width, project == state.activeProject, state.headerFrame))
 			currentProject = project
 		}
-		lines = append(lines, formatPickerRow(row, index == state.selected, labels, layout, width))
+		if index == state.selected {
+			selectedLine = len(lines)
+		}
+		lines = append(lines, formatPickerRow(row, index == state.selected, labels, layout, width, state.animationFrame))
 	}
 	if state.detail {
 		if row := state.current(); row != nil {
@@ -219,15 +264,46 @@ func buildPickerLines(state *pickerState, labels map[string]string, width int) [
 	if state.toast != "" {
 		lines = append(lines, "", state.toast)
 	}
-	return lines
+	return lines, selectedLine
 }
 
-func formatPickerProjectHeader(project string, count int, width int) string {
+func formatPickerTableHeader(layout pickerColumnLayout, width int) string {
+	line := "  " + padDisplay("状态", layout.status)
+	if layout.provider > 0 {
+		line += " " + padDisplay("provider", layout.provider)
+	}
+	if layout.account > 0 {
+		line += " " + padDisplay("账号", layout.account)
+	}
+	line += " " + padDisplay("会话名称", layout.title)
+	if layout.id > 0 {
+		line += "  " + padDisplay("会话ID", layout.id)
+	}
+	if layout.updated > 0 {
+		line += "  " + padDisplay("更新", layout.updated)
+	}
+	return truncateDisplayPreservingANSI("\x1b[90m"+line+"\x1b[0m", width)
+}
+
+func formatPickerProjectHeader(project string, count int, width int, active bool, frame int) string {
 	label := "▸ " + project
 	if count > 0 {
 		label += fmt.Sprintf("  (%d)", count)
 	}
-	return "\x1b[36m" + truncateDisplay(label, width) + "\x1b[0m"
+	label = truncateDisplay(label, width)
+	if !active {
+		return "\x1b[36m" + label + "\x1b[0m"
+	}
+	if frame >= 0 && frame < len(projectRainbowColors) {
+		var builder strings.Builder
+		for index, char := range label {
+			color := projectRainbowColors[(index+frame)%len(projectRainbowColors)]
+			builder.WriteString(fmt.Sprintf("\x1b[38;5;%dm%c", color, char))
+		}
+		builder.WriteString("\x1b[0m")
+		return builder.String()
+	}
+	return "\x1b[1;36m" + label + "\x1b[0m"
 }
 
 func formatPickerRow(
@@ -236,13 +312,15 @@ func formatPickerRow(
 	labels map[string]string,
 	layout pickerColumnLayout,
 	width int,
+	frame int,
 ) string {
 	marker := "  "
 	if selected {
 		marker = "\x1b[36m> \x1b[0m"
 	}
 	status := globalSessionState(row)
-	statusCell := statusIcon(status) + strings.Repeat(" ", maxInt(0, layout.status-displayWidth(status.Icon)))
+	icon := statusIcon(status, frame)
+	statusCell := icon + strings.Repeat(" ", maxInt(0, layout.status-displayWidth(status.Icon)))
 	provider := padDisplay(truncateDisplay(row.Provider, layout.provider), layout.provider)
 	account := ""
 	if layout.account > 0 {
@@ -252,7 +330,10 @@ func formatPickerRow(
 	if selected {
 		title = "\x1b[1m" + title + "\x1b[0m"
 	}
-	line := marker + statusCell + " " + provider
+	line := marker + statusCell
+	if layout.provider > 0 {
+		line += " " + provider
+	}
 	if layout.account > 0 {
 		line += " " + account
 	}
@@ -260,18 +341,38 @@ func formatPickerRow(
 	if layout.id > 0 {
 		line += "  " + padDisplay(truncateDisplay(shortSessionID(row.NativeID), layout.id), layout.id)
 	}
+	if layout.updated > 0 {
+		line += "  " + padDisplay(truncateDisplay(pickerActivityLabel(row), layout.updated), layout.updated)
+	}
 	return truncateDisplayPreservingANSI(line, width)
 }
 
-func statusIcon(status sessionStatus) string {
+func pickerActivityLabel(row persistent.SessionRow) string {
+	millis := sessionActivityMillis(row)
+	if millis <= 0 {
+		return "-"
+	}
+	value := time.UnixMilli(millis)
+	if time.Now().Format("2006-01-02") == value.Format("2006-01-02") {
+		return value.Format("15:04")
+	}
+	return value.Format("01-02")
+}
+
+func statusIcon(status sessionStatus, frame int) string {
 	color := "90"
+	icon := status.Icon
 	switch status.Kind {
 	case "running":
 		color = "32"
+		icon = runningSpinnerFrames[frame%len(runningSpinnerFrames)]
 	case "waiting":
 		color = "33"
+		icon = waitingSpinnerFrames[frame%len(waitingSpinnerFrames)]
+	case "ended":
+		icon = "✕"
 	}
-	return "\x1b[" + color + "m" + status.Icon + "\x1b[0m"
+	return "\x1b[" + color + "m" + icon + "\x1b[0m"
 }
 
 // truncateDisplay 按终端显示宽度截断（中文按两列），末尾补 …。
@@ -400,6 +501,7 @@ func stripANSI(text string) string {
 type pickerSessions interface {
 	Rows(ctx context.Context) ([]persistent.SessionRow, error)
 	Close(ctx context.Context, row persistent.SessionRow) error
+	Dismiss(ctx context.Context, row persistent.SessionRow) error
 }
 
 // runSessionPicker 进入原始模式并在原地重绘；Enter 会先恢复终端再 attach。
@@ -424,14 +526,13 @@ func runSessionPicker(
 	_, _ = io.WriteString(runtime.stdout, "\x1b[?25l")
 	defer func() { _, _ = io.WriteString(runtime.stdout, "\x1b[?25h\r\n") }()
 
-	width := terminalWidth(runtime.stdout)
+	width, height := terminalSize(runtime.stdout)
 	previousLines := []string(nil)
-	firstFrame := true
 	draw := func() {
-		lines := buildPickerLines(state, labels, width)
-		if firstFrame {
+		lines, selectedLine := buildPickerFrame(state, labels, width)
+		lines, _ = fitPickerFrame(lines, selectedLine, height)
+		if previousLines == nil {
 			_, _ = io.WriteString(runtime.stdout, "\x1b[2J\x1b[H")
-			firstFrame = false
 		}
 		for index, line := range lines {
 			if index < len(previousLines) && previousLines[index] == line {
@@ -445,86 +546,269 @@ func runSessionPicker(
 		previousLines = append(previousLines[:0], lines...)
 	}
 
-	buffer := make([]byte, 8)
+	keyCh := make(chan []byte, 8)
+	go func() {
+		buffer := make([]byte, 8)
+		for {
+			count, readErr := file.Read(buffer)
+			if readErr != nil {
+				close(keyCh)
+				return
+			}
+			payload := append([]byte(nil), buffer[:count]...)
+			keyCh <- payload
+		}
+	}()
+
+	animationTicker := time.NewTicker(120 * time.Millisecond)
+	defer animationTicker.Stop()
+	refreshTicker := time.NewTicker(2 * time.Second)
+	defer refreshTicker.Stop()
+	refreshCh := make(chan []persistent.SessionRow, 1)
+	refreshInFlight := false
+	requestRefresh := func() {
+		if refreshInFlight {
+			return
+		}
+		refreshInFlight = true
+		go func() {
+			refreshed, refreshErr := sessions.Rows(ctx)
+			if refreshErr != nil {
+				refreshed = nil
+			}
+			select {
+			case refreshCh <- refreshed:
+			default:
+			}
+		}()
+	}
+
+	draw()
 	for {
-		draw()
-		count, readErr := file.Read(buffer)
-		if readErr != nil {
-			return readErr
-		}
-		key := parsePickerKey(buffer[:count])
-		selectedKey := ""
-		if current := state.current(); current != nil {
-			selectedKey = sessionRowKey(*current)
-		}
-		action := state.handleKey(key)
-		switch action {
-		case pickerQuit:
-			_, _ = io.WriteString(runtime.stdout, "\r\n")
-			return nil
-		case pickerAttach:
-			row := state.current()
-			if row == nil {
-				continue
+		select {
+		case payload, open := <-keyCh:
+			if !open || payload == nil {
+				return nil
 			}
-			restore()
-			_, _ = io.WriteString(runtime.stdout, "\x1b[?25h\x1b[2J\x1b[H")
-			if row.NativeOnly {
-				return launchNativeSession(ctx, *row, runtime)
+			key := parsePickerKey(payload)
+			selectedKey := ""
+			if current := state.current(); current != nil {
+				selectedKey = sessionRowKey(*current)
 			}
-			return attachPersistentSession(ctx, *row, runtime)
-		case pickerCopyID:
-			row := state.current()
-			if row == nil {
-				continue
-			}
-			state.toast = copyToClipboard(pickerCopyText(*row))
-		case pickerCopyCommand:
-			row := state.current()
-			if row == nil {
-				continue
-			}
-			state.toast = copyToClipboard(pickerResumeCommand(*row))
-		case pickerClose:
-			row := state.current()
-			if row == nil {
-				continue
-			}
-			if closeErr := sessions.Close(ctx, *row); closeErr != nil {
-				state.toast = "关闭失败: " + closeErr.Error()
-			} else {
-				state.toast = "已关闭 " + row.Name
-			}
-			if refreshed, refreshErr := sessions.Rows(ctx); refreshErr == nil {
-				state.rows = refreshed
-				state.selectByKey(selectedKey)
-			}
-		case pickerCloseIdle:
-			closed := 0
-			for _, row := range append([]persistent.SessionRow(nil), state.rows...) {
-				if row.Live || row.NativeOnly {
+			action := state.handleKey(key)
+			switch action {
+			case pickerQuit:
+				_, _ = io.WriteString(runtime.stdout, "\r\n")
+				return nil
+			case pickerAttach:
+				row := state.current()
+				if row == nil {
 					continue
 				}
-				if closeErr := sessions.Close(ctx, row); closeErr == nil {
-					closed++
+				restore()
+				_, _ = io.WriteString(runtime.stdout, "\x1b[?25h\x1b[2J\x1b[H")
+				if row.NativeOnly {
+					return launchNativeSession(ctx, *row, runtime)
 				}
+				return attachPersistentSession(ctx, *row, runtime)
+			case pickerCopyID:
+				row := state.current()
+				if row == nil {
+					continue
+				}
+				state.toast = copyToClipboard(pickerCopyText(*row))
+			case pickerCopyCommand:
+				row := state.current()
+				if row == nil {
+					continue
+				}
+				state.toast = copyToClipboard(pickerResumeCommand(*row))
+			case pickerClose:
+				row := state.current()
+				if row == nil {
+					continue
+				}
+				if row.NativeOnly && !row.Live {
+					if dismissErr := sessions.Dismiss(ctx, *row); dismissErr != nil {
+						state.toast = "移除失败: " + dismissErr.Error()
+					} else {
+						state.toast = "已从列表移除（sessions --history 仍可找回）"
+						state.markDismissed(*row)
+						state.removeKeys(map[string]bool{selectedKey: true})
+					}
+				} else if closeErr := sessions.Close(ctx, *row); closeErr != nil {
+					state.toast = "关闭失败: " + closeErr.Error()
+				} else {
+					state.toast = "已关闭 " + row.Name
+					state.removeKeys(map[string]bool{selectedKey: true})
+				}
+				requestRefresh()
+			case pickerCloseIdle:
+				closed := 0
+				dismissed := 0
+				removed := make(map[string]bool)
+				for _, row := range append([]persistent.SessionRow(nil), state.rows...) {
+					if row.Live {
+						continue
+					}
+					if row.NativeOnly {
+						if dismissErr := sessions.Dismiss(ctx, row); dismissErr == nil {
+							dismissed++
+							state.markDismissed(row)
+							removed[sessionRowKey(row)] = true
+						}
+						continue
+					}
+					if closeErr := sessions.Close(ctx, row); closeErr == nil {
+						closed++
+						removed[sessionRowKey(row)] = true
+					}
+				}
+				state.toast = fmt.Sprintf("已关闭 %d 个空闲，移除 %d 个已结束", closed, dismissed)
+				state.removeKeys(removed)
+				requestRefresh()
 			}
-			state.toast = fmt.Sprintf("已关闭 %d 个空闲会话", closed)
-			if refreshed, refreshErr := sessions.Rows(ctx); refreshErr == nil {
-				state.rows = refreshed
-				state.selectByKey(selectedKey)
+		case <-animationTicker.C:
+			newWidth, newHeight := terminalSize(runtime.stdout)
+			if newWidth != width || newHeight != height {
+				width, height = newWidth, newHeight
+				previousLines = nil
+				draw()
+				continue
 			}
+			state.animationFrame++
+			headerAnimating := state.headerFrame < len(projectRainbowColors)
+			if headerAnimating {
+				state.headerFrame++
+			}
+			if hasAnimatedSessionRows(state.rows) || headerAnimating {
+				draw()
+			}
+		case <-refreshTicker.C:
+			requestRefresh()
+		case refreshed := <-refreshCh:
+			refreshInFlight = false
+			if refreshed == nil {
+				continue
+			}
+			selectedKey := ""
+			if current := state.current(); current != nil {
+				selectedKey = sessionRowKey(*current)
+			}
+			state.rows = state.filterDismissedRows(refreshed)
+			state.selectByKey(selectedKey)
+			state.syncActiveProject()
+			draw()
 		}
 	}
 }
 
-func terminalWidth(writer io.Writer) int {
-	if file, ok := writer.(*os.File); ok {
-		if columns, _, err := term.GetSize(int(file.Fd())); err == nil && columns > 0 {
-			return columns
+// fitPickerFrame 在终端变矮时只渲染一个窗口，保证选中行始终可见，
+// 且总行数不超过终端高度，避免绝对定位写穿屏幕导致滚动错乱。
+func fitPickerFrame(lines []string, selectedLine int, height int) ([]string, int) {
+	if height <= 0 || len(lines) <= height {
+		return lines, selectedLine
+	}
+	const fixedTop = 3
+	if height <= fixedTop {
+		limit := height
+		if limit > len(lines) {
+			limit = len(lines)
+		}
+		return lines[:limit], 0
+	}
+	available := height - fixedTop
+	body := lines[fixedTop:]
+	selectedBody := selectedLine - fixedTop
+	if selectedBody < 0 {
+		selectedBody = 0
+	}
+	start := selectedBody - available + 1
+	if start < 0 {
+		start = 0
+	}
+	if start > len(body)-available {
+		start = len(body) - available
+	}
+	if start < 0 {
+		start = 0
+	}
+	window := append([]string(nil), body[start:start+available]...)
+	if start > 0 && len(window) > 0 {
+		window[0] = "\x1b[90m  ↑ 上方还有会话\x1b[0m"
+	}
+	result := append(append([]string(nil), lines[:fixedTop]...), window...)
+	return result, fixedTop + (selectedBody - start)
+}
+
+func hasAnimatedSessionRows(rows []persistent.SessionRow) bool {
+	for _, row := range rows {
+		kind := globalSessionState(row).Kind
+		if kind == "running" || kind == "waiting" {
+			return true
 		}
 	}
-	return 100
+	return false
+}
+
+func (state *pickerState) markDismissed(row persistent.SessionRow) {
+	if state.dismissed == nil {
+		state.dismissed = make(map[string]bool)
+	}
+	state.dismissed[sessionRowKey(row)] = true
+}
+
+func (state *pickerState) filterDismissedRows(rows []persistent.SessionRow) []persistent.SessionRow {
+	if len(rows) == 0 || len(state.dismissed) == 0 {
+		return rows
+	}
+	selected := make([]persistent.SessionRow, 0, len(rows))
+	for _, row := range rows {
+		if !row.Live && state.dismissed[sessionRowKey(row)] {
+			continue
+		}
+		selected = append(selected, row)
+	}
+	return selected
+}
+
+func (state *pickerState) removeKeys(keys map[string]bool) {
+	if len(keys) == 0 {
+		return
+	}
+	selected := 0
+	selectedKey := ""
+	if current := state.current(); current != nil {
+		selectedKey = sessionRowKey(*current)
+	}
+	filtered := make([]persistent.SessionRow, 0, len(state.rows))
+	for _, row := range state.rows {
+		if keys[sessionRowKey(row)] {
+			continue
+		}
+		if sessionRowKey(row) == selectedKey {
+			selected = len(filtered)
+		}
+		filtered = append(filtered, row)
+	}
+	state.rows = filtered
+	state.selected = selected
+	if state.selected >= len(state.rows) {
+		state.selected = len(state.rows) - 1
+	}
+	if state.selected < 0 {
+		state.selected = 0
+	}
+	state.syncActiveProject()
+}
+
+func terminalSize(writer io.Writer) (int, int) {
+	if file, ok := writer.(*os.File); ok {
+		if columns, rows, err := term.GetSize(int(file.Fd())); err == nil && columns > 0 && rows > 0 {
+			return columns, rows
+		}
+	}
+	return 100, 40
 }
 
 func sessionRowKey(row persistent.SessionRow) string {

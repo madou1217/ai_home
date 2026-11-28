@@ -74,6 +74,10 @@ func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) 
 	return source.store.CloseSession(ctx, row)
 }
 
+func (source pickerStore) Dismiss(_ context.Context, row persistent.SessionRow) error {
+	return dismissSSSession(source.store.AIHomeDir, row.Provider, row.NativeID)
+}
+
 // runGlobalSessionPicker 实现 aih ss 的默认形态：TTY 下进入交互选择器，
 // 非 TTY（管道/CI）直接打印按项目分组的列表，与 Node 行为一致。
 func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh bool, allProjects ...bool) error {

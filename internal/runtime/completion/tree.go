@@ -245,6 +245,13 @@ func resolveCommandTree(root *commandNode, words []string, current string, conte
 		if state.node.findOption("-h") == nil {
 			target.add("-h", describeFlag("--help"), groupFlag, "")
 		}
+		// AlwaysOptions 只保证旗标不退场，不代表位置参数没有候选。
+		// aih ss 就是典型：空词既要给 --list，也要给会话名/有会话的路径。
+		if !strings.HasPrefix(current, "-") {
+			if spec := state.node.positionalAt(state.positional); spec != nil && spec.Kind != kindNone {
+				emitTreeValues(target, context, &state, spec.Kind, spec.Values, current)
+			}
+		}
 		return target.items
 	}
 	for index := range state.node.Children {

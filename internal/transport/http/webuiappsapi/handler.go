@@ -557,7 +557,7 @@ func (handler *Handler) hotSwap(response http.ResponseWriter, request *http.Requ
 	client, loadErr := proxycontrol.Load(handler.aiHomeDir)
 	if loadErr != nil {
 		// No running entry: persist the preference for the next start.
-		if err := proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{Version: 1, HotSwap: payload.Enabled}); err != nil {
+		if err := proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{HotSwap: payload.Enabled}); err != nil {
 			writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "save_failed", "message": err.Error()})
 			return
 		}
@@ -569,7 +569,7 @@ func (handler *Handler) hotSwap(response http.ResponseWriter, request *http.Requ
 		writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "hot_swap_failed", "message": err.Error(), "proxy": status})
 		return
 	}
-	_ = proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{Version: 1, HotSwap: payload.Enabled})
+	_ = proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{HotSwap: payload.Enabled})
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "hotSwap": payload.Enabled, "proxy": status})
 }
 

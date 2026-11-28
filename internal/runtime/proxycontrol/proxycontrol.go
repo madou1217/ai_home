@@ -45,6 +45,11 @@ type Status struct {
 	UpdatedAtMs      int64  `json:"updatedAtMs,omitempty"`
 }
 
+// SettingsVersion is the current settings schema. v1 defaulted hotSwap to
+// false; v2 makes seamless in-place recovery the default and keeps forced
+// rebuild as an explicit diagnostic choice.
+const SettingsVersion = 2
+
 // Settings is the persisted proxy desk configuration shared by CLI and WebUI.
 type Settings struct {
 	Version int  `json:"version"`
@@ -56,14 +61,31 @@ func SettingsPath(aiHomeDir string) string {
 	return filepath.Join(strings.TrimSpace(aiHomeDir), "run", "proxy", "settings.json")
 }
 
+// DefaultSettings is the seamless-recovery default.
+func DefaultSettings() Settings {
+	return Settings{Version: SettingsVersion, HotSwap: true}
+}
+
 // LoadSettings reads the desk settings; missing/corrupt files mean defaults.
+// A v1 file (which defaulted off) migrates to the v2 default on; an explicit
+// off choice only exists in v2.
 func LoadSettings(aiHomeDir string) Settings {
-	settings := Settings{Version: 1}
 	raw, err := os.ReadFile(SettingsPath(aiHomeDir))
-	if err != nil || json.Unmarshal(raw, &settings) != nil || settings.Version != 1 {
-		return Settings{Version: 1}
+	if err != nil {
+		return DefaultSettings()
 	}
-	return settings
+	var settings Settings
+	if json.Unmarshal(raw, &settings) != nil {
+		return DefaultSettings()
+	}
+	switch settings.Version {
+	case 1:
+		return DefaultSettings()
+	case SettingsVersion:
+		return settings
+	default:
+		return DefaultSettings()
+	}
 }
 
 // SaveSettings atomically persists the desk settings.
@@ -72,7 +94,7 @@ func SaveSettings(aiHomeDir string, settings Settings) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	settings.Version = 1
+	settings.Version = SettingsVersion
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		return err

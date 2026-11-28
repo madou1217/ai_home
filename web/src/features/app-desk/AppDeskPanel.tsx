@@ -629,8 +629,8 @@ export default function AppDeskPanel() {
       const detail = result.running === false
         ? '代理入口未运行，已保存为下次启动默认配置'
         : result.hotSwap
-          ? '原地替换上游并自动重试当前失败请求'
-          : '恢复为周期/手动重建入口模式（切换时将短暂断线）';
+          ? '恢复默认：所有恢复都原地替换上游并自动重试'
+          : '已切换为排障模式：周期/手动失效将强制重建入口';
       showFeedback('info', result.hotSwap ? '上游热替换已开启' : '上游热替换已关闭', detail);
       message.success(result.hotSwap ? '上游热替换已开启' : '上游热替换已关闭');
     } catch (error: unknown) {
@@ -1108,7 +1108,7 @@ export default function AppDeskPanel() {
                   ? '需匿名且非 TUN'
                   : hotSwapEnabled
                     ? '原地替换并重试'
-                    : '重建入口'}
+                    : '强制重建（排障）'}
               </span>
             </dd>
           </div>
@@ -1133,8 +1133,8 @@ export default function AppDeskPanel() {
             {hotSwapUnavailable
               ? '当前入口不支持热替换：需要匿名入口且非 TUN 模式（带认证入口 URL 内嵌租约凭据，TUN 独立持有上游，均无法原地替换）。'
               : hotSwapEnabled
-                ? '已开启（on）：周期续期、手动续约与请求失效全部原地替换上游并自动重试；不会重建入口。'
-                : '默认关闭（off）：周期续期/手动续约失效时重建入口（短暂断线）；请求中发现的失效会自动原地恢复并重试当前请求，避免首条 502。'}
+                ? '已开启（默认，推荐）：周期续期、手动续约与请求失效全部原地替换上游并自动重试；不会重建入口。'
+                : '已关闭（排障）：周期续期/手动续约失效时强制重建入口（短暂断线）；请求中发现的失效仍会自动原地恢复并重试当前请求。'}
           </p>
         </div>
 

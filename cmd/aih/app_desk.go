@@ -302,7 +302,7 @@ func runAppDeskInteractive(ctx context.Context, runtime commandRuntime, store *a
 				} else {
 					state.proxy = result.status
 					if result.status.HotSwap {
-						state.flash("⚡ 入口上游热替换已开启", ansiMagenta)
+						state.flash("⚡ 无缝恢复已开启（原地热替换）", ansiMagenta)
 					} else {
 						state.flash("热替换已关闭（周期/手动重建；请求内失效仍会原地重试）", ansiAmber)
 					}
@@ -431,7 +431,7 @@ func runDeskHotSwap(ctx context.Context, aiHome string, enabled bool, results ch
 	client, err := proxycontrol.Load(aiHome)
 	if err != nil {
 		// No running entry: persist so the next start uses it.
-		if saveErr := proxycontrol.SaveSettings(aiHome, proxycontrol.Settings{Version: 1, HotSwap: enabled}); saveErr != nil {
+		if saveErr := proxycontrol.SaveSettings(aiHome, proxycontrol.Settings{HotSwap: enabled}); saveErr != nil {
 			results <- deskActionResult{kind: "hot-swap", err: saveErr}
 			return
 		}
@@ -445,7 +445,7 @@ func runDeskHotSwap(ctx context.Context, aiHome string, enabled bool, results ch
 		results <- deskActionResult{kind: "hot-swap", status: status, err: setErr}
 		return
 	}
-	_ = proxycontrol.SaveSettings(aiHome, proxycontrol.Settings{Version: 1, HotSwap: enabled})
+	_ = proxycontrol.SaveSettings(aiHome, proxycontrol.Settings{HotSwap: enabled})
 	results <- deskActionResult{kind: "hot-swap", status: status}
 }
 

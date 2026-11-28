@@ -300,6 +300,9 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	}
 	homeDir, _ := resolveAIHomeDir(runtime)
 	settings := proxycontrol.LoadSettings(homeDir)
+	// Normalize a v1/missing file to the current schema so the default-on choice
+	// is visible on disk, not only in memory.
+	_ = proxycontrol.SaveSettings(homeDir, settings)
 	hotSwapEnabled := &atomic.Bool{}
 	hotSwapAvailable := proxyHotSwapAvailable(options)
 	hotSwapEnabled.Store(hotSwapAvailable && settings.HotSwap)
@@ -508,7 +511,7 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 					continue
 				}
 				hotSwapEnabled.Store(action.enabled)
-				if saveErr := proxycontrol.SaveSettings(homeDir, proxycontrol.Settings{Version: 1, HotSwap: action.enabled}); saveErr != nil {
+				if saveErr := proxycontrol.SaveSettings(homeDir, proxycontrol.Settings{HotSwap: action.enabled}); saveErr != nil {
 					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: fmt.Errorf("保存热替换开关失败: %w", saveErr)}
 					continue
 				}

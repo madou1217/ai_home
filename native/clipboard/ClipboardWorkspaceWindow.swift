@@ -120,6 +120,8 @@ final class ClipboardWorkspaceWindow: NSObject,
       switch event {
       case .itemsUpdated:
         self.rebuildFilteredState()
+      case .itemsCaptured, .itemRestored:
+        break
       case .settingsUpdated:
         if self.activeNav == .settings { self.settingsView.reload() }
         self.updateSidebar()

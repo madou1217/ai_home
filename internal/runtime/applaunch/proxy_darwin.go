@@ -5,11 +5,44 @@ package applaunch
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/launcher"
+	"github.com/madou1217/ai_home/internal/runtime/netguard"
 )
+
+// openChromiumSandboxed runs the bundle executable directly under
+// sandbox-exec so external IP traffic is denied and only the loopback proxy is
+// reachable. It is opt-in because it bypasses LaunchServices/TCC assumptions.
+func openChromiumSandboxed(app launcher.App, proxyURL string, options ProxyOptions) error {
+	bundle := strings.TrimSpace(app.Path)
+	name := strings.TrimSuffix(filepath.Base(bundle), ".app")
+	executable := filepath.Join(bundle, "Contents", "MacOS", name)
+	if _, err := os.Stat(executable); err != nil {
+		return errors.New("找不到应用可执行文件: " + executable)
+	}
+	args := chromiumArguments(proxyURL, options.ProfileDir, options.ExtraArgs)
+	args = append(args, "--no-sandbox")
+	command, cleanup, err := netguard.NewSandboxCommand(context.Background(), netguard.SandboxConfig{
+		ProxyURL: proxyURL,
+		DNS:      netguard.DNSProxy,
+	}, executable, args...)
+	if err != nil {
+		return err
+	}
+	if err := command.Start(); err != nil {
+		cleanup()
+		return err
+	}
+	go func() {
+		_ = command.Wait()
+		cleanup()
+	}()
+	return nil
+}
 
 func openWithProxy(_ context.Context, app launcher.App, mode ProxyMode, proxyURL string, options ProxyOptions) error {
 	target := strings.TrimSpace(app.Path)
@@ -29,6 +62,9 @@ func openWithProxy(_ context.Context, app launcher.App, mode ProxyMode, proxyURL
 	if mode == ProxyModeChromium && proxyURL != "" {
 		if err := ensureProfileDir(options.ProfileDir); err != nil {
 			return err
+		}
+		if os.Getenv("AIH_NETGUARD_SANDBOX_GUI") == "1" {
+			return openChromiumSandboxed(app, proxyURL, options)
 		}
 		args = append(args, "--args")
 		args = append(args, chromiumArguments(proxyURL, options.ProfileDir, options.ExtraArgs)...)

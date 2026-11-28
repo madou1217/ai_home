@@ -194,12 +194,29 @@ enum V15Tokens {
     static let lightReduceTransparencyFill = V15Color.hex("#dbe7f7f2")
     static let darkReduceTransparencyFill = V15Color.hex("#132036f5")
 
-    /// Source: `paste-lumen-v15.html` `.orbit` -> `inset 0 1px 0 #f6fcff95` / `.dark .orbit` -> `inset 0 1px 0 #c2deff75`
-    static let lightTopInsetLine = V15Color.hex("#f6fcff95")
+    /// Source: `paste-lumen-v15.html` `.orbit` -> `inset 0 1px 0 #f6fcff`, `0 -12px 80px #101f3f36`
+    /// `.dark .orbit` -> `inset 0 1px 0 #c2deff75`, `0 -10px 70px #060b2355`
+    static let lightTopInsetLine = V15Color.hex("#f6fcff")
     static let darkTopInsetLine = V15Color.hex("#c2deff75")
+    static let lightOuterShadow = V15ShadowSpec(
+      offsetX: 0,
+      offsetY: -12,
+      blurRadius: 80,
+      color: V15Color.hex("#101f3f36")
+    )
+    static let darkOuterShadow = V15ShadowSpec(
+      offsetX: 0,
+      offsetY: -10,
+      blurRadius: 70,
+      color: V15Color.hex("#060b2355")
+    )
 
-    /// Source: `paste-lumen-v15.html` `.orbit:after` -> `height: 2px` specular top rim
+    /// Source: `paste-lumen-v15.html` `.orbit:after` -> `height: 2px`,
+    /// `linear-gradient(90deg, #e9faff12, #d8efff70 20%, #e6edff90 70%, #fff0)`,
+    /// `radial-gradient(ellipse at mx 50%, white 0%, #d4f2ff 7%, #afd6ff70 16%, transparent 42%)`,
+    /// `box-shadow: 0 0 14px 2px #c7e8ff60`
     static let topSpecularHeight: CGFloat = 2
+    static let topSpecularGlowSpread: CGFloat = 2
     static let topSpecularStops: [(CGFloat, NSColor)] = [
       (0.00, V15Color.hex("#e9faff12")),
       (0.20, V15Color.hex("#d8efff70")),
@@ -209,10 +226,23 @@ enum V15Tokens {
     static let topSpecularPointerPeak = V15Color.hex("#ffffff")
     static let topSpecularPointerMid = V15Color.hex("#d4f2ff")
     static let topSpecularPointerOuter = V15Color.hex("#afd6ff70")
+    static let topSpecularGlowColor = V15Color.hex("#c7e8ff60")
+    static let topSpecularGlowShadow = V15ShadowSpec(
+      offsetX: 0,
+      offsetY: 0,
+      blurRadius: 14,
+      color: V15Color.hex("#c7e8ff60")
+    )
 
-    /// Source: `paste-lumen-v15.html` `.orbit:before` / `.dark .orbit:before` pointer radial glow
+    /// Source: `paste-lumen-v15.html` `.orbit:before` / `.dark .orbit:before`:
+    /// `radial-gradient(ellipse at mx 0%, #e8f5ff9e, transparent 37%)`,
+    /// `radial-gradient(ellipse at 80% 100%, #c5b8ff44, transparent 45%)`,
+    /// `linear-gradient(100deg, #fff0, #d8f5ff22 43%, #fff0)`
     static let lightPointerGlow = V15Color.hex("#e8f5ff9e")
     static let lightSecondaryGlow = V15Color.hex("#c5b8ff44")
+    static let lightObliqueSheenDegrees: CGFloat = 100
+    static let lightObliqueSheenPeak = V15Color.hex("#d8f5ff22")
+    static let lightObliqueSheenPeakLocation: CGFloat = 0.43
     static let darkPointerGlow = V15Color.hex("#8ab8ff55")
     static let darkSecondaryGlow = V15Color.hex("#9378e42b")
 
@@ -314,9 +344,19 @@ enum V15Tokens {
       blurRadius: 18,
       color: V15Color.hex("#142a4220")
     )
-    /// Source: `paste-lumen-v15.html` line 11 `.rail .clip.selected:after` -> `inset 0 1px 7px #fff9` (dark `#c7e0ff4a`)
+    /// Source: `paste-lumen-v15.html` line 11 `.rail .clip.selected:after` ->
+    /// `border: 1px solid #fff` (`inset 0 0 0 1px #fff`), `box-shadow: inset 0 1px 7px #fff9`,
+    /// `background: linear-gradient(122deg, transparent 10%, #fff3 30%, transparent 48%)`,
+    /// `animation: lightPass .85s ease-out both` (dark: `border-color: #bcd9ff`, `inset 0 1px 7px #c7e0ff4a`)
+    static let lightSelectedInnerRing = V15Color.hex("#ffffff")
+    static let darkSelectedInnerRing = V15Color.hex("#bcd9ff")
     static let lightSelectedInnerHighlight = V15Color.hex("#ffffff99")
     static let darkSelectedInnerHighlight = V15Color.hex("#c7e0ff4a")
+    static let selectedInnerHighlightHeight: CGFloat = 8
+    static let selectedLightPassDegrees: CGFloat = 122
+    static let selectedLightPassDuration: TimeInterval = 0.85
+    static let selectedLightPassPeakColor = V15Color.hex("#ffffff33")
+    static let selectedLightPassSteadyOpacity: Float = 0.38
 
     /// Source: `paste-lumen-v15.html` line 96 `.rail .clip.v10card.selected` ->
     /// `box-shadow: 0 0 0 1px #f8fcff, 0 0 19px #c9edff8c, 0 12px 27px #173b5840`
@@ -592,16 +632,20 @@ enum V15Tokens {
     static let pinGlyphSize: CGFloat = 12
     static let pinColor = V15Color.hex("#6589d7")
 
-    /// Source: `lumen-v15-exact-tokens.md` `.clip-foot/.key` lines 197–204 & `paste-lumen-v15.html` lines 7, 11, 96, 116
-    /// `min-width: 19px; height: 19px; border-radius: 5px; font-size: 10px`
-    /// Selected: `background: #6589d7; color: #fff` (dark `#7596da`), glow `0 0 10px #80aaff80`
+    /// Source: `paste-lumen-v15.html` lines 4, 7, 11 `.clip-foot .key` / `.dark .rail .key` / `.rail .clip.selected .key`
+    /// `margin-left: auto; font-size: 10px; border-radius: 5px; min-width: 19px; height: 19px;`
+    /// Light unselected: `background: #5a739c13; color: #657693`
+    /// Dark unselected:  `background: #aac4ff15; color: #b1c5e5`
+    /// Selected:         `background: #7596da; color: #ffffff; box-shadow: 0 0 10px #80aaff80`
     static let keyMinWidth: CGFloat = 19
     static let keyHeight: CGFloat = 19
     static let keyCornerRadius: CGFloat = 5
     static let keyFontSize: CGFloat = 10
-    static let keyUnselectedOpacity: CGFloat = 0.76
-    static let keySelectedLightBackground = V15Color.hex("#6589d7")
-    static let keySelectedDarkBackground = V15Color.hex("#7596da")
+    static let keyLightBackground = V15Color.hex("#5a739c13")
+    static let keyLightTextColor = V15Color.hex("#657693")
+    static let keyDarkBackground = V15Color.hex("#aac4ff15")
+    static let keyDarkTextColor = V15Color.hex("#b1c5e5")
+    static let keySelectedBackground = V15Color.hex("#7596da")
     static let keySelectedTextColor = V15Color.hex("#ffffff")
     static let keySelectedGlow = V15ShadowSpec(
       offsetX: 0,

@@ -708,11 +708,15 @@ final class V15OrbitCardItemView: NSView {
     keyBadgeView.wantsLayer = true
     keyBadgeView.layer?.cornerRadius = V15Tokens.Footer.keyCornerRadius
     keyBadgeView.layer?.masksToBounds = false
+    keyBadgeView.setContentHuggingPriority(.required, for: .horizontal)
+    keyBadgeView.setContentCompressionResistancePriority(.required, for: .horizontal)
     keyBadgeView.translatesAutoresizingMaskIntoConstraints = false
     footerView.addSubview(keyBadgeView)
 
     keyBadgeLabel.font = .monospacedDigitSystemFont(ofSize: V15Tokens.Footer.keyFontSize, weight: .medium)
     keyBadgeLabel.alignment = .center
+    keyBadgeLabel.setContentHuggingPriority(.required, for: .horizontal)
+    keyBadgeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
     keyBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
     keyBadgeView.addSubview(keyBadgeLabel)
 
@@ -791,6 +795,9 @@ final class V15OrbitCardItemView: NSView {
       width: V15Tokens.Close.hitSize,
       height: V15Tokens.Close.hitSize
     )
+    if isSelected, glowEnabled, !keyBadgeView.isHidden, let badgeLayer = keyBadgeView.layer, badgeLayer.bounds.width > 0 {
+      V15Materials.applyShadow(to: badgeLayer, spec: V15Tokens.Footer.keySelectedGlow, cornerRadius: V15Tokens.Footer.keyCornerRadius)
+    }
   }
 
   // MARK: Data Binding & Visual States
@@ -1014,20 +1021,20 @@ final class V15OrbitCardItemView: NSView {
 
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    keyBadgeView.alphaValue = 1.0
     if isSelected {
-      let bg = isDark ? V15Tokens.Footer.keySelectedDarkBackground : V15Tokens.Footer.keySelectedLightBackground
-      keyBadgeView.layer?.backgroundColor = bg.cgColor
+      keyBadgeView.layer?.backgroundColor = V15Tokens.Footer.keySelectedBackground.cgColor
       keyBadgeLabel.textColor = V15Tokens.Footer.keySelectedTextColor
-      keyBadgeView.alphaValue = 1.0
       if glowEnabled, let layer = keyBadgeView.layer {
         V15Materials.applyShadow(to: layer, spec: V15Tokens.Footer.keySelectedGlow, cornerRadius: V15Tokens.Footer.keyCornerRadius)
       } else if let layer = keyBadgeView.layer {
         V15Materials.clearShadow(on: layer)
       }
     } else {
-      keyBadgeView.layer?.backgroundColor = NSColor.clear.cgColor
-      keyBadgeLabel.textColor = isDark ? V15Tokens.Footer.sourceDarkColor : V15Tokens.Footer.sourceLightColor
-      keyBadgeView.alphaValue = V15Tokens.Footer.keyUnselectedOpacity
+      let bg = isDark ? V15Tokens.Footer.keyDarkBackground : V15Tokens.Footer.keyLightBackground
+      let fg = isDark ? V15Tokens.Footer.keyDarkTextColor : V15Tokens.Footer.keyLightTextColor
+      keyBadgeView.layer?.backgroundColor = bg.cgColor
+      keyBadgeLabel.textColor = fg
       if let layer = keyBadgeView.layer {
         V15Materials.clearShadow(on: layer)
       }

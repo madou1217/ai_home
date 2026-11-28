@@ -49,50 +49,83 @@ enum V15Materials {
 
   /// Renders a cached soft radial specular spotlight image for pointer-reactive glass sheen.
   static func makeRadialGlowImage(color: NSColor, diameter: CGFloat = 128) -> CGImage? {
-    let size = max(16, Int(diameter.rounded()))
+    let rgb = color.usingColorSpace(.sRGB) ?? color
+    return makeMultiStopRadialImage(
+      stops: [
+        (0.00, NSColor(srgbRed: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, alpha: rgb.alphaComponent)),
+        (0.45, NSColor(srgbRed: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, alpha: rgb.alphaComponent * 0.36)),
+        (1.00, NSColor(srgbRed: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, alpha: 0))
+      ],
+      width: Int(max(16, diameter.rounded())),
+      height: Int(max(16, diameter.rounded()))
+    )
+  }
+
+  /// Renders a multi-stop elliptical radial gradient image (used for `.orbit:after` specular highlight).
+  static func makeMultiStopRadialImage(stops: [(CGFloat, NSColor)], width: Int, height: Int) -> CGImage? {
+    let w = max(8, width)
+    let h = max(8, height)
     let colorSpace = CGColorSpaceCreateDeviceRGB()
     guard let ctx = CGContext(
       data: nil,
-      width: size,
-      height: size,
+      width: w,
+      height: h,
       bitsPerComponent: 8,
       bytesPerRow: 0,
       space: colorSpace,
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
     ) else { return nil }
 
-    let rgb = color.usingColorSpace(.sRGB) ?? color
-    let c0 = NSColor(srgbRed: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, alpha: rgb.alphaComponent).cgColor
-    let c1 = NSColor(srgbRed: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, alpha: rgb.alphaComponent * 0.36).cgColor
-    let c2 = NSColor(srgbRed: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, alpha: 0).cgColor
-
-    guard let grad = CGGradient(colorsSpace: colorSpace, colors: [c0, c1, c2] as CFArray, locations: [0.0, 0.45, 1.0]) else {
+    let cgColors = stops.map { $0.1.cgColor }
+    let locs = stops.map { $0.0 }
+    guard let grad = CGGradient(colorsSpace: colorSpace, colors: cgColors as CFArray, locations: locs) else {
       return nil
     }
-    let center = CGPoint(x: CGFloat(size) * 0.5, y: CGFloat(size) * 0.5)
-    ctx.drawRadialGradient(grad, startCenter: center, startRadius: 0, endCenter: center, endRadius: CGFloat(size) * 0.5, options: [])
+    ctx.saveGState()
+    ctx.scaleBy(x: CGFloat(w), y: CGFloat(h))
+    let center = CGPoint(x: 0.5, y: 0.5)
+    ctx.drawRadialGradient(grad, startCenter: center, startRadius: 0, endCenter: center, endRadius: 0.5, options: [])
+    ctx.restoreGState()
     return ctx.makeImage()
   }
+}
+
+/// Non-interactive flipped overlay view guaranteed to composite strictly above earlier sibling views.
+final class V15PassthroughView: NSView {
+  override var isFlipped: Bool { true }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - V15 Orbit Shelf Backdrop (.orbit / :before / :after)
 
 /// Borderless luminous glass shelf backing each participating bottom display viewport.
 /// Implements:
-/// - Native `NSVisualEffectView` backdrop blur (`backdrop-filter: blur(42px) saturate(1.65)`)
-/// - 3-stop light / 2-stop dark translucent gradient (`paste-lumen-v15.html` `.orbit` / `.dark .orbit`)
-/// - Pointer-reactive `.orbit:before` ambient glow + 2 DIP reflective `.orbit:after` top rim
+/// - True behind-window blur + saturation (`NSVisualEffectView`, `.fullScreenUI` + `.darkAqua`
+///   to avoid macOS `.popover`'s opaque light-mode white wash so the frosted glass gradient
+///   and low-brightness Optical Dots stay crisp and legible)
+/// - Dedicated `glassOverlayView` strictly above `blurView` hosting:
+///   - `linear-gradient(180deg, #e6f4ff39, #b3d0ed55 42%, #9bb3db68)` (light) /
+///     `linear-gradient(180deg, #152a4770, #101d36a8)` (dark)
+///   - `.orbit:before`: pointer radial glow (`#e8f5ff9e` 37%), secondary violet glow (`80% 100%`, `#c5b8ff44` 45%),
+///     and `100deg` oblique sheen (`#fff0 → #d8f5ff22 43% → #fff0`)
+///   - `inset 0 1px 0 #f6fcff` (light) / `#c2deff75` (dark)
+///   - `.orbit:after`: `2px` glowing hairline (`90deg #e9faff12 → #d8efff70 20% → #e6edff90 70% → #fff0`),
+///     4-stop pointer radial specular (`white 0%, #d4f2ff 7%, #afd6ff70 16%, transparent 42%`),
+///     and `0 0 14px 2px #c7e8ff60` top halo glow
 /// - Static Reduce Transparency fallback (§19.2)
 final class V15OrbitBackdropView: NSView {
   override var isFlipped: Bool { true }
 
   private let blurView = NSVisualEffectView()
+  private let glassOverlayView = V15PassthroughView()
+
   private let tintLayer = CAGradientLayer()
+  private let pointerGlowLayer = CALayer()
+  private let secondaryGlowLayer = CALayer()
+  private let obliqueSheenLayer = CAGradientLayer()
   private let topInsetLineLayer = CALayer()
   private let topRimBaseLayer = CAGradientLayer()
   private let topRimPointerLayer = CALayer()
-  private let pointerGlowLayer = CALayer()
-  private let secondaryGlowLayer = CALayer()
 
   private var isDark = false
   private var glowEnabled = true
@@ -105,38 +138,80 @@ final class V15OrbitBackdropView: NSView {
 
     blurView.blendingMode = .behindWindow
     blurView.state = .active
-    blurView.material = .hudWindow
+    // `.fullScreenUI` with `.darkAqua` yields authentic translucent behind-window blur + saturation
+    // without macOS Light Mode `.popover`'s opaque ~85% white fill that washes out glass & optical dots.
+    blurView.material = .fullScreenUI
+    blurView.appearance = NSAppearance(named: .darkAqua)
     blurView.translatesAutoresizingMaskIntoConstraints = false
     addSubview(blurView)
+
+    glassOverlayView.wantsLayer = true
+    glassOverlayView.layer?.masksToBounds = true
+    glassOverlayView.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(glassOverlayView)
+
     NSLayoutConstraint.activate([
       blurView.topAnchor.constraint(equalTo: topAnchor),
       blurView.bottomAnchor.constraint(equalTo: bottomAnchor),
       blurView.leadingAnchor.constraint(equalTo: leadingAnchor),
-      blurView.trailingAnchor.constraint(equalTo: trailingAnchor)
+      blurView.trailingAnchor.constraint(equalTo: trailingAnchor),
+
+      glassOverlayView.topAnchor.constraint(equalTo: topAnchor),
+      glassOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
+      glassOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      glassOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor)
     ])
 
     let tintPoints = V15Materials.gradientPoints(cssDegrees: 180, isFlipped: true)
     tintLayer.startPoint = tintPoints.0
     tintLayer.endPoint = tintPoints.1
-    layer?.addSublayer(tintLayer)
+    glassOverlayView.layer?.addSublayer(tintLayer)
 
     pointerGlowLayer.contentsGravity = .resize
-    layer?.addSublayer(pointerGlowLayer)
+    glassOverlayView.layer?.addSublayer(pointerGlowLayer)
 
     secondaryGlowLayer.contentsGravity = .resize
-    layer?.addSublayer(secondaryGlowLayer)
+    glassOverlayView.layer?.addSublayer(secondaryGlowLayer)
 
-    layer?.addSublayer(topInsetLineLayer)
+    // `.orbit:before` oblique sheen: `linear-gradient(100deg, #fff0, #d8f5ff22 43%, #fff0)`
+    let obliquePts = V15Materials.gradientPoints(cssDegrees: V15Tokens.Shell.lightObliqueSheenDegrees, isFlipped: true)
+    obliqueSheenLayer.startPoint = obliquePts.0
+    obliqueSheenLayer.endPoint = obliquePts.1
+    obliqueSheenLayer.colors = [
+      V15Color.hex("#ffffff00").cgColor,
+      V15Tokens.Shell.lightObliqueSheenPeak.cgColor,
+      V15Color.hex("#ffffff00").cgColor
+    ]
+    obliqueSheenLayer.locations = [
+      0.0,
+      NSNumber(value: Double(V15Tokens.Shell.lightObliqueSheenPeakLocation)),
+      1.0
+    ]
+    glassOverlayView.layer?.addSublayer(obliqueSheenLayer)
+
+    glassOverlayView.layer?.addSublayer(topInsetLineLayer)
 
     let rimPoints = V15Materials.gradientPoints(cssDegrees: 90, isFlipped: true)
     topRimBaseLayer.startPoint = rimPoints.0
     topRimBaseLayer.endPoint = rimPoints.1
+    topRimBaseLayer.masksToBounds = false
     topRimBaseLayer.colors = V15Tokens.Shell.topSpecularStops.map { $0.1.cgColor }
     topRimBaseLayer.locations = V15Tokens.Shell.topSpecularStops.map { NSNumber(value: Double($0.0)) }
-    layer?.addSublayer(topRimBaseLayer)
+    V15Materials.applyShadow(to: topRimBaseLayer, spec: V15Tokens.Shell.topSpecularGlowShadow)
+    glassOverlayView.layer?.addSublayer(topRimBaseLayer)
 
     topRimPointerLayer.contentsGravity = .resize
-    layer?.addSublayer(topRimPointerLayer)
+    topRimPointerLayer.contents = V15Materials.makeMultiStopRadialImage(
+      stops: [
+        (0.00, V15Tokens.Shell.topSpecularPointerPeak),
+        (0.167, V15Tokens.Shell.topSpecularPointerMid),      // 7% / 42%
+        (0.381, V15Tokens.Shell.topSpecularPointerOuter),    // 16% / 42%
+        (1.00, V15Color.hex("#afd6ff00"))                   // 42% / 42%
+      ],
+      width: 256,
+      height: 16
+    )
+    glassOverlayView.layer?.addSublayer(topRimPointerLayer)
 
     applyAppearance(isDark: V15Motion.isDarkTheme, glowEnabled: V15Motion.glowEnabled)
   }
@@ -147,9 +222,20 @@ final class V15OrbitBackdropView: NSView {
     super.layout()
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    let w = bounds.width
+    let rimH = V15Tokens.Shell.topSpecularHeight
+    let spread = V15Tokens.Shell.topSpecularGlowSpread
     tintLayer.frame = bounds
-    topInsetLineLayer.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 1)
-    topRimBaseLayer.frame = CGRect(x: 0, y: 0, width: bounds.width, height: V15Tokens.Shell.topSpecularHeight)
+    obliqueSheenLayer.frame = bounds
+    topInsetLineLayer.frame = CGRect(x: 0, y: 0, width: w, height: 1)
+    topRimBaseLayer.frame = CGRect(x: 0, y: 0, width: w, height: rimH)
+    if w > 0 {
+      // Exact CSS `box-shadow: 0 0 14px 2px #c7e8ff60` spread expansion across full top hairline
+      topRimBaseLayer.shadowPath = CGPath(
+        rect: CGRect(x: -spread, y: -spread, width: w + spread * 2, height: rimH + spread * 2),
+        transform: nil
+      )
+    }
     layoutGlowLayers()
     CATransaction.commit()
   }
@@ -163,8 +249,10 @@ final class V15OrbitBackdropView: NSView {
     CATransaction.setDisableActions(true)
 
     blurView.isHidden = reduceTransparency
-    blurView.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
-    blurView.material = isDark ? .hudWindow : .popover
+    // Keep `.fullScreenUI` + `.darkAqua` across both themes so behind-window blur stays true
+    // translucent glass without Light Mode `.popover`'s opaque white wash.
+    blurView.appearance = NSAppearance(named: .darkAqua)
+    blurView.material = .fullScreenUI
 
     if reduceTransparency {
       let solid = isDark
@@ -198,8 +286,9 @@ final class V15OrbitBackdropView: NSView {
     let glowOpacity: Float = glowEnabled ? 1.0 : 0.25
     pointerGlowLayer.opacity = glowOpacity
     secondaryGlowLayer.opacity = glowOpacity
+    obliqueSheenLayer.opacity = (!isDark && glowEnabled) ? 1.0 : 0.0
     topRimBaseLayer.opacity = glowOpacity
-    topRimPointerLayer.opacity = glowEnabled ? 0.95 : 0.0
+    topRimPointerLayer.opacity = glowEnabled ? 1.0 : 0.0
 
     pointerGlowLayer.contents = V15Materials.makeRadialGlowImage(
       color: isDark ? V15Tokens.Shell.darkPointerGlow : V15Tokens.Shell.lightPointerGlow,
@@ -208,10 +297,6 @@ final class V15OrbitBackdropView: NSView {
     secondaryGlowLayer.contents = V15Materials.makeRadialGlowImage(
       color: isDark ? V15Tokens.Shell.darkSecondaryGlow : V15Tokens.Shell.lightSecondaryGlow,
       diameter: 128
-    )
-    topRimPointerLayer.contents = V15Materials.makeRadialGlowImage(
-      color: V15Tokens.Shell.topSpecularPointerMid,
-      diameter: 96
     )
 
     layoutGlowLayers()
@@ -234,20 +319,23 @@ final class V15OrbitBackdropView: NSView {
     let h = max(1, bounds.height)
     let mx = pointerLocalXRatio * w
 
-    let glowW = max(280, w * 0.52)
-    let glowH = max(150, h * 0.90)
-    pointerGlowLayer.frame = CGRect(x: mx - glowW * 0.5, y: -glowH * 0.45, width: glowW, height: glowH)
+    // `.orbit:before`: `radial-gradient(ellipse at mx 0%, #e8f5ff9e, transparent 37%)` (dark: `35%`)
+    let glowW = w * (isDark ? 0.70 : 0.74)
+    let glowH = max(160, h * 0.92)
+    pointerGlowLayer.frame = CGRect(x: mx - glowW * 0.5, y: -glowH * 0.48, width: glowW, height: glowH)
 
-    let secW = max(320, w * 0.55)
-    let secH = max(140, h * 0.85)
-    secondaryGlowLayer.frame = CGRect(x: w * 0.80 - secW * 0.5, y: h - secH * 0.45, width: secW, height: secH)
+    // `.orbit:before`: `radial-gradient(ellipse at 80% 100%, #c5b8ff44, transparent 45%)`
+    let secW = w * 0.90
+    let secH = max(150, h * 0.90)
+    secondaryGlowLayer.frame = CGRect(x: w * 0.80 - secW * 0.5, y: h - secH * 0.50, width: secW, height: secH)
 
-    let rimSpotW = max(180, w * 0.34)
+    // `.orbit:after`: `radial-gradient(ellipse at mx 50%, ..., transparent 42%)` -> width = 84% of shelf
+    let rimSpotW = w * 0.84
     topRimPointerLayer.frame = CGRect(
       x: mx - rimSpotW * 0.5,
-      y: -1,
+      y: 0,
       width: rimSpotW,
-      height: V15Tokens.Shell.topSpecularHeight + 4
+      height: V15Tokens.Shell.topSpecularHeight
     )
   }
 }
@@ -267,11 +355,6 @@ final class V15CardSurfaceView: NSView {
   private let glowLayer = CALayer()
   private let backgroundClipLayer = CALayer()
   private let gradientLayer = CAGradientLayer()
-  private let overlayClipLayer = CALayer()
-  private let innerTopHighlightLayer = CAGradientLayer()
-  private let specularSheenLayer = CALayer()
-  private let selectedLightPassLayer = CAGradientLayer()
-  private let borderOverlayLayer = CALayer()
 
   /// Clipped content host (`cornerRadius = 16`, `masksToBounds = true`) so inner card
   /// subviews clip cleanly to rounded corners while outer card shadows stay unclipped.
@@ -282,6 +365,16 @@ final class V15CardSurfaceView: NSView {
     view.layer?.masksToBounds = true
     return view
   }()
+
+  /// Dedicated passthrough view strictly above `contentClipView` hosting `.clip:before` sheen,
+  /// `.clip.selected:after` (`inset 0 0 0 1px #fff`, `inset 0 1px 7px #fff9`, `122deg` `lightPass`),
+  /// and crisp outer card border so subviews can never paint over optical highlights.
+  private let opticalOverlayView = V15PassthroughView()
+  private let specularSheenLayer = CALayer()
+  private let selectedInnerTopGlowLayer = CAGradientLayer()
+  private let selectedLightPassLayer = CAGradientLayer()
+  private let selectedInnerRingLayer = CALayer()
+  private let borderOverlayLayer = CALayer()
 
   private var isDark = false
   private var isSelected = false
@@ -295,16 +388,13 @@ final class V15CardSurfaceView: NSView {
     layer?.masksToBounds = false
 
     shadowLayer.backgroundColor = NSColor.clear.cgColor
-    shadowLayer.zPosition = -2
     layer?.addSublayer(shadowLayer)
 
     glowLayer.backgroundColor = NSColor.clear.cgColor
-    glowLayer.zPosition = -1
     layer?.addSublayer(glowLayer)
 
     backgroundClipLayer.cornerRadius = V15Tokens.Card.cornerRadius
     backgroundClipLayer.masksToBounds = true
-    backgroundClipLayer.zPosition = 0
     layer?.addSublayer(backgroundClipLayer)
 
     let lightPts = V15Materials.gradientPoints(cssDegrees: V15Tokens.Card.lightGradientDegrees, isFlipped: true)
@@ -315,41 +405,48 @@ final class V15CardSurfaceView: NSView {
     contentClipView.frame = bounds
     contentClipView.autoresizingMask = [.width, .height]
     addSubview(contentClipView)
-    contentClipView.layer?.zPosition = 10
 
-    overlayClipLayer.cornerRadius = V15Tokens.Card.cornerRadius
-    overlayClipLayer.masksToBounds = true
-    overlayClipLayer.zPosition = 40
-    layer?.addSublayer(overlayClipLayer)
-
-    // Selected top inset specular (`inset 0 1px 7px #fff9` / dark `#c7e0ff4a`)
-    innerTopHighlightLayer.startPoint = CGPoint(x: 0.5, y: 0)
-    innerTopHighlightLayer.endPoint = CGPoint(x: 0.5, y: 1)
-    innerTopHighlightLayer.opacity = 0
-    overlayClipLayer.addSublayer(innerTopHighlightLayer)
+    opticalOverlayView.wantsLayer = true
+    opticalOverlayView.layer?.cornerRadius = V15Tokens.Card.cornerRadius
+    opticalOverlayView.layer?.masksToBounds = true
+    opticalOverlayView.frame = bounds
+    opticalOverlayView.autoresizingMask = [.width, .height]
+    addSubview(opticalOverlayView)
 
     specularSheenLayer.contentsGravity = .resize
     specularSheenLayer.opacity = 0
-    overlayClipLayer.addSublayer(specularSheenLayer)
+    opticalOverlayView.layer?.addSublayer(specularSheenLayer)
 
-    let passPts = V15Materials.gradientPoints(cssDegrees: 122, isFlipped: true)
+    // `.rail .clip.selected:after` -> `box-shadow: inset 0 1px 7px #fff9` (dark `#c7e0ff4a`)
+    selectedInnerTopGlowLayer.startPoint = CGPoint(x: 0.5, y: 0)
+    selectedInnerTopGlowLayer.endPoint = CGPoint(x: 0.5, y: 1)
+    selectedInnerTopGlowLayer.opacity = 0
+    opticalOverlayView.layer?.addSublayer(selectedInnerTopGlowLayer)
+
+    // `.rail .clip.selected:after` -> `linear-gradient(122deg, transparent 10%, #fff3 30%, transparent 48%)`
+    let passPts = V15Materials.gradientPoints(cssDegrees: V15Tokens.Card.selectedLightPassDegrees, isFlipped: true)
     selectedLightPassLayer.startPoint = passPts.0
     selectedLightPassLayer.endPoint = passPts.1
     selectedLightPassLayer.colors = [
       V15Color.hex("#ffffff00").cgColor,
-      V15Color.hex("#ffffff33").cgColor,
+      V15Tokens.Card.selectedLightPassPeakColor.cgColor,
       V15Color.hex("#ffffff00").cgColor
     ]
     selectedLightPassLayer.locations = [0.10, 0.30, 0.48]
     selectedLightPassLayer.opacity = 0
-    overlayClipLayer.addSublayer(selectedLightPassLayer)
+    opticalOverlayView.layer?.addSublayer(selectedLightPassLayer)
 
-    // Border sits above content layers so 1px border stays crisp around images/code boxes
+    // `.rail .clip.selected:after` -> `inset 0 0 0 1px #fff` (dark `#bcd9ff`)
+    selectedInnerRingLayer.borderWidth = 1
+    selectedInnerRingLayer.backgroundColor = NSColor.clear.cgColor
+    selectedInnerRingLayer.opacity = 0
+    opticalOverlayView.layer?.addSublayer(selectedInnerRingLayer)
+
+    // Outer 1px border (`#ffffff95` light / `#9fb8df4a` dark; selected `#f8fcff` / `#d4eaff`)
     borderOverlayLayer.cornerRadius = V15Tokens.Card.cornerRadius
     borderOverlayLayer.borderWidth = V15Tokens.Card.borderWidth
     borderOverlayLayer.backgroundColor = NSColor.clear.cgColor
-    borderOverlayLayer.zPosition = 50
-    layer?.addSublayer(borderOverlayLayer)
+    opticalOverlayView.layer?.addSublayer(borderOverlayLayer)
   }
 
   required init?(coder: NSCoder) { nil }
@@ -364,9 +461,11 @@ final class V15CardSurfaceView: NSView {
     backgroundClipLayer.frame = bounds
     gradientLayer.frame = bounds
     contentClipView.frame = bounds
-    overlayClipLayer.frame = bounds
-    innerTopHighlightLayer.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 2.0)
+    opticalOverlayView.frame = bounds
+    selectedInnerTopGlowLayer.frame = CGRect(x: 0, y: 0, width: bounds.width, height: V15Tokens.Card.selectedInnerHighlightHeight)
     selectedLightPassLayer.frame = bounds
+    selectedInnerRingLayer.frame = bounds.insetBy(dx: 1, dy: 1)
+    selectedInnerRingLayer.cornerRadius = max(0, r - 1)
     borderOverlayLayer.frame = bounds
 
     if bounds.width > 0, bounds.height > 0 {
@@ -402,10 +501,13 @@ final class V15CardSurfaceView: NSView {
           V15Tokens.Card.darkGradientEnd.cgColor
         ]
         gradientLayer.locations = [0, 1]
-        innerTopHighlightLayer.colors = [
+        selectedInnerTopGlowLayer.colors = [
           V15Tokens.Card.darkSelectedInnerHighlight.cgColor,
+          V15Color.hex("#c7e0ff1f").cgColor,
           V15Color.hex("#c7e0ff00").cgColor
         ]
+        selectedInnerTopGlowLayer.locations = [0.0, 0.40, 1.0]
+        selectedInnerRingLayer.borderColor = V15Tokens.Card.darkSelectedInnerRing.cgColor
         specularSheenLayer.contents = V15Materials.makeRadialGlowImage(color: V15Tokens.Card.darkSpecularSheen, diameter: 128)
       } else {
         let pts = V15Materials.gradientPoints(cssDegrees: V15Tokens.Card.lightGradientDegrees, isFlipped: true)
@@ -416,10 +518,13 @@ final class V15CardSurfaceView: NSView {
           V15Tokens.Card.lightGradientEnd.cgColor
         ]
         gradientLayer.locations = [0, 1]
-        innerTopHighlightLayer.colors = [
+        selectedInnerTopGlowLayer.colors = [
           V15Tokens.Card.lightSelectedInnerHighlight.cgColor,
+          V15Color.hex("#ffffff44").cgColor,
           V15Color.hex("#ffffff00").cgColor
         ]
+        selectedInnerTopGlowLayer.locations = [0.0, 0.40, 1.0]
+        selectedInnerRingLayer.borderColor = V15Tokens.Card.lightSelectedInnerRing.cgColor
         specularSheenLayer.contents = V15Materials.makeRadialGlowImage(color: V15Tokens.Card.lightSpecularSheen, diameter: 128)
       }
     }
@@ -456,21 +561,25 @@ final class V15CardSurfaceView: NSView {
     }
 
     let showSheen = glowEnabled && (isHovered || isSelected)
+    let showSelectedAfter = glowEnabled && isSelected
     specularSheenLayer.opacity = showSheen ? V15Tokens.Card.specularSheenActiveOpacity : 0.0
-    selectedLightPassLayer.opacity = (glowEnabled && isSelected) ? 0.38 : 0.0
-    innerTopHighlightLayer.opacity = (glowEnabled && isSelected) ? 1.0 : 0.0
+    selectedLightPassLayer.opacity = showSelectedAfter ? V15Tokens.Card.selectedLightPassSteadyOpacity : 0.0
+    selectedInnerTopGlowLayer.opacity = showSelectedAfter ? 0.90 : 0.0
+    selectedInnerRingLayer.opacity = showSelectedAfter ? 0.95 : 0.0
 
     CATransaction.commit()
 
-    // Selected light-pass glint (`paste-lumen-v15.html` line 11 `@keyframes lightPass .85s`)
+    // `.rail .clip.selected:after` `@keyframes lightPass .85s ease-out both` (0 -> 1.0 @ 40% -> 0.38)
     if isSelected && !wasSelected && glowEnabled && V15Motion.isEnabled {
       let anim = CAKeyframeAnimation(keyPath: "opacity")
-      anim.values = [0.0, 1.0, 0.38]
+      anim.values = [0.0, 1.0, Double(V15Tokens.Card.selectedLightPassSteadyOpacity)]
       anim.keyTimes = [0.0, 0.40, 1.0]
-      anim.duration = 0.85
+      anim.duration = V15Tokens.Card.selectedLightPassDuration
       anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
       selectedLightPassLayer.removeAnimation(forKey: "v15LightPass")
       selectedLightPassLayer.add(anim, forKey: "v15LightPass")
+    } else if !isSelected {
+      selectedLightPassLayer.removeAnimation(forKey: "v15LightPass")
     }
   }
 

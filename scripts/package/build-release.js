@@ -27,6 +27,7 @@ const { finalizeBundle } = require('./bundle');
 const { createTarGz, createZip, writeChecksum } = require('./archives');
 const { buildSelfExtractingExecutable } = require('./sfx');
 const { copyTree, ensureDir, removeIfExists, writeJson } = require('./fs-utils');
+const { computeWebFingerprint, readWebStamp, writeWebStamp } = require('./web-fingerprint');
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_OUT = path.join(REPOSITORY_ROOT, 'dist', 'release');
@@ -43,8 +44,8 @@ function usage() {
   --node-version <v>      内置 Node 版本，默认当前运行时
   --node-runtime-dir <d>  直接使用指定的 Node 运行时目录（仅单目标）
   --out <dir>             输出目录，默认 dist/release
-  --build-web             强制构建 WebUI（默认只在 web/dist 缺失时构建）
-  --skip-web-build        不构建 WebUI，直接使用现有 web/dist
+  --build-web             强制构建 WebUI（默认按源码指纹决定是否复用 web/dist）
+  --skip-web-build        不构建 WebUI；web/dist 与源码指纹不一致时只告警不重建
   --npm-registry <url>    覆盖 npm registry（默认沿用 npm 配置；国内可用 https://registry.npmmirror.com）
   --with-go               兼容选项；Go Server 和 CLI 已是必需组件（默认构建）
   --skip-sfx              不生成单文件自解压产物
@@ -110,7 +111,7 @@ function npmCommand() {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
 }
 
-function runWebBuild(repositoryRoot) {
+function runWebBuild(repositoryRoot, fingerprint) {
   console.log('[pkg] building WebUI');
   const result = spawnSync(npmCommand(), ['run', 'web:build'], {
     cwd: repositoryRoot,
@@ -119,15 +120,35 @@ function runWebBuild(repositoryRoot) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`WebUI build failed with ${result.status}`);
+  writeWebStamp(path.join(repositoryRoot, 'web', 'dist'), fingerprint);
 }
 
+// ensureWebDist 用内容指纹判断 web/dist 是否还能代表当前源码。
+//
+// 旧行为只看 web/dist/index.html 是否存在：web/src 改了、依赖变了也照样复用，
+// 结果是把旧 UI 静默打进发布包（新接口 404、菜单缺失都从构建日志里看不出来）。
+// 现在只有指纹匹配才复用；-—skip-web-build 是显式例外，但仍会打印警告。
 function ensureWebDist(repositoryRoot, options) {
-  const indexFile = path.join(repositoryRoot, 'web', 'dist', 'index.html');
+  const webRoot = path.join(repositoryRoot, 'web');
+  const distDir = path.join(webRoot, 'dist');
+  const indexFile = path.join(distDir, 'index.html');
+  const fingerprint = computeWebFingerprint(webRoot);
+  const stamp = readWebStamp(distDir);
+  const hasDist = fs.existsSync(indexFile);
+
   if (options.buildWeb) {
-    runWebBuild(repositoryRoot);
-  } else if (!fs.existsSync(indexFile)) {
-    if (options.skipWebBuild) throw new Error('web/dist is missing and --skip-web-build was set');
-    runWebBuild(repositoryRoot);
+    runWebBuild(repositoryRoot, fingerprint);
+  } else if (hasDist && stamp && stamp.fingerprint === fingerprint) {
+    console.log(`[pkg] web/dist 复用（指纹 ${fingerprint.slice(0, 12)}）`);
+  } else if (options.skipWebBuild) {
+    if (!hasDist) throw new Error('web/dist is missing and --skip-web-build was set');
+    const reason = stamp ? 'web/dist 指纹与当前源码不一致' : 'web/dist 缺少 BUILD_STAMP.json';
+    console.warn(`[pkg] 警告：--skip-web-build 且 ${reason}，产物可能包含旧 WebUI`);
+  } else {
+    if (hasDist) {
+      console.log(`[pkg] web/dist 已过期（${stamp ? '指纹不一致' : '缺少构建戳'}），重新构建`);
+    }
+    runWebBuild(repositoryRoot, fingerprint);
   }
   if (!fs.existsSync(indexFile)) throw new Error('web/dist/index.html is still missing after build');
 }

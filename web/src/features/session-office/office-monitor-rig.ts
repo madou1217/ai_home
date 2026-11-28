@@ -7,25 +7,22 @@ import {
 } from './office-computer-state';
 import {
   createMonitorScreenBundle,
-  resizeMonitorScreenBundle,
   updateMonitorScreenTexture,
   type CanvasTextureBundle,
-  type MonitorScreenLod,
 } from './office-scene-textures';
-import { getSharedVoxelMaterialSet, type VoxelQualityTier } from './office-voxel-atlas';
+import { getSharedVoxelMaterialSet } from './office-voxel-atlas';
 import { VoxelBoxBuilder } from './office-voxel-builder';
 
 /**
  * Minecraft 体素单显示器组件：
- * - 雕刻深铁凹框外壳（带背部散热格栅、VESA 铁块、顶置像素摄像头）+ 零光晕洗白的清晰高对比 LCD 面板。
- * - 支持按相机距离平滑切换 standard / closeup 双档高清纹理 LOD（最高 2048×1280，各向异性最高 16x）。
- * - 桌沿夹具、立柱与严格正交体素支臂合批为 1 个 Mesh，拖动显示器实时同步支臂与偏航角。
- * - 精准输出世界空间屏幕中心点（screenCenterTarget）与正面法线（screenForward），聚焦时正视清晰可读。
+ * - 厚实深灰方块边框外壳 + 实时 2D Canvas 像素风屏幕（NearestFilter）。
+ * - 桌沿方块夹具、方形立柱与正交体素支臂合批为 1 个 Mesh。
+ * - 每工位独立 transform；yaw 由 3D 场景中按住显示器拖动直接修改。
  */
 
 export const DESK_SURFACE_Y = 0.746;
 
-/** 显示平面尺寸（1.05 × 0.65625 ≈ 16:10，对应 1024×640 / 2048×1280） */
+/** 显示平面尺寸（1.05 × 0.65625 ≈ 16:10，对应 1024×640） */
 export const MONITOR_SCREEN_WIDTH = 1.05;
 export const MONITOR_SCREEN_HEIGHT = 0.65625;
 export const MONITOR_SCREEN_CENTER_OFFSET_Y = 0.53125;
@@ -50,14 +47,9 @@ export interface SingleMonitorRig {
   monitorGroup: THREE.Group;
   screenMesh: THREE.Mesh;
   screenBundle: CanvasTextureBundle;
-  screenMaterial: THREE.MeshBasicMaterial;
+  screenMaterial: THREE.MeshLambertMaterial;
   powerLedMaterial: THREE.MeshBasicMaterial;
-  webcamLedMaterial: THREE.MeshBasicMaterial;
-  screenGlowMesh: THREE.Mesh;
-  screenGlowMaterial: THREE.MeshBasicMaterial;
   currentTransform: OfficeMonitorTransform;
-  currentLod: MonitorScreenLod;
-  currentTier: VoxelQualityTier;
 }
 
 export interface MonitorAssemblyRig {
@@ -90,7 +82,7 @@ function tagStationTree(object: THREE.Object3D, sessionKey: string): void {
   });
 }
 
-/** 构建显示器合批体素外壳（背板、内凹前边框、后背散热棱、VESA 铁块与顶置摄像头） */
+/** 构建显示器合批体素外壳（背板、4 条内凹前边框、后背凸包、VESA 铁块及摄像头）。 */
 function createMonitorHousingGeometry(): THREE.BufferGeometry {
   const builder = new VoxelBoxBuilder();
   const cy = MONITOR_SCREEN_CENTER_OFFSET_Y;
@@ -98,7 +90,6 @@ function createMonitorHousingGeometry(): THREE.BufferGeometry {
   const halfH = MONITOR_HOUSING_HALF_H;
   const rim = MONITOR_BEZEL_RIM;
 
-  // 主背板
   builder.addBox({
     minX: -halfW,
     minY: cy - halfH,
@@ -109,14 +100,13 @@ function createMonitorHousingGeometry(): THREE.BufferGeometry {
     tiles: { pz: 'screen_off', all: 'dark_iron' },
   });
 
-  // 四边内凹前边框（立体感更强的 0.043 深度）
   builder.addBox({
     minX: -halfW,
     minY: cy + halfH - rim,
     minZ: -0.015625,
     maxX: halfW,
     maxY: cy + halfH,
-    maxZ: 0.028,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true },
   });
@@ -126,7 +116,7 @@ function createMonitorHousingGeometry(): THREE.BufferGeometry {
     minZ: -0.015625,
     maxX: halfW,
     maxY: cy - halfH + rim,
-    maxZ: 0.028,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true },
   });
@@ -136,7 +126,7 @@ function createMonitorHousingGeometry(): THREE.BufferGeometry {
     minZ: -0.015625,
     maxX: -halfW + rim,
     maxY: cy + halfH - rim,
-    maxZ: 0.028,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true, py: true, ny: true },
   });
@@ -146,37 +136,22 @@ function createMonitorHousingGeometry(): THREE.BufferGeometry {
     minZ: -0.015625,
     maxX: halfW,
     maxY: cy + halfH - rim,
-    maxZ: 0.028,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true, py: true, ny: true },
   });
 
-  // 下巴细金属品牌条
   builder.addBox({
-    minX: -0.125,
-    minY: cy - halfH + 0.018,
-    minZ: 0.028,
-    maxX: 0.125,
-    maxY: cy - halfH + 0.044,
-    maxZ: 0.036,
-    tiles: 'iron_block',
-    occludes: false,
-    hiddenFaces: { nz: true },
-  });
-
-  // 后背电子模块凸包（含通风网孔纹理）
-  builder.addBox({
-    minX: -0.28125,
-    minY: cy - 0.1875,
+    minX: -0.234375,
+    minY: cy - 0.171875,
     minZ: -0.203125,
-    maxX: 0.28125,
-    maxY: cy + 0.1875,
+    maxX: 0.234375,
+    maxY: cy + 0.171875,
     maxZ: -0.125,
-    tiles: { py: 'pc_mesh', nz: 'dark_iron', all: 'dark_iron' },
+    tiles: 'dark_iron',
     hiddenFaces: { pz: true },
   });
 
-  // VESA 金属快装座
   builder.addBox({
     minX: -0.09375,
     minY: cy - 0.09375,
@@ -188,24 +163,24 @@ function createMonitorHousingGeometry(): THREE.BufferGeometry {
     hiddenFaces: { pz: true },
   });
 
-  // 顶部居中方块摄像头 + 镜头框
+  // 顶部居中方块摄像头砖块
   builder.addBox({
-    minX: -0.09375,
+    minX: -0.078125,
     minY: cy + halfH,
     minZ: -0.0625,
-    maxX: 0.09375,
+    maxX: 0.078125,
     maxY: cy + halfH + 0.078125,
-    maxZ: 0.028,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { ny: true },
   });
   builder.addBox({
     minX: -0.0234375,
     minY: cy + halfH + 0.015625,
-    minZ: 0.028,
+    minZ: 0.0234375,
     maxX: 0.0234375,
     maxY: cy + halfH + 0.0625,
-    maxZ: 0.048,
+    maxZ: 0.046875,
     tiles: { pz: 'screen_off', all: 'iron_block' },
     occludes: false,
     hiddenFaces: { nz: true },
@@ -214,16 +189,15 @@ function createMonitorHousingGeometry(): THREE.BufferGeometry {
   return builder.build(true);
 }
 
-/** 桌沿夹具、立柱与严格正交体素支臂合批为单一 BufferGeometry */
+/** 桌沿夹具、立柱与严格 0° 轴对齐曼哈顿支臂合批为单一 BufferGeometry。 */
 function buildMergedArmStructureGeometry(transform: OfficeMonitorTransform): THREE.BufferGeometry {
   const builder = new VoxelBoxBuilder();
 
-  // 桌沿重型夹具与下锁扣
   builder.addBox({
-    minX: ARM_HUB_X - 0.109375,
+    minX: ARM_HUB_X - 0.09375,
     minY: DESK_SURFACE_Y,
     minZ: ARM_HUB_Z - 0.09375,
-    maxX: ARM_HUB_X + 0.109375,
+    maxX: ARM_HUB_X + 0.09375,
     maxY: DESK_SURFACE_Y + 0.046875,
     maxZ: ARM_HUB_Z + 0.09375,
     tiles: 'iron_block',
@@ -249,7 +223,6 @@ function buildMergedArmStructureGeometry(transform: OfficeMonitorTransform): THR
     tiles: 'iron_block',
     hiddenFaces: { nz: true },
   });
-  // 立柱 + 顶帽 + 理线环
   builder.addBox({
     minX: ARM_HUB_X - 0.046875,
     minY: DESK_SURFACE_Y + 0.046875,
@@ -268,9 +241,6 @@ function buildMergedArmStructureGeometry(transform: OfficeMonitorTransform): THR
     maxY: DESK_SURFACE_Y + MAST_TOP_Y + 0.046875,
     maxZ: ARM_HUB_Z + 0.0625,
     tiles: 'iron_block',
-  });
-  builder.addCenteredBox(ARM_HUB_X, DESK_SURFACE_Y + 0.24, ARM_HUB_Z - 0.055, 0.08, 0.045, 0.04, 'iron_block', {
-    occludes: false,
   });
 
   const worldMonitorY = DESK_SURFACE_Y + transform.y;
@@ -336,35 +306,18 @@ function buildArmSignature(transform: OfficeMonitorTransform): string {
 function buildSingleMonitorUnit(
   sessionKey: string,
   anisotropy: number,
-  palette: OfficeScenePalette,
-  tier: VoxelQualityTier
+  palette: OfficeScenePalette
 ): SingleMonitorRig {
   const sharedMaterials = getSharedVoxelMaterialSet();
-  const screenBundle = createMonitorScreenBundle(anisotropy, 'standard', tier);
-
-  // 采用 MeshBasicMaterial + toneMapped: false 确保屏幕文字 1:1 sRGB 还原、零强光洗白与阴影噪点
-  const screenMaterial = new THREE.MeshBasicMaterial({
+  const screenBundle = createMonitorScreenBundle(anisotropy);
+  const screenMaterial = new THREE.MeshLambertMaterial({
     map: screenBundle.texture,
-    color: '#ffffff',
-    toneMapped: false,
+    emissive: new THREE.Color('#ffffff'),
+    emissiveMap: screenBundle.texture,
+    emissiveIntensity: palette.mode === 'dark' ? 1.15 : 0.96,
   });
 
-  const powerLedMaterial = new THREE.MeshBasicMaterial({
-    color: palette.successHex,
-    toneMapped: false,
-  });
-  const webcamLedMaterial = new THREE.MeshBasicMaterial({
-    color: palette.accentHex,
-    toneMapped: false,
-  });
-  const screenGlowMaterial = new THREE.MeshBasicMaterial({
-    color: '#56ecff',
-    transparent: true,
-    opacity: palette.mode === 'dark' ? 0.08 : 0.0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-
+  const powerLedMaterial = new THREE.MeshBasicMaterial({ color: palette.successHex });
   const monitorGroup = new THREE.Group();
 
   const housingMesh = new THREE.Mesh(createMonitorHousingGeometry(), sharedMaterials.opaque);
@@ -378,39 +331,17 @@ function buildSingleMonitorUnit(
   screenMesh.userData.noShadow = true;
   monitorGroup.add(screenMesh);
 
-  // 夜间投射到显示器正下方桌面的微弱屏幕余辉（零额外光源开销）
-  const screenGlowMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.34), screenGlowMaterial);
-  screenGlowMesh.rotation.x = -Math.PI / 2;
-  screenGlowMesh.position.set(0, 0.012, 0.22);
-  screenGlowMesh.userData.noShadow = true;
-  screenGlowMesh.visible = palette.mode === 'dark';
-  monitorGroup.add(screenGlowMesh);
-
-  // 右下角电源指示灯
   const powerLedMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.056, 0.024, 0.016),
+    new THREE.BoxGeometry(0.0625, 0.03125, 0.018),
     powerLedMaterial
   );
   powerLedMesh.position.set(
     MONITOR_HOUSING_HALF_W - 0.140625,
     MONITOR_SCREEN_CENTER_OFFSET_Y - MONITOR_HOUSING_HALF_H + MONITOR_BEZEL_RIM * 0.5,
-    0.032
+    0.028
   );
   powerLedMesh.userData.noShadow = true;
   monitorGroup.add(powerLedMesh);
-
-  // 顶置摄像头旁微型青色工作指示像素
-  const webcamLedMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.018, 0.018, 0.014),
-    webcamLedMaterial
-  );
-  webcamLedMesh.position.set(
-    0.052,
-    MONITOR_SCREEN_CENTER_OFFSET_Y + MONITOR_HOUSING_HALF_H + 0.039,
-    0.032
-  );
-  webcamLedMesh.userData.noShadow = true;
-  monitorGroup.add(webcamLedMesh);
 
   tagMonitorTree(monitorGroup, sessionKey);
 
@@ -420,20 +351,14 @@ function buildSingleMonitorUnit(
     screenBundle,
     screenMaterial,
     powerLedMaterial,
-    webcamLedMaterial,
-    screenGlowMesh,
-    screenGlowMaterial,
     currentTransform: { ...DEFAULT_OFFICE_MONITOR_TRANSFORM },
-    currentLod: 'standard',
-    currentTier: tier,
   };
 }
 
 export function createMonitorAssemblyRig(
   sessionKey: string,
   anisotropy: number,
-  palette: OfficeScenePalette,
-  tier: VoxelQualityTier = 'high'
+  palette: OfficeScenePalette
 ): MonitorAssemblyRig {
   const root = new THREE.Group();
   const sharedMaterials = getSharedVoxelMaterialSet();
@@ -447,7 +372,7 @@ export function createMonitorAssemblyRig(
   tagStationTree(mountBaseGroup, sessionKey);
   root.add(mountBaseGroup);
 
-  const monitor = buildSingleMonitorUnit(sessionKey, anisotropy, palette, tier);
+  const monitor = buildSingleMonitorUnit(sessionKey, anisotropy, palette);
   root.add(monitor.monitorGroup);
 
   const rig: MonitorAssemblyRig = {
@@ -475,63 +400,22 @@ export function applyMonitorTransform(rig: MonitorAssemblyRig, transform: Office
   }
 }
 
-/** 零分配填充显示器屏幕中心世界坐标（供每帧距离 LOD 判断） */
-export function writeMonitorScreenCenterWorld(
-  rig: MonitorAssemblyRig,
-  stationWorldPos: THREE.Vector3,
-  out: THREE.Vector3
-): THREE.Vector3 {
-  const t = rig.monitor.currentTransform;
-  return out.set(
-    stationWorldPos.x + t.x,
-    stationWorldPos.y + DESK_SURFACE_Y + t.y + MONITOR_SCREEN_CENTER_OFFSET_Y,
-    stationWorldPos.z + t.z
-  );
-}
-
-/** 计算显示器在世界空间中的屏幕中心点、上沿锚点与正面法线（供 focusStation 正视对准） */
+/** 计算显示器在世界空间中的屏幕上沿目标点与正面朝向法线（供 focusStation 精准对准）。 */
 export function computeMonitorFocusAnchor(
   rig: MonitorAssemblyRig,
   stationWorldPos: THREE.Vector3
-): {
-  screenCenterTarget: THREE.Vector3;
-  screenTopTarget: THREE.Vector3;
-  screenForward: THREE.Vector3;
-} {
+): { screenTopTarget: THREE.Vector3; screenForward: THREE.Vector3 } {
   const t = rig.monitor.currentTransform;
   const centerY = DESK_SURFACE_Y + t.y + MONITOR_SCREEN_CENTER_OFFSET_Y;
   const topY = centerY + MONITOR_SCREEN_HEIGHT * 0.5;
-  const wx = stationWorldPos.x + t.x;
-  const wz = stationWorldPos.z + t.z;
   return {
-    screenCenterTarget: new THREE.Vector3(wx, stationWorldPos.y + centerY, wz),
-    screenTopTarget: new THREE.Vector3(wx, stationWorldPos.y + topY, wz),
+    screenTopTarget: new THREE.Vector3(
+      stationWorldPos.x + t.x,
+      stationWorldPos.y + topY,
+      stationWorldPos.z + t.z
+    ),
     screenForward: new THREE.Vector3(Math.sin(t.yaw), 0, Math.cos(t.yaw)).normalize(),
   };
-}
-
-/** 动态切换显示器画布清晰度 LOD（近距升级 2048×1280，远距回落省显存） */
-export function setMonitorScreenLod(
-  rig: MonitorAssemblyRig,
-  lod: MonitorScreenLod,
-  tier: VoxelQualityTier,
-  session: OfficeSessionItem,
-  isSelected: boolean,
-  palette: OfficeScenePalette,
-  anisotropy: number
-): boolean {
-  const unit = rig.monitor;
-  if (unit.currentLod === lod && unit.currentTier === tier) {
-    return false;
-  }
-  unit.currentLod = lod;
-  unit.currentTier = tier;
-  const resized = resizeMonitorScreenBundle(unit.screenBundle, lod, tier, anisotropy);
-  if (resized) {
-    updateMonitorScreenTexture(unit.screenBundle, session, isSelected, palette, lod);
-    return true;
-  }
-  return false;
 }
 
 export function syncMonitorAssemblyRig(
@@ -547,27 +431,20 @@ export function syncMonitorAssemblyRig(
   const unit = rig.monitor;
   const isDark = palette.mode === 'dark';
 
-  updateMonitorScreenTexture(unit.screenBundle, session, isSelected, palette, unit.currentLod);
+  updateMonitorScreenTexture(unit.screenBundle, session, isSelected, palette);
 
   if (session.availability === 'exited') {
-    unit.screenMaterial.color.set('#a8b8cc');
+    unit.screenMaterial.emissiveIntensity = isDark ? 1.0 : 0.68;
     unit.powerLedMaterial.color.set(LED_EXITED_HEX);
-    unit.webcamLedMaterial.color.set('#334155');
-    unit.screenGlowMesh.visible = false;
   } else if (session.availability === 'unavailable') {
-    unit.screenMaterial.color.set('#f0e5d2');
+    unit.screenMaterial.emissiveIntensity = isDark ? 1.05 : 0.84;
     unit.powerLedMaterial.color.set(palette.warningHex);
-    unit.webcamLedMaterial.color.set(palette.warningHex);
-    unit.screenGlowMesh.visible = isDark;
-    unit.screenGlowMaterial.color.set(palette.warningHex);
-    unit.screenGlowMaterial.opacity = 0.05;
   } else {
-    unit.screenMaterial.color.set('#ffffff');
-    const accent = session.availability === 'interactive' ? palette.successHex : palette.accentHex;
-    unit.powerLedMaterial.color.set(accent);
-    unit.webcamLedMaterial.color.set(isSelected ? '#56ecff' : accent);
-    unit.screenGlowMesh.visible = isDark;
-    unit.screenGlowMaterial.color.set(isSelected ? '#56ecff' : accent);
-    unit.screenGlowMaterial.opacity = isSelected ? 0.11 : 0.07;
+    unit.screenMaterial.emissiveIntensity = isDark
+      ? (isSelected ? 1.25 : 1.12)
+      : (isSelected ? 1.08 : 0.96);
+    unit.powerLedMaterial.color.set(
+      session.availability === 'interactive' ? palette.successHex : palette.accentHex
+    );
   }
 }

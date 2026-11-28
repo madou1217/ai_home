@@ -5,29 +5,26 @@ import type {
   SessionAvailability,
 } from './session-office-types';
 import type { OfficeScenePalette } from './office-scene-types';
-import { getSharedVoxelMaterialSet } from './office-voxel-atlas';
 import {
   createSolidColorVoxelGeometry,
   FACE_SHADE,
-  mergeVoxelGeometries,
   type SolidColorBoxInput,
   type VoxelFaceDir,
 } from './office-voxel-builder';
 import type { CharacterPoseOutput } from './office-voxel-behaviour';
 
 /**
- * Minecraft Steve 高精度体素角色模块：
- * 1. 严格轴对齐方块比例（站立总高 1.75），并在头部/躯干合并经典 Minecraft 第二层立体皮肤外层
- *    （立体发冠/刘海层次与夹克领口/袖口浮雕，零额外 Draw Call）。
- * 2. 64×64 程序化像素皮肤贴图（NearestFilter、无 mipmap、SRGBColorSpace、±8% 像素质感）。
- * 3. PBR MeshStandardMaterial 接入场景日光、轮廓补光与夜间暖色灯笼，与体素世界完美融合。
- * 4. 脚底/椅底内置共享接触阴影面片（随站起/走动动态锚定，零每帧对象分配）。
+ * Minecraft Steve 体素角色模块：
+ * 1. 严格轴对齐方块构成（总站立高度 1.75 世界单位，全尺寸为 0.0625 像素整数倍）。
+ * 2. 64×64 程序化像素皮肤贴图（NearestFilter、无 mipmap、SRGBColorSpace、确定性 ±8% 像素亮度抖动）。
+ * 3. 逐面烘焙 Minecraft 经典亮度（顶面 1.00 / ±X 0.80 / ±Z 0.65 / 底面 0.52）。
+ * 4. 坐姿精准对齐椅面（y = 0.375）与桌面（y = 0.746），零穿模且每角色可见 Draw Call ≤ 7。
  */
 
 const SKIN_SIZE = 64;
 const SKIN_UV_INSET = 0.02;
 
-/** 坐姿旋转 -90° 朝向 +Z 后的世界朝向面亮度映射 */
+/** 坐姿旋转 -90° 朝向 +Z 后的世界朝向面亮度映射（局部 +Z 朝上变为顶面 1.0） */
 const SEATED_FORWARD_FACE_SHADE: Readonly<Record<VoxelFaceDir, number>> = {
   py: FACE_SHADE.nz,
   ny: FACE_SHADE.pz,
@@ -73,6 +70,7 @@ interface FaceTemplate {
   ];
 }
 
+// 严格逆时针（CCW）向外绕序的六面模板，与 office-voxel-builder 保持一致
 const BOX_FACE_TEMPLATES: readonly FaceTemplate[] = [
   {
     dir: 'py',
@@ -136,7 +134,7 @@ const BOX_FACE_TEMPLATES: readonly FaceTemplate[] = [
   },
 ];
 
-// 64×64 Minecraft 皮肤图集无重叠像素区域
+// 64×64 Minecraft 皮肤图集无重叠像素区域定义
 const HEAD_UV: BoxUvRegions = {
   py: { x: 8, y: 0, w: 8, h: 8 },
   ny: { x: 16, y: 0, w: 8, h: 8 },
@@ -144,16 +142,6 @@ const HEAD_UV: BoxUvRegions = {
   pz: { x: 8, y: 8, w: 8, h: 8 },
   px: { x: 16, y: 8, w: 8, h: 8 },
   nz: { x: 24, y: 8, w: 8, h: 8 },
-};
-
-// 立体发冠第二层区域（复用头顶头发纯色带，零额外贴图开销）
-const HAIR_CROWN_UV: BoxUvRegions = {
-  py: { x: 8, y: 0, w: 8, h: 8 },
-  ny: { x: 8, y: 0, w: 8, h: 8 },
-  nx: { x: 0, y: 8, w: 8, h: 2 },
-  pz: { x: 8, y: 8, w: 8, h: 2 },
-  px: { x: 16, y: 8, w: 8, h: 2 },
-  nz: { x: 24, y: 8, w: 8, h: 2 },
 };
 
 const TORSO_UV: BoxUvRegions = {
@@ -201,6 +189,7 @@ const LEFT_LEG_UV: BoxUvRegions = {
   nz: { x: 28, y: 40, w: 4, h: 10 },
 };
 
+// 经典 Minecraft 角色肤色、发色、瞳色、裤装与鞋色表
 const SKIN_TONES = [
   '#e8b892',
   '#d89d74',
@@ -258,17 +247,16 @@ export interface OfficeCharacterRig {
   leftLegMesh: THREE.Mesh;
   rightLegMesh: THREE.Mesh;
   handMugMesh: THREE.Mesh;
-  shadowMesh: THREE.Mesh;
   visorMesh: THREE.Mesh;
   glassesMesh: THREE.Mesh;
   headsetMesh: THREE.Mesh;
   badgeLedMesh: THREE.Mesh;
   skinCanvas: HTMLCanvasElement;
   skinTexture: THREE.CanvasTexture;
-  skinMaterial: THREE.MeshStandardMaterial;
-  accessoryMaterial: THREE.MeshStandardMaterial;
+  skinMaterial: THREE.MeshLambertMaterial;
+  accessoryMaterial: THREE.MeshLambertMaterial;
   visorMaterial: THREE.MeshBasicMaterial;
-  badgeLedMaterial: THREE.MeshStandardMaterial;
+  badgeLedMaterial: THREE.MeshLambertMaterial;
   phaseOffset: number;
   availability: SessionAvailability;
   posture: EmployeeVisualPersona['posture'];
@@ -288,6 +276,7 @@ function hashText(value: string): number {
   return hash >>> 0;
 }
 
+/** 确定性像素噪点，返回 [-1, 1] */
 function pixelNoise(seed: number, x: number, y: number): number {
   let h = (seed * 374761393 + x * 668265263 + y * 2147483647) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -299,6 +288,7 @@ function clampByte(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v)));
 }
 
+/** 解析 #rrggbb / #rgb / rgb(...) 为 0..255 sRGB，非法值返回 null */
 function tryParseSrgb(input: string): Rgb | null {
   const trimmed = (input || '').trim();
   const hex6 = /^#([0-9a-fA-F]{6})$/.exec(trimmed);
@@ -330,6 +320,7 @@ function tryParseSrgb(input: string): Rgb | null {
   return null;
 }
 
+/** 安全解析颜色为 0..255 sRGB，避免非法色值产生 NaN 或控制台告警 */
 function parseSrgb(input: string, fallbackHex: string): Rgb {
   return tryParseSrgb(input) ?? tryParseSrgb(fallbackHex) ?? { r: 56, g: 232, b: 255 };
 }
@@ -350,6 +341,9 @@ function lerpRgb(a: Rgb, b: Rgb, t: number): Rgb {
   };
 }
 
+/**
+ * 构建带 64×64 皮肤 UV 与逐面亮度烘焙的轴对齐体素盒几何。
+ */
 function createSkinnedVoxelBox(
   w: number,
   h: number,
@@ -419,19 +413,9 @@ function createSkinnedVoxelBox(
   return geo;
 }
 
-/** 合并头主体与经典 Minecraft 第二层立体发冠浮雕（零额外 Draw Call） */
-function createLayeredHeadGeometry(): THREE.BufferGeometry {
-  const baseHead = createSkinnedVoxelBox(0.5, 0.5, 0.5, HEAD_UV, [0, 0.25, 0]);
-  // 第二层头发外廓：覆盖顶部 2 像素高（y: 0.375..0.522），外扩 0.022 呈现立体刘海/发冠感
-  const hairCrown = createSkinnedVoxelBox(0.544, 0.145, 0.544, HAIR_CROWN_UV, [0, 0.452, 0], {
-    hiddenFaces: { ny: true },
-  });
-  const merged = mergeVoxelGeometries([baseHead, hairCrown]);
-  baseHead.dispose();
-  hairCrown.dispose();
-  return merged;
-}
-
+/**
+ * 逐像素绘制 64×64 Minecraft Steve 皮肤贴图（全区域带 ±8% 像素亮度抖动）。
+ */
 function paintMinecraftSkin(
   canvas: HTMLCanvasElement,
   sessionKey: string,
@@ -450,10 +434,10 @@ function paintMinecraftSkin(
   const skinRgb = parseSrgb(SKIN_TONES[hash % SKIN_TONES.length], '#e8b892');
   const skinNoseRgb = scaleRgb(skinRgb, 0.87);
   const hairRgb = parseSrgb(HAIR_TONES[(hash >>> 4) % HAIR_TONES.length], '#2f2014');
-  const hairHighlightRgb = scaleRgb(hairRgb, 1.16);
+  const hairHighlightRgb = scaleRgb(hairRgb, 1.14);
   const eyeRgb = parseSrgb(EYE_TONES[(hash >>> 8) % EYE_TONES.length], '#2e3c8a');
-  const scleraRgb: Rgb = { r: 246, g: 249, b: 254 };
-  const browRgb = lerpRgb(skinRgb, hairRgb, 0.38);
+  const scleraRgb: Rgb = { r: 244, g: 247, b: 252 };
+  const browRgb = lerpRgb(skinRgb, hairRgb, 0.36);
   const mouthRgb = lerpRgb(scaleRgb(skinRgb, 0.62), hairRgb, 0.35);
   const beardRgb = lerpRgb(hairRgb, scaleRgb(skinRgb, 0.72), 0.28);
 
@@ -462,18 +446,18 @@ function paintMinecraftSkin(
 
   const shirtRgb = parseSrgb(shirtHex, '#38e8ff');
   const shirtDarkRgb = scaleRgb(shirtRgb, 0.78);
-  const collarRgb: Rgb = { r: 238, g: 244, b: 250 };
-  const tieRgb = lerpRgb(parseSrgb(accentHex, '#38e8ff'), shirtDarkRgb, 0.32);
-  const beltRgb: Rgb = { r: 44, g: 36, b: 30 };
-  const buckleRgb: Rgb = { r: 210, g: 216, b: 224 };
-  const badgePlateRgb: Rgb = { r: 28, g: 36, b: 48 };
-  const watchRgb: Rgb = { r: 235, g: 198, b: 82 };
+  const collarRgb: Rgb = { r: 236, g: 242, b: 248 };
+  const tieRgb = lerpRgb(parseSrgb(accentHex, '#38e8ff'), shirtDarkRgb, 0.35);
+  const beltRgb: Rgb = { r: 46, g: 38, b: 32 };
+  const buckleRgb: Rgb = { r: 204, g: 210, b: 218 };
+  const badgePlateRgb: Rgb = { r: 30, g: 38, b: 50 };
+  const watchRgb: Rgb = { r: 232, g: 196, b: 78 };
 
   const trouserRgb = parseSrgb(TROUSER_TONES[(hash >>> 18) % TROUSER_TONES.length], '#3a4f8a');
   const trouserDarkRgb = scaleRgb(trouserRgb, 0.82);
   const shoeRgb = parseSrgb(SHOE_TONES[(hash >>> 21) % SHOE_TONES.length], '#2b3038');
-  const shoeSoleRgb: Rgb = { r: 28, g: 32, b: 38 };
-  const shoeLaceRgb: Rgb = { r: 222, g: 228, b: 236 };
+  const shoeSoleRgb: Rgb = { r: 30, g: 34, b: 40 };
+  const shoeLaceRgb: Rgb = { r: 218, g: 224, b: 232 };
 
   const imageData = ctx.createImageData(SKIN_SIZE, SKIN_SIZE);
   const data = imageData.data;
@@ -501,15 +485,21 @@ function paintMinecraftSkin(
   };
 
   // === 1. 头部 8×8×8 ===
+  // 顶面：头发（带确定性发丝亮暗纹理）
   fillRect(HEAD_UV.py, (lx, ly) => ({
     rgb: (lx + ly * 3) % 5 === 0 ? hairHighlightRgb : hairRgb,
   }));
+
+  // 底面：下巴肤色
   fillRect(HEAD_UV.ny, () => ({ rgb: scaleRgb(skinRgb, 0.94) }));
 
+  // 正面（+Z）：经典 Minecraft 像素脸（顶部 2 行刘海、鬓角、双像素眼、鼻梁、嘴/胡须）
   fillRect(HEAD_UV.pz, (lx, ly) => {
+    // 顶 2 行头发刘海
     if (ly <= 1) {
       return { rgb: ly === 0 && (lx === 2 || lx === 5) ? hairHighlightRgb : hairRgb };
     }
+    // 第 3 行：两侧鬓角与不同发型的斜刘海
     if (ly === 2) {
       const isSideburn = lx === 0 || lx === 7;
       const isFringe =
@@ -518,47 +508,56 @@ function paintMinecraftSkin(
       if (isSideburn || isFringe) return { rgb: hairRgb };
       return { rgb: skinRgb };
     }
+    // 第 4 行：眉弓与长发侧鬓
     if (ly === 3) {
       if (hairStyle === 2 && (lx === 0 || lx === 7)) return { rgb: hairRgb };
       if (lx === 1 || lx === 2 || lx === 5 || lx === 6) return { rgb: browRgb };
       return { rgb: skinRgb };
     }
+    // 第 5 行：清晰 2×1 像素双眼（白眼白 + 彩色瞳孔）
     if (ly === 4) {
       if (lx === 1 || lx === 6) return { rgb: scleraRgb, jitter: 0.04 };
       if (lx === 2 || lx === 5) return { rgb: eyeRgb, jitter: 0.05 };
       if (hairStyle === 2 && (lx === 0 || lx === 7)) return { rgb: hairRgb };
       return { rgb: skinRgb };
     }
+    // 第 6 行：中央 2 像素鼻梁
     if (ly === 5) {
       if (lx === 3 || lx === 4) return { rgb: skinNoseRgb };
       return { rgb: skinRgb };
     }
+    // 第 7 行：嘴部 / 经典 Steve 络腮微笑
     if (ly === 6) {
       if (lx === 3 || lx === 4) return { rgb: mouthRgb, jitter: 0.06 };
       if (mouthStyle === 0 && (lx === 2 || lx === 5)) return { rgb: beardRgb };
       if (mouthStyle === 2 && (lx === 2 || lx === 5)) return { rgb: lerpRgb(skinRgb, mouthRgb, 0.55) };
       return { rgb: skinRgb };
     }
+    // 第 8 行：下巴 / 经典下颌胡须
     if (mouthStyle === 0 && lx >= 2 && lx <= 5) {
       return { rgb: beardRgb };
     }
     return { rgb: skinRgb };
   });
 
+  // 左右侧面（nx 靠右缘为前脸，px 靠左缘为前脸）
   const paintHeadSide = (rect: SkinUvRect, frontAtLeft: boolean): void => {
     fillRect(rect, (lx, ly) => {
       const distFromFront = frontAtLeft ? lx : 7 - lx;
       if (ly <= 1) return { rgb: hairRgb };
       if (hairStyle === 2) {
+        // 长发包耳造型
         if (distFromFront >= 1 && ly <= 6) return { rgb: hairRgb };
         if (distFromFront === 0 && ly <= 4) return { rgb: hairRgb };
         return { rgb: skinRgb };
       }
       if (hairStyle === 3) {
+        // 利落短寸渐变
         if (ly === 2 && distFromFront >= 1) return { rgb: hairRgb };
         if (ly === 3 && distFromFront >= 4) return { rgb: hairRgb };
         return { rgb: skinRgb };
       }
+      // 经典 Steve 阶梯鬓角与后脑发线
       if (ly === 2) return { rgb: hairRgb };
       if (ly === 3 && (distFromFront === 0 || distFromFront >= 3)) return { rgb: hairRgb };
       if (ly === 4 && distFromFront >= 4) return { rgb: hairRgb };
@@ -569,6 +568,7 @@ function paintMinecraftSkin(
   paintHeadSide(HEAD_UV.nx, false);
   paintHeadSide(HEAD_UV.px, true);
 
+  // 背面（-Z）：完整后脑头发 + 底部后颈肤色
   fillRect(HEAD_UV.nz, (lx, ly) => {
     const backHairRows = hairStyle === 2 ? 7 : hairStyle === 3 ? 4 : 6;
     if (ly < backHairRows) {
@@ -586,20 +586,32 @@ function paintMinecraftSkin(
   });
   fillRect(TORSO_UV.ny, () => ({ rgb: trouserDarkRgb }));
 
+  // 胸前（+Z）：衬衫领口、领带/门襟、胸牌底板、腰带与皮带扣
   fillRect(TORSO_UV.pz, (lx, ly) => {
     if (ly === 9) {
       return { rgb: lx === 3 || lx === 4 ? buckleRgb : beltRgb };
     }
-    if (ly === 0 && lx >= 2 && lx <= 5) return { rgb: collarRgb };
-    if (ly === 1 && (lx === 3 || lx === 4)) return { rgb: collarRgb };
-    if ((ly === 2 || ly === 3) && (lx === 5 || lx === 6)) return { rgb: badgePlateRgb };
+    if (ly === 0 && lx >= 2 && lx <= 5) {
+      return { rgb: collarRgb };
+    }
+    if (ly === 1 && (lx === 3 || lx === 4)) {
+      return { rgb: collarRgb };
+    }
+    // 胸口状态灯后方的 2×2 深色像素工牌底板
+    if ((ly === 2 || ly === 3) && (lx === 5 || lx === 6)) {
+      return { rgb: badgePlateRgb };
+    }
+    // 中央领带 / 门襟点缀
     if (ly >= 2 && ly <= 7 && (lx === 3 || lx === 4)) {
       return { rgb: ly % 2 === 0 ? tieRgb : lerpRgb(tieRgb, shirtDarkRgb, 0.35) };
     }
-    if (lx === 0 || lx === 7 || ly === 8) return { rgb: shirtDarkRgb };
+    if (lx === 0 || lx === 7 || ly === 8) {
+      return { rgb: shirtDarkRgb };
+    }
     return { rgb: shirtRgb };
   });
 
+  // 后背（-Z）：简洁衬衫接缝与腰带
   fillRect(TORSO_UV.nz, (lx, ly) => {
     if (ly === 9) return { rgb: beltRgb };
     if (ly === 0 && lx >= 2 && lx <= 5) return { rgb: collarRgb };
@@ -607,6 +619,7 @@ function paintMinecraftSkin(
     return { rgb: shirtRgb };
   });
 
+  // 躯干左右侧
   const paintTorsoSide = (rect: SkinUvRect): void => {
     fillRect(rect, (_lx, ly) => {
       if (ly === 9) return { rgb: beltRgb };
@@ -617,9 +630,10 @@ function paintMinecraftSkin(
   paintTorsoSide(TORSO_UV.nx);
   paintTorsoSide(TORSO_UV.px);
 
-  // === 3. 左右双臂 4×10×4 ===
+  // === 3. 左右双臂 4×10×4（上袖子 + 白袖口 + 下方肤色手掌） ===
   const paintArm = (uv: BoxUvRegions, hasWatch: boolean): void => {
     fillRect(uv.py, () => ({ rgb: shirtRgb }));
+    // 拳头前端（ny）：肤色 + 指缝暗像素
     fillRect(uv.ny, (_lx, ly) => ({
       rgb: ly === 2 ? scaleRgb(skinRgb, 0.86) : skinRgb,
     }));
@@ -628,8 +642,13 @@ function paintMinecraftSkin(
     for (let i = 0; i < sideFaces.length; i += 1) {
       const dir = sideFaces[i];
       fillRect(uv[dir], (lx, ly) => {
-        if (ly <= 5) return { rgb: ly === 5 ? shirtDarkRgb : shirtRgb };
-        if (ly === 6) return { rgb: collarRgb };
+        if (ly <= 5) {
+          return { rgb: ly === 5 ? shirtDarkRgb : shirtRgb };
+        }
+        if (ly === 6) {
+          return { rgb: collarRgb };
+        }
+        // 左腕手表像素点缀
         if (hasWatch && ly === 7 && (dir === 'pz' || dir === 'px') && (lx === 1 || lx === 2)) {
           return { rgb: watchRgb };
         }
@@ -640,9 +659,10 @@ function paintMinecraftSkin(
   paintArm(RIGHT_ARM_UV, false);
   paintArm(LEFT_ARM_UV, true);
 
-  // === 4. 左右双腿 4×10×4 ===
+  // === 4. 左右双腿 4×10×4（牛仔长裤 + 裤脚 + 方块鞋） ===
   const paintLeg = (uv: BoxUvRegions, outerDir: 'px' | 'nx'): void => {
     fillRect(uv.py, () => ({ rgb: trouserDarkRgb }));
+    // 鞋底（ny）：深色鞋底与纹路
     fillRect(uv.ny, (lx, ly) => ({
       rgb: (lx === 1 || lx === 2) && (ly === 1 || ly === 2) ? shoeRgb : shoeSoleRgb,
     }));
@@ -656,11 +676,17 @@ function paintMinecraftSkin(
           const isPocket = dir === 'pz' && ly === 0 && (lx === 0 || lx === 3);
           return { rgb: isOuterSeam || isPocket ? trouserDarkRgb : trouserRgb };
         }
-        if (ly === 7) return { rgb: trouserDarkRgb };
+        if (ly === 7) {
+          return { rgb: trouserDarkRgb };
+        }
         if (ly === 8) {
-          if (dir === 'pz' && (lx === 1 || lx === 2)) return { rgb: shoeLaceRgb };
+          // 鞋面与正面鞋带像素高光
+          if (dir === 'pz' && (lx === 1 || lx === 2)) {
+            return { rgb: shoeLaceRgb };
+          }
           return { rgb: shoeRgb };
         }
+        // 底部鞋边
         return { rgb: shoeSoleRgb };
       });
     }
@@ -671,61 +697,145 @@ function paintMinecraftSkin(
   ctx.putImageData(imageData, 0, 0);
 }
 
+/** 构建发光护目镜几何（单次合批，严格轴对齐盒） */
 function createVisorGeometry(accentHex: string): THREE.BufferGeometry {
   const frameHex = '#222936';
   const boxes: SolidColorBoxInput[] = [
-    { minX: -0.25, minY: 0.1875, minZ: 0.25, maxX: 0.25, maxY: 0.25, maxZ: 0.28125, color: accentHex, shadeFaces: false },
-    { minX: -0.28125, minY: 0.25, minZ: 0.25, maxX: 0.28125, maxY: 0.28125, maxZ: 0.28125, color: frameHex, shadeFaces: true },
-    { minX: -0.28125, minY: 0.1875, minZ: -0.0625, maxX: -0.25, maxY: 0.25, maxZ: 0.28125, color: frameHex, shadeFaces: true },
-    { minX: 0.25, minY: 0.1875, minZ: -0.0625, maxX: 0.28125, maxY: 0.25, maxZ: 0.28125, color: frameHex, shadeFaces: true },
+    // 跨眼发光像素条（不叠加暗面，保持清晰自发光感）
+    {
+      minX: -0.25,
+      minY: 0.1875,
+      minZ: 0.25,
+      maxX: 0.25,
+      maxY: 0.25,
+      maxZ: 0.28125,
+      color: accentHex,
+      shadeFaces: false,
+    },
+    // 上沿深色像素边框
+    {
+      minX: -0.28125,
+      minY: 0.25,
+      minZ: 0.25,
+      maxX: 0.28125,
+      maxY: 0.28125,
+      maxZ: 0.28125,
+      color: frameHex,
+      shadeFaces: true,
+    },
+    // 右侧镜腿（-X）
+    {
+      minX: -0.28125,
+      minY: 0.1875,
+      minZ: -0.0625,
+      maxX: -0.25,
+      maxY: 0.25,
+      maxZ: 0.28125,
+      color: frameHex,
+      shadeFaces: true,
+    },
+    // 左侧镜腿（+X）
+    {
+      minX: 0.25,
+      minY: 0.1875,
+      minZ: -0.0625,
+      maxX: 0.28125,
+      maxY: 0.25,
+      maxZ: 0.28125,
+      color: frameHex,
+      shadeFaces: true,
+    },
   ];
   return createSolidColorVoxelGeometry(boxes);
 }
 
+/** 构建方块像素眼镜几何（双镂空方框 + 鼻梁 + 双镜腿，露出双眼像素） */
 function createGlassesGeometry(): THREE.BufferGeometry {
   const frameHex = '#202733';
   const boxes: SolidColorBoxInput[] = [
+    // 右眼镜框四边（-X，精准框住 [-0.1875, -0.0625] × [0.1875, 0.25]）
     { minX: -0.21875, minY: 0.25, minZ: 0.25, maxX: -0.03125, maxY: 0.28125, maxZ: 0.28125, color: frameHex },
     { minX: -0.21875, minY: 0.15625, minZ: 0.25, maxX: -0.03125, maxY: 0.1875, maxZ: 0.28125, color: frameHex },
     { minX: -0.21875, minY: 0.1875, minZ: 0.25, maxX: -0.1875, maxY: 0.25, maxZ: 0.28125, color: frameHex },
     { minX: -0.0625, minY: 0.1875, minZ: 0.25, maxX: -0.03125, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 左眼镜框四边（+X，精准框住 [+0.0625, +0.1875] × [0.1875, 0.25]）
     { minX: 0.03125, minY: 0.25, minZ: 0.25, maxX: 0.21875, maxY: 0.28125, maxZ: 0.28125, color: frameHex },
     { minX: 0.03125, minY: 0.15625, minZ: 0.25, maxX: 0.21875, maxY: 0.1875, maxZ: 0.28125, color: frameHex },
     { minX: 0.03125, minY: 0.1875, minZ: 0.25, maxX: 0.0625, maxY: 0.25, maxZ: 0.28125, color: frameHex },
     { minX: 0.1875, minY: 0.1875, minZ: 0.25, maxX: 0.21875, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 鼻梁连接桥
     { minX: -0.03125, minY: 0.21875, minZ: 0.25, maxX: 0.03125, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 两侧外角连接段
     { minX: -0.28125, minY: 0.21875, minZ: 0.25, maxX: -0.21875, maxY: 0.25, maxZ: 0.28125, color: frameHex },
     { minX: 0.21875, minY: 0.21875, minZ: 0.25, maxX: 0.28125, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 左右镜腿
     { minX: -0.28125, minY: 0.21875, minZ: -0.0625, maxX: -0.25, maxY: 0.25, maxZ: 0.25, color: frameHex },
     { minX: 0.25, minY: 0.21875, minZ: -0.0625, maxX: 0.28125, maxY: 0.25, maxZ: 0.25, color: frameHex },
   ];
   return createSolidColorVoxelGeometry(boxes);
 }
 
+/** 构建方块头戴耳机 + L 形体素麦杆几何（单次合批） */
 function createHeadsetGeometry(accentHex: string): THREE.BufferGeometry {
   const bandHex = '#262e3b';
   const cupHex = '#1b2029';
   const micArmHex = '#313a4a';
   const boxes: SolidColorBoxInput[] = [
-    { minX: -0.328, minY: 0.522, minZ: -0.0625, maxX: 0.328, maxY: 0.584, maxZ: 0.0625, color: bandHex },
-    { minX: -0.328, minY: 0.28125, minZ: -0.0625, maxX: -0.268, maxY: 0.522, maxZ: 0.0625, color: bandHex },
-    { minX: 0.268, minY: 0.28125, minZ: -0.0625, maxX: 0.328, maxY: 0.522, maxZ: 0.0625, color: bandHex },
-    { minX: -0.328, minY: 0.125, minZ: -0.09375, maxX: -0.268, maxY: 0.3125, maxZ: 0.09375, color: cupHex },
-    { minX: -0.358, minY: 0.15625, minZ: -0.0625, maxX: -0.328, maxY: 0.28125, maxZ: 0.0625, color: accentHex },
-    { minX: 0.268, minY: 0.125, minZ: -0.09375, maxX: 0.328, maxY: 0.3125, maxZ: 0.09375, color: cupHex },
-    { minX: 0.328, minY: 0.15625, minZ: -0.0625, maxX: 0.358, maxY: 0.28125, maxZ: 0.0625, color: accentHex },
-    { minX: -0.328, minY: 0.09375, minZ: 0.03125, maxX: -0.296, maxY: 0.125, maxZ: 0.3125, color: micArmHex },
-    { minX: -0.296, minY: 0.09375, minZ: 0.28125, maxX: -0.09375, maxY: 0.125, maxZ: 0.3125, color: micArmHex },
+    // 头顶横梁
+    { minX: -0.3125, minY: 0.5, minZ: -0.0625, maxX: 0.3125, maxY: 0.5625, maxZ: 0.0625, color: bandHex },
+    // 左右竖梁
+    { minX: -0.3125, minY: 0.28125, minZ: -0.0625, maxX: -0.25, maxY: 0.5, maxZ: 0.0625, color: bandHex },
+    { minX: 0.25, minY: 0.28125, minZ: -0.0625, maxX: 0.3125, maxY: 0.5, maxZ: 0.0625, color: bandHex },
+    // 右方形耳罩 + 外侧亮点饰板
+    { minX: -0.3125, minY: 0.125, minZ: -0.09375, maxX: -0.25, maxY: 0.3125, maxZ: 0.09375, color: cupHex },
+    { minX: -0.34375, minY: 0.15625, minZ: -0.0625, maxX: -0.3125, maxY: 0.28125, maxZ: 0.0625, color: accentHex },
+    // 左方形耳罩 + 外侧亮点饰板
+    { minX: 0.25, minY: 0.125, minZ: -0.09375, maxX: 0.3125, maxY: 0.3125, maxZ: 0.09375, color: cupHex },
+    { minX: 0.3125, minY: 0.15625, minZ: -0.0625, maxX: 0.34375, maxY: 0.28125, maxZ: 0.0625, color: accentHex },
+    // L 形体素麦克风杆（前伸段 + 嘴前折入段 + 方块麦头）
+    { minX: -0.3125, minY: 0.09375, minZ: 0.03125, maxX: -0.28125, maxY: 0.125, maxZ: 0.3125, color: micArmHex },
+    { minX: -0.28125, minY: 0.09375, minZ: 0.28125, maxX: -0.09375, maxY: 0.125, maxZ: 0.3125, color: micArmHex },
     { minX: -0.09375, minY: 0.078125, minZ: 0.265625, maxX: -0.03125, maxY: 0.140625, maxZ: 0.328125, color: accentHex },
   ];
   return createSolidColorVoxelGeometry(boxes);
 }
 
+/** 构建手持方块咖啡杯几何（局部 +Z 朝上，匹配右臂前伸 -90° 时的竖直托杯姿态） */
 function createHandCoffeeMugGeometry(): THREE.BufferGeometry {
   const boxes: SolidColorBoxInput[] = [
-    { minX: -0.055, minY: -0.57, minZ: 0.0, maxX: 0.055, maxY: -0.46, maxZ: 0.125, color: '#f1f5f9', shadeFaces: true },
-    { minX: -0.042, minY: -0.558, minZ: 0.115, maxX: 0.042, maxY: -0.472, maxZ: 0.132, color: '#4a2c18', shadeFaces: true },
-    { minX: -0.09, minY: -0.535, minZ: 0.03, maxX: -0.055, maxY: -0.495, maxZ: 0.095, color: '#e2e8f0', shadeFaces: true },
+    // 白色陶瓷杯身（位于右拳掌心前方）
+    {
+      minX: -0.055,
+      minY: -0.57,
+      minZ: 0.0,
+      maxX: 0.055,
+      maxY: -0.46,
+      maxZ: 0.125,
+      color: '#f1f5f9',
+      shadeFaces: true,
+    },
+    // 深棕咖啡液面顶盖
+    {
+      minX: -0.042,
+      minY: -0.558,
+      minZ: 0.115,
+      maxX: 0.042,
+      maxY: -0.472,
+      maxZ: 0.132,
+      color: '#4a2c18',
+      shadeFaces: true,
+    },
+    // 外侧方块杯耳
+    {
+      minX: -0.09,
+      minY: -0.535,
+      minZ: 0.03,
+      maxX: -0.055,
+      maxY: -0.495,
+      maxZ: 0.095,
+      color: '#e2e8f0',
+      shadeFaces: true,
+    },
   ];
   return createSolidColorVoxelGeometry(boxes);
 }
@@ -734,7 +844,7 @@ function tagCharacterTree(object: THREE.Object3D, sessionKey: string): void {
   object.traverse((child) => {
     child.userData.sessionKey = sessionKey;
     child.userData.hitKind = 'station';
-    if (child instanceof THREE.Mesh && !child.userData.noShadow) {
+    if (child instanceof THREE.Mesh) {
       child.castShadow = true;
       child.receiveShadow = true;
     }
@@ -748,8 +858,8 @@ export function createOfficeCharacter(
   const hash = hashText(session.sessionKey);
   const shirtHex = session.persona.avatarTone || palette.accentHex;
   const accentHex = session.persona.deskAccent || palette.accentHex;
-  const sharedMaterials = getSharedVoxelMaterialSet();
 
+  // 1. 生成 64×64 Minecraft 像素皮肤纹理（严格 NearestFilter + 无 mipmap + SRGBColorSpace）
   const skinCanvas = document.createElement('canvas');
   skinCanvas.width = SKIN_SIZE;
   skinCanvas.height = SKIN_SIZE;
@@ -764,42 +874,27 @@ export function createOfficeCharacter(
   skinTexture.wrapT = THREE.ClampToEdgeWrapping;
   skinTexture.needsUpdate = true;
 
-  // PBR 哑光体素材质：保留像素锐度并接收真实方向光、轮廓补光与夜间灯笼暖光
-  const skinMaterial = new THREE.MeshStandardMaterial({
+  // 2. 共享哑光体素材质（头、躯干、双臂、双腿共用 1 份材质与 1 张贴图）
+  const skinMaterial = new THREE.MeshLambertMaterial({
     map: skinTexture,
     vertexColors: true,
-    roughness: 0.86,
-    metalness: 0.04,
-    envMapIntensity: 0.45,
   });
-  const accessoryMaterial = new THREE.MeshStandardMaterial({
+  const accessoryMaterial = new THREE.MeshLambertMaterial({
     vertexColors: true,
-    roughness: 0.48,
-    metalness: 0.25,
-    envMapIntensity: 0.7,
   });
   const visorMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true,
-    toneMapped: false,
   });
-  const badgeLedMaterial = new THREE.MeshStandardMaterial({
+  const badgeLedMaterial = new THREE.MeshLambertMaterial({
     color: palette.successHex,
     emissive: palette.successHex,
-    emissiveIntensity: 1.15,
-    roughness: 0.3,
+    emissiveIntensity: 0.9,
   });
 
+  // 3. 角色层级与坐姿关节（原点位于椅面中心地面，站立总高 1.75）
   const root = new THREE.Group();
 
-  // 动态脚底接触阴影（走路时始终贴地跟随，坐姿时收于椅底）
-  const shadowGeo = new THREE.PlaneGeometry(0.68, 0.52);
-  shadowGeo.rotateX(-Math.PI / 2);
-  const shadowMesh = new THREE.Mesh(shadowGeo, sharedMaterials.contactShadow);
-  shadowMesh.position.set(0, 0.012, 0);
-  shadowMesh.userData.noShadow = true;
-  shadowMesh.renderOrder = 1;
-  root.add(shadowMesh);
-
+  // 躯干组：枢轴位于椅面顶 y = 0.375，躯干覆盖 y = 0.375..1.00
   const torsoGroup = new THREE.Group();
   torsoGroup.position.set(0, 0.375, 0);
   root.add(torsoGroup);
@@ -808,6 +903,7 @@ export function createOfficeCharacter(
   const torsoMesh = new THREE.Mesh(torsoGeo, skinMaterial);
   torsoGroup.add(torsoMesh);
 
+  // 胸口状态指示灯方块（0.0625 × 0.0625 × 0.03125）
   const badgeLedGeo = createSolidColorVoxelGeometry([
     {
       minX: -0.03125,
@@ -823,14 +919,16 @@ export function createOfficeCharacter(
   badgeLedMesh.position.set(0.125, 0.4375, 0.140625);
   torsoGroup.add(badgeLedMesh);
 
+  // 头部组：枢轴位于颈部 (0, 0.625, 0)（世界 y = 1.00），头方块覆盖 y = 1.00..1.50
   const headGroup = new THREE.Group();
   headGroup.position.set(0, 0.625, 0);
   torsoGroup.add(headGroup);
 
-  const headGeo = createLayeredHeadGeometry();
+  const headGeo = createSkinnedVoxelBox(0.5, 0.5, 0.5, HEAD_UV, [0, 0.25, 0]);
   const headMesh = new THREE.Mesh(headGeo, skinMaterial);
   headGroup.add(headMesh);
 
+  // 三种体素头饰（每种合批为 1 个 Mesh，运行期仅显示 1 个）
   const visorMesh = new THREE.Mesh(createVisorGeometry(accentHex), visorMaterial);
   const glassesMesh = new THREE.Mesh(createGlassesGeometry(), accessoryMaterial);
   const headsetMesh = new THREE.Mesh(createHeadsetGeometry(accentHex), accessoryMaterial);
@@ -838,6 +936,7 @@ export function createOfficeCharacter(
   headGroup.add(glassesMesh);
   headGroup.add(headsetMesh);
 
+  // 左右双臂：枢轴位于肩部 (±0.375, 0.50, 0)（世界 y = 0.875），各 0.25 × 0.625 × 0.25
   const leftArmGroup = new THREE.Group();
   leftArmGroup.position.set(0.375, 0.5, 0);
   torsoGroup.add(leftArmGroup);
@@ -858,11 +957,15 @@ export function createOfficeCharacter(
   const rightArmMesh = new THREE.Mesh(rightArmGeo, skinMaterial);
   rightArmGroup.add(rightArmMesh);
 
+  // 右手手持方块咖啡杯（默认隐藏，接咖啡/喝咖啡/端杯回座期间显示，复用 accessoryMaterial 零新增材质）
   const handMugMesh = new THREE.Mesh(createHandCoffeeMugGeometry(), accessoryMaterial);
   handMugMesh.name = 'character-hand-coffee-mug';
   handMugMesh.visible = false;
   rightArmGroup.add(handMugMesh);
 
+  // 左右独立腿部关节（支持坐姿 -90° 前伸、0.4s 坐站过渡、走路 ±30° 交替摆腿，复用共享皮肤材质）：
+  // 站立时 legsGroup 位于 y = 0.625，腿盒覆盖 [-0.625, 0] 使鞋底精准贴地 y = 0；
+  // 坐姿时 legsGroup 位于 (0, 0.50, -0.0625) 且左右腿旋转 -Math.PI/2，覆盖 y ∈ [0.375, 0.625]，与椅面/桌面零穿模。
   const legsGroup = new THREE.Group();
   legsGroup.position.set(0, 0.5, -0.0625);
   root.add(legsGroup);
@@ -885,6 +988,7 @@ export function createOfficeCharacter(
   const rightLegMesh = new THREE.Mesh(rightLegGeo, skinMaterial);
   rightLegGroup.add(rightLegMesh);
 
+  // 统一打标命中元数据与阴影开关
   tagCharacterTree(root, session.sessionKey);
 
   const rig: OfficeCharacterRig = {
@@ -904,7 +1008,6 @@ export function createOfficeCharacter(
     leftLegMesh,
     rightLegMesh,
     handMugMesh,
-    shadowMesh,
     visorMesh,
     glassesMesh,
     headsetMesh,
@@ -937,6 +1040,7 @@ export function updateOfficeCharacter(
   rig.availability = session.availability;
   rig.posture = session.persona.posture;
 
+  // 若衬衫或主题强调色变化，原地重绘 64×64 像素皮肤并更新头饰强调色
   const shirtHex = session.persona.avatarTone || palette.accentHex;
   const accentHex = session.persona.deskAccent || palette.accentHex;
   const skinSignature = `${session.sessionKey}|${shirtHex}|${accentHex}`;
@@ -953,11 +1057,13 @@ export function updateOfficeCharacter(
     rig.headsetMesh.geometry = createHeadsetGeometry(accentHex);
   }
 
+  // 头饰三选一，始终仅有 1 个可见 Draw Call
   const visorStyle = session.persona.visorStyle;
   rig.visorMesh.visible = visorStyle === 'visor';
   rig.glassesMesh.visible = visorStyle === 'glasses';
   rig.headsetMesh.visible = visorStyle === 'headset';
 
+  // 根据会话可用状态同步皮肤色调与胸口 LED 状态灯
   if (session.availability === 'exited') {
     rig.skinMaterial.color.set('#9aa5b4');
     rig.accessoryMaterial.color.set('#9aa5b4');
@@ -978,22 +1084,23 @@ export function updateOfficeCharacter(
     rig.visorMaterial.color.set('#ffffff');
     rig.badgeLedMaterial.color.set(palette.accentHex);
     rig.badgeLedMaterial.emissive.set(palette.accentHex);
-    rig.badgeLedMaterial.emissiveIntensity = 1.1;
+    rig.badgeLedMaterial.emissiveIntensity = 1.05;
   } else {
     rig.skinMaterial.color.set('#ffffff');
     rig.accessoryMaterial.color.set('#ffffff');
     rig.visorMaterial.color.set('#ffffff');
     rig.badgeLedMaterial.color.set(palette.successHex);
     rig.badgeLedMaterial.emissive.set(palette.successHex);
-    rig.badgeLedMaterial.emissiveIntensity = 1.15;
+    rig.badgeLedMaterial.emissiveIntensity = 1.0;
   }
 
+  // 若角色正在走动或执行行为动画，保持当前姿态不被悬停/选中重同步打断
   animateOfficeCharacter(rig, rig.lastElapsedSec, rig.lastReducedMotion, rig.activePose);
 }
 
 const WALK_LEG_SWING_RAD = THREE.MathUtils.degToRad(30);
 const WALK_ARM_SWING_RAD = THREE.MathUtils.degToRad(22);
-const WALK_BODY_BOB = 0.024;
+const WALK_BODY_BOB = 0.02;
 const SEATED_TORSO_Y = 0.375;
 const STANDING_TORSO_Y = 0.625;
 const SEATED_LEGS_Y = 0.5;
@@ -1012,14 +1119,13 @@ export function animateOfficeCharacter(
 
   const t = elapsedSec + rig.phaseOffset;
 
+  // 非坐姿行为动画（仅在非 reducedMotion 且存在活动行为时生效，全程零临时对象分配）
   if (!reducedMotion && pose && pose.phase !== 'seated') {
     const stand = pose.standBlend;
     rig.handMugMesh.visible = pose.holdingCoffee;
-    rig.shadowMesh.visible = true;
-    rig.shadowMesh.position.set(0, 0.012, 0);
-    rig.shadowMesh.scale.set(0.95, 1, 0.95);
 
     if (pose.phase === 'standing_up' || pose.phase === 'sitting_down') {
+      // 坐 ⇄ 站 约 0.4s 平滑过渡（腿部折叠/展开、躯干升降、双臂由敲键垂落）
       const torsoY = SEATED_TORSO_Y + (STANDING_TORSO_Y - SEATED_TORSO_Y) * stand;
       const legsY = SEATED_LEGS_Y + (STANDING_LEGS_Y - SEATED_LEGS_Y) * stand;
       const legsZ = SEATED_LEGS_Z * (1 - stand);
@@ -1042,6 +1148,7 @@ export function animateOfficeCharacter(
     }
 
     if (pose.phase === 'brewing_coffee') {
+      // 面向咖啡机：右臂前伸取杯，到达后半段杯方块出现在手上并略微收回
       const p = pose.actionProgress;
       let reach = 0;
       if (p < 0.3) {
@@ -1068,6 +1175,7 @@ export function animateOfficeCharacter(
     }
 
     if (pose.phase === 'drinking_coffee') {
+      // 举杯喝两口：右臂两次举向嘴边、内收对准口部，头部轻微上仰
       const sipSlot = (pose.actionProgress * 2) % 1;
       const sip = sipSlot > 0.1 && sipSlot < 0.9
         ? Math.sin(((sipSlot - 0.1) / 0.8) * Math.PI)
@@ -1086,6 +1194,7 @@ export function animateOfficeCharacter(
     }
 
     if (pose.phase === 'stroll_pause') {
+      // 散步路点停顿观望：自然呼吸 + 左右缓慢环顾
       const breath = Math.sin(t * 2.0) * 0.015;
       const lookYaw = Math.sin(pose.actionProgress * Math.PI * 2 + rig.phaseOffset) * 0.28;
 
@@ -1101,6 +1210,7 @@ export function animateOfficeCharacter(
       return;
     }
 
+    // 走路循环：双腿前后摆 ±30°、双臂反向摆 ±22°、身体上下微颠 0.02
     const wb = pose.walkBlend;
     const strideSin = Math.sin(pose.walkPhase);
     const legSwing = strideSin * WALK_LEG_SWING_RAD * wb;
@@ -1108,7 +1218,7 @@ export function animateOfficeCharacter(
     const bob = Math.abs(strideSin) * WALK_BODY_BOB * wb;
 
     rig.torsoGroup.position.set(0, STANDING_TORSO_Y + bob, 0);
-    rig.torsoGroup.rotation.set(0.035 * wb, 0, 0);
+    rig.torsoGroup.rotation.set(0.03 * wb, 0, 0);
     rig.headGroup.rotation.set(0.02 * wb, Math.sin(t * 1.1) * 0.06, 0);
     rig.legsGroup.position.set(0, STANDING_LEGS_Y, 0);
     rig.legsGroup.rotation.set(0, 0, 0);
@@ -1116,6 +1226,7 @@ export function animateOfficeCharacter(
     rig.rightLegGroup.rotation.set(-legSwing, 0, 0);
     rig.leftArmGroup.rotation.set(-armSwing, 0, 0);
     if (pose.holdingCoffee) {
+      // 端着咖啡杯慢走回座：右臂前平端稳杯子，随步态小幅柔和起伏
       rig.rightArmGroup.rotation.set(-1.24 + strideSin * 0.05 * wb, 0, 0.1);
     } else {
       rig.rightArmGroup.rotation.set(armSwing, 0, 0);
@@ -1123,8 +1234,7 @@ export function animateOfficeCharacter(
     return;
   }
 
-  // 坐姿基准（座椅下方已有工位合批接触阴影，此处隐藏避免双层叠加）
-  rig.shadowMesh.visible = false;
+  // 坐姿基准：躯干落于椅面 y = 0.375，双腿精确 -90° 前伸且不持杯
   rig.handMugMesh.visible = false;
   rig.torsoGroup.position.set(0, SEATED_TORSO_Y, 0);
   rig.legsGroup.position.set(0, SEATED_LEGS_Y, SEATED_LEGS_Z);
@@ -1133,6 +1243,7 @@ export function animateOfficeCharacter(
   rig.rightLegGroup.rotation.set(-Math.PI / 2, 0, 0);
 
   if (rig.availability === 'exited') {
+    // 退出状态：微微低头、双手静置桌面边缘上方（严格高于桌面 y = 0.746，零穿模）
     rig.torsoGroup.rotation.set(0.06, 0, 0);
     rig.headGroup.rotation.set(0.28, 0, 0);
     rig.leftArmGroup.rotation.set(-1.64, 0, 0);
@@ -1141,6 +1252,7 @@ export function animateOfficeCharacter(
   }
 
   if (rig.availability === 'unavailable') {
+    // 不可用/保留标识状态：微低头待机
     rig.torsoGroup.rotation.set(0, 0, 0);
     rig.headGroup.rotation.set(0.1, 0, 0);
     rig.leftArmGroup.rotation.set(-Math.PI / 2, 0, 0);
@@ -1149,6 +1261,7 @@ export function animateOfficeCharacter(
   }
 
   if (reducedMotion) {
+    // 减弱动态模式：保持坐姿不位移
     rig.torsoGroup.rotation.set(0, 0, 0);
     rig.headGroup.rotation.set(0, 0, 0);
     rig.leftArmGroup.rotation.set(-Math.PI / 2, 0, 0);
@@ -1160,28 +1273,29 @@ export function animateOfficeCharacter(
 
   if (rig.posture === 'typing') {
     const isInteractive = rig.availability === 'interactive';
-    const speed = isInteractive ? 9.6 : 6.4;
-    const amp = isInteractive ? 0.056 : 0.038;
-    const burst = 0.65 + 0.35 * Math.sin(t * 1.4);
-    const leftArmX = -1.67 + Math.sin(t * speed) * amp * burst;
-    const rightArmX = -1.67 + Math.sin(t * speed + Math.PI) * amp * burst;
-    const headYaw = Math.sin(t * 1.25) * 0.08;
-    const headPitch = 0.04 + Math.sin(t * 2.5) * 0.025;
+    const speed = isInteractive ? 9.5 : 6.5;
+    const amp = isInteractive ? 0.055 : 0.04;
+    // 以 -1.67 rad 为基准上下交替敲击键盘，叠加躯干前倾后最低点仍高于桌面 y = 0.746（零穿模）
+    const leftArmX = -1.67 + Math.sin(t * speed) * amp;
+    const rightArmX = -1.67 + Math.sin(t * speed + Math.PI) * amp;
+    const headYaw = Math.sin(t * 1.35) * 0.07;
+    const headPitch = 0.04 + Math.sin(t * 2.7) * 0.025;
 
     rig.torsoGroup.rotation.set(0.03 + breath, headYaw * 0.18, 0);
     rig.headGroup.rotation.set(headPitch, headYaw, 0);
     rig.leftArmGroup.rotation.set(leftArmX, 0, 0);
     rig.rightArmGroup.rotation.set(rightArmX, 0, 0);
   } else if (rig.posture === 'reading') {
-    const headNod = Math.sin(t * 2.1) * 0.04;
-    const headYaw = Math.sin(t * 0.85) * 0.09;
+    const headNod = Math.sin(t * 2.2) * 0.04;
+    const headYaw = Math.sin(t * 0.85) * 0.08;
 
     rig.torsoGroup.rotation.set(-0.02 + breath, 0, 0);
     rig.headGroup.rotation.set(-0.02 + headNod, headYaw, 0);
     rig.leftArmGroup.rotation.set(-1.6 + Math.sin(t * 1.8) * 0.02, 0, 0);
     rig.rightArmGroup.rotation.set(-1.62 + Math.sin(t * 2.4 + 1.2) * 0.03, 0, 0);
   } else {
-    const glance = Math.sin(t * 0.95) * 0.1;
+    // monitoring：平缓扫视屏幕与柔和手部起伏
+    const glance = Math.sin(t * 0.95) * 0.09;
 
     rig.torsoGroup.rotation.set(0.01 + breath, glance * 0.12, 0);
     rig.headGroup.rotation.set(0.01, glance, 0);
@@ -1199,7 +1313,6 @@ export function disposeOfficeCharacter(rig: OfficeCharacterRig): void {
     rig.leftLegMesh.geometry,
     rig.rightLegMesh.geometry,
     rig.handMugMesh.geometry,
-    rig.shadowMesh.geometry,
     rig.visorMesh.geometry,
     rig.glassesMesh.geometry,
     rig.headsetMesh.geometry,

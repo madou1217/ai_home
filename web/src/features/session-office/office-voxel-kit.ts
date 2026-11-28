@@ -8,11 +8,12 @@ import {
 
 /**
  * 可复用的 Minecraft 体素套件：
- * - 方块橡树与白桦树（原木树干 + 分层阶梯树冠）
+ * - 方块橡树（原木树干 + 阶梯树冠）
  * - 书架柱
- * - 地面贴地发光工位选中角标框（不遮挡近距读屏视野）与传统 12 棱描边框
- * - Minecraft 风格木箱与精细铁链吊挂灯笼
- * - 阶梯分层方块云群、远空星点与接触阴影合批面片
+ * - 12 根长方体拼成的发光描边方框（工位选中框 / 显示器编辑框）
+ * - Minecraft 风格木箱（邮件托盘）
+ * - 吊挂灯笼（铁框 + 暖光芯）
+ * - 方块云群、方块太阳/月亮、方块星点
  * - 3 段直线折线脉冲轨道与粒子采样器
  */
 
@@ -46,7 +47,7 @@ export function addOakTreeToGrid(
   }
 
   const canopyBase = baseY + trunkHeight - 1;
-  // 底部两层 5×5（去掉部分四角形成自然方块层次）
+  // 底部两层 5×5（去掉四角增强方块树冠轮廓）
   for (let dy = 0; dy <= 1; dy += 1) {
     for (let dx = -2; dx <= 2; dx += 1) {
       for (let dz = -2; dz <= 2; dz += 1) {
@@ -73,56 +74,6 @@ export function addOakTreeToGrid(
   grid.set(tx, canopyBase + 3, tz + 1, leafSpec);
 }
 
-/** 在整数网格中种植一棵轻盈明快的 Minecraft 白桦树 */
-export function addBirchTreeToGrid(
-  grid: VoxelGrid,
-  tx: number,
-  baseY: number,
-  tz: number,
-  trunkHeight = 5,
-  seed = 73
-): void {
-  const rng = { value: seed >>> 0 };
-  const logSpec = {
-    tiles: { top: 'birch_log_top' as const, bottom: 'birch_log_top' as const, side: 'birch_log_side' as const },
-    layer: 'opaque' as const,
-  };
-  const leafSpec = {
-    tiles: 'birch_leaves' as const,
-    layer: 'cutout' as const,
-    occludes: false,
-  };
-
-  for (let y = 0; y < trunkHeight; y += 1) {
-    grid.set(tx, baseY + y, tz, logSpec);
-  }
-
-  const canopyBase = baseY + trunkHeight - 2;
-  for (let dy = 0; dy <= 1; dy += 1) {
-    for (let dx = -2; dx <= 2; dx += 1) {
-      for (let dz = -2; dz <= 2; dz += 1) {
-        if (dx === 0 && dz === 0) continue;
-        const isCorner = Math.abs(dx) === 2 && Math.abs(dz) === 2;
-        if (isCorner && (dy === 1 || seededNext(rng) > 0.45)) continue;
-        grid.set(tx + dx, canopyBase + dy, tz + dz, leafSpec);
-      }
-    }
-  }
-  for (let dx = -1; dx <= 1; dx += 1) {
-    for (let dz = -1; dz <= 1; dz += 1) {
-      if (dx === 0 && dz === 0) continue;
-      if (Math.abs(dx) === 1 && Math.abs(dz) === 1 && seededNext(rng) > 0.4) continue;
-      grid.set(tx + dx, canopyBase + 2, tz + dz, leafSpec);
-    }
-  }
-  grid.set(tx, canopyBase + 2, tz, leafSpec);
-  grid.set(tx, canopyBase + 3, tz, leafSpec);
-  grid.set(tx - 1, canopyBase + 3, tz, leafSpec);
-  grid.set(tx + 1, canopyBase + 3, tz, leafSpec);
-  grid.set(tx, canopyBase + 3, tz - 1, leafSpec);
-  grid.set(tx, canopyBase + 3, tz + 1, leafSpec);
-}
-
 /** 在整数网格中放置一列书架 */
 export function addBookshelfColumnToGrid(
   grid: VoxelGrid,
@@ -141,51 +92,8 @@ export function addBookshelfColumnToGrid(
 }
 
 /**
- * 构建贴地式工位高亮围框 + 四角低矮发光立标（合批为 1 个 BufferGeometry）：
- * - 在等距/全景/走廊视角下清晰标示当前选中的工位边界；
- * - 绝不向高空伸出遮挡显示器屏幕的横杆，近距读屏也能保持优雅。
- */
-export function createStationSelectionFrameGeometry(
-  width: number,
-  depth: number,
-  barThickness = 0.028,
-  cornerPostHeight = 0.14
-): THREE.BufferGeometry {
-  const hw = width * 0.5;
-  const hd = depth * 0.5;
-  const t = barThickness;
-  const ht = t * 0.5;
-  const y0 = 0.036;
-  const y1 = y0 + t * 0.72;
-  const cornerSpan = Math.min(0.32, Math.min(width, depth) * 0.22);
-
-  const bars: SolidColorBoxInput[] = [
-    // 四边贴地发光围框
-    { minX: -hw - ht, minY: y0, minZ: -hd - ht, maxX: hw + ht, maxY: y1, maxZ: -hd + ht, shadeFaces: false },
-    { minX: -hw - ht, minY: y0, minZ: hd - ht, maxX: hw + ht, maxY: y1, maxZ: hd + ht, shadeFaces: false },
-    { minX: -hw - ht, minY: y0, minZ: -hd + ht, maxX: -hw + ht, maxY: y1, maxZ: hd - ht, shadeFaces: false },
-    { minX: hw - ht, minY: y0, minZ: -hd + ht, maxX: hw + ht, maxY: y1, maxZ: hd - ht, shadeFaces: false },
-    // 四角加厚 L 型折角护块与低矮立柱，强化 Minecraft 体素选择框质感
-    { minX: -hw - t, minY: y0, minZ: -hd - t, maxX: -hw + cornerSpan, maxY: y1 + 0.012, maxZ: -hd + ht, shadeFaces: false },
-    { minX: -hw - t, minY: y0, minZ: -hd - t, maxX: -hw + ht, maxY: y1 + 0.012, maxZ: -hd + cornerSpan, shadeFaces: false },
-    { minX: hw - cornerSpan, minY: y0, minZ: -hd - t, maxX: hw + t, maxY: y1 + 0.012, maxZ: -hd + ht, shadeFaces: false },
-    { minX: hw - ht, minY: y0, minZ: -hd - t, maxX: hw + t, maxY: y1 + 0.012, maxZ: -hd + cornerSpan, shadeFaces: false },
-    { minX: -hw - t, minY: y0, minZ: hd - ht, maxX: -hw + cornerSpan, maxY: y1 + 0.012, maxZ: hd + t, shadeFaces: false },
-    { minX: -hw - t, minY: y0, minZ: hd - cornerSpan, maxX: -hw + ht, maxY: y1 + 0.012, maxZ: hd + t, shadeFaces: false },
-    { minX: hw - cornerSpan, minY: y0, minZ: hd - ht, maxX: hw + t, maxY: y1 + 0.012, maxZ: hd + t, shadeFaces: false },
-    { minX: hw - ht, minY: y0, minZ: hd - cornerSpan, maxX: hw + t, maxY: y1 + 0.012, maxZ: hd + t, shadeFaces: false },
-    // 四角低矮体素标柱
-    { minX: -hw - t, minY: y1, minZ: -hd - t, maxX: -hw + ht, maxY: y0 + cornerPostHeight, maxZ: -hd + ht, shadeFaces: false },
-    { minX: hw - ht, minY: y1, minZ: -hd - t, maxX: hw + t, maxY: y0 + cornerPostHeight, maxZ: -hd + ht, shadeFaces: false },
-    { minX: -hw - t, minY: y1, minZ: hd - ht, maxX: -hw + ht, maxY: y0 + cornerPostHeight, maxZ: hd + t, shadeFaces: false },
-    { minX: hw - ht, minY: y1, minZ: hd - ht, maxX: hw + t, maxY: y0 + cornerPostHeight, maxZ: hd + t, shadeFaces: false },
-  ];
-
-  return createSolidColorVoxelGeometry(bars);
-}
-
-/**
  * 用 12 根细长轴对齐方体拼成一个发光描边方框（合批为 1 个 BufferGeometry）。
+ * 方框围绕原点居中于 X/Z，底部从 y = 0 到 y = height（或居中于 Y，由 centerY 控制）。
  */
 export function createWireframeBoxGeometry(
   width: number,
@@ -202,14 +110,17 @@ export function createWireframeBoxGeometry(
   const ht = t * 0.5;
 
   const bars: SolidColorBoxInput[] = [
+    // 底面 4 边
     { minX: -hw - ht, minY: yMin, minZ: -hd - ht, maxX: hw + ht, maxY: yMin + t, maxZ: -hd + ht, shadeFaces: false },
     { minX: -hw - ht, minY: yMin, minZ: hd - ht, maxX: hw + ht, maxY: yMin + t, maxZ: hd + ht, shadeFaces: false },
     { minX: -hw - ht, minY: yMin, minZ: -hd + ht, maxX: -hw + ht, maxY: yMin + t, maxZ: hd - ht, shadeFaces: false },
     { minX: hw - ht, minY: yMin, minZ: -hd + ht, maxX: hw + ht, maxY: yMin + t, maxZ: hd - ht, shadeFaces: false },
+    // 顶面 4 边
     { minX: -hw - ht, minY: yMax - t, minZ: -hd - ht, maxX: hw + ht, maxY: yMax, maxZ: -hd + ht, shadeFaces: false },
     { minX: -hw - ht, minY: yMax - t, minZ: hd - ht, maxX: hw + ht, maxY: yMax, maxZ: hd + ht, shadeFaces: false },
     { minX: -hw - ht, minY: yMax - t, minZ: -hd + ht, maxX: -hw + ht, maxY: yMax, maxZ: hd - ht, shadeFaces: false },
     { minX: hw - ht, minY: yMax - t, minZ: -hd + ht, maxX: hw + ht, maxY: yMax, maxZ: hd - ht, shadeFaces: false },
+    // 4 根立柱
     { minX: -hw - ht, minY: yMin + t, minZ: -hd - ht, maxX: -hw + ht, maxY: yMax - t, maxZ: -hd + ht, shadeFaces: false },
     { minX: hw - ht, minY: yMin + t, minZ: -hd - ht, maxX: hw + ht, maxY: yMax - t, maxZ: -hd + ht, shadeFaces: false },
     { minX: -hw - ht, minY: yMin + t, minZ: hd - ht, maxX: -hw + ht, maxY: yMax - t, maxZ: hd + ht, shadeFaces: false },
@@ -217,43 +128,6 @@ export function createWireframeBoxGeometry(
   ];
 
   return createSolidColorVoxelGeometry(bars);
-}
-
-/** 构建合批的静态平面接触阴影几何（若干贴地矩形面片合批为 1 次 Draw Call） */
-export function createBatchedContactShadowGeometry(
-  quads: ReadonlyArray<{ cx: number; cz: number; width: number; depth: number; y?: number }>
-): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const uvs: number[] = [];
-  const indices: number[] = [];
-
-  for (let i = 0; i < quads.length; i += 1) {
-    const q = quads[i];
-    const hw = q.width * 0.5;
-    const hd = q.depth * 0.5;
-    const y = q.y ?? 0.006;
-    const base = positions.length / 3;
-
-    positions.push(
-      q.cx - hw, y, q.cz + hd,
-      q.cx + hw, y, q.cz + hd,
-      q.cx + hw, y, q.cz - hd,
-      q.cx - hw, y, q.cz - hd
-    );
-    normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
-    uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geo.setIndex(indices);
-  geo.computeBoundingBox();
-  geo.computeBoundingSphere();
-  return geo;
 }
 
 /** 构建经典 Minecraft 木箱几何（箱体 + 正面突出锁扣，底部位于 y = 0） */
@@ -282,6 +156,7 @@ export function createVoxelChestGeometry(
     },
     floorY: 0,
   });
+  // 正面锁扣凸块
   const latchW = 0.0625;
   const latchH = 0.0625;
   builder.addBox({
@@ -297,83 +172,51 @@ export function createVoxelChestGeometry(
   return builder.build(true);
 }
 
-/** 构建精细 Minecraft 吊挂灯笼几何（分段铁链 + 阶梯顶帽 + 笼框底座 + 发光灯芯） */
+/** 构建悬吊灯笼几何（返回铁链顶盖框架几何 + 发光核心几何，原点在悬挂点顶部） */
 export function createVoxelLanternGeometry(chainLength = 0.5): {
   frameGeo: THREE.BufferGeometry;
   glowGeo: THREE.BufferGeometry;
 } {
   const frameBuilder = new VoxelBoxBuilder();
-  // 铁链分段节环
-  const linkStep = 0.125;
-  const linkCount = Math.max(1, Math.round(chainLength / linkStep));
-  for (let i = 0; i < linkCount; i += 1) {
-    const yTop = -i * (chainLength / linkCount);
-    const yBot = -(i + 1) * (chainLength / linkCount);
-    const wideX = i % 2 === 0;
-    frameBuilder.addBox({
-      minX: wideX ? -0.046875 : -0.0234375,
-      minY: yBot,
-      minZ: wideX ? -0.0234375 : -0.046875,
-      maxX: wideX ? 0.046875 : 0.0234375,
-      maxY: yTop,
-      maxZ: wideX ? 0.0234375 : 0.046875,
-      tiles: 'dark_iron',
-      occludes: false,
-    });
-  }
-  // 阶梯状灯笼提环与顶帽
+  // 细长铁链立柱
   frameBuilder.addBox({
-    minX: -0.09375,
-    minY: -chainLength - 0.046875,
-    minZ: -0.09375,
-    maxX: 0.09375,
+    minX: -0.03125,
+    minY: -chainLength,
+    minZ: -0.03125,
+    maxX: 0.03125,
+    maxY: 0,
+    maxZ: 0.03125,
+    tiles: 'dark_iron',
+  });
+  // 灯笼顶帽
+  frameBuilder.addBox({
+    minX: -0.125,
+    minY: -chainLength - 0.0625,
+    minZ: -0.125,
+    maxX: 0.125,
     maxY: -chainLength,
-    maxZ: 0.09375,
+    maxZ: 0.125,
     tiles: 'dark_iron',
   });
-  frameBuilder.addBox({
-    minX: -0.15625,
-    minY: -chainLength - 0.09375,
-    minZ: -0.15625,
-    maxX: 0.15625,
-    maxY: -chainLength - 0.046875,
-    maxZ: 0.15625,
-    tiles: 'dark_iron',
-  });
-  // 灯笼底托与四角立筋
+  // 灯笼底托
   frameBuilder.addBox({
     minX: -0.1875,
-    minY: -chainLength - 0.40625,
+    minY: -chainLength - 0.375,
     minZ: -0.1875,
     maxX: 0.1875,
-    maxY: -chainLength - 0.34375,
+    maxY: -chainLength - 0.3125,
     maxZ: 0.1875,
     tiles: 'dark_iron',
   });
-  const cornerOff = 0.140625;
-  for (const sx of [-1, 1] as const) {
-    for (const sz of [-1, 1] as const) {
-      frameBuilder.addCenteredBox(
-        sx * cornerOff,
-        -chainLength - 0.21875,
-        sz * cornerOff,
-        0.046875,
-        0.25,
-        0.046875,
-        'dark_iron',
-        { occludes: false }
-      );
-    }
-  }
 
   const glowBuilder = new VoxelBoxBuilder();
   glowBuilder.addBox({
-    minX: -0.140625,
-    minY: -chainLength - 0.34375,
-    minZ: -0.140625,
-    maxX: 0.140625,
-    maxY: -chainLength - 0.09375,
-    maxZ: 0.140625,
+    minX: -0.15625,
+    minY: -chainLength - 0.3125,
+    minZ: -0.15625,
+    maxX: 0.15625,
+    maxY: -chainLength - 0.0625,
+    maxZ: 0.15625,
     tiles: 'lantern',
   });
 
@@ -383,7 +226,7 @@ export function createVoxelLanternGeometry(chainLength = 0.5): {
   };
 }
 
-/** 构建漂浮在岛屿外侧环带中的双层立体 Minecraft 方块云群（单次合批 Draw Call） */
+/** 构建漂浮在岛屿外侧环带中的紧凑 Minecraft 方块云群（单次合批 Draw Call，绝不覆盖岛屿正上方） */
 export function createBlockyCloudRingGeometry(
   minVertexRadius: number,
   maxVertexRadius: number,
@@ -392,21 +235,21 @@ export function createBlockyCloudRingGeometry(
 ): THREE.BufferGeometry {
   const rng = { value: seed >>> 0 };
   const boxes: SolidColorBoxInput[] = [];
-  const safeMinCenterR = Math.max(9, minVertexRadius + 2.8);
-  const safeMaxCenterR = Math.max(safeMinCenterR + 5, maxVertexRadius - 2.4);
+  const safeMinCenterR = Math.max(8, minVertexRadius + 2.6);
+  const safeMaxCenterR = Math.max(safeMinCenterR + 4, maxVertexRadius - 2.2);
   const radiusSpan = safeMaxCenterR - safeMinCenterR;
   const count = Math.max(1, cloudCount);
   const sectorStep = (Math.PI * 2) / count;
 
   for (let i = 0; i < count; i += 1) {
-    const angle = i * sectorStep + (seededNext(rng) - 0.5) * sectorStep * 0.6;
+    const angle = i * sectorStep + (seededNext(rng) - 0.5) * sectorStep * 0.62;
     const radial = safeMinCenterR + seededNext(rng) * radiusSpan;
     const cx = Math.cos(angle) * radial;
     const cz = Math.sin(angle) * radial;
-    const cy = (seededNext(rng) - 0.5) * 1.8;
-    const w = 2.0 + seededNext(rng) * 1.9;
-    const d = 1.2 + seededNext(rng) * 1.1;
-    const h = 0.48;
+    const cy = (seededNext(rng) - 0.5) * 1.4;
+    const w = 1.75 + seededNext(rng) * 1.5;
+    const d = 1.05 + seededNext(rng) * 0.95;
+    const h = 0.44;
 
     boxes.push({
       minX: cx - w * 0.5,
@@ -419,12 +262,12 @@ export function createBlockyCloudRingGeometry(
       shadeFaces: true,
     });
 
-    // 侧翼延伸体素块
-    if (seededNext(rng) > 0.25) {
-      const wingW = Math.max(1.0, w * (0.45 + seededNext(rng) * 0.2));
-      const wingD = Math.max(0.8, d * (0.52 + seededNext(rng) * 0.2));
-      const offX = (seededNext(rng) > 0.5 ? 1 : -1) * (w * 0.24);
-      const offZ = (seededNext(rng) > 0.5 ? 1 : -1) * (d * 0.36);
+    // 附加小巧侧翼方块，保留经典方块云轮廓同时严格限制单块体积
+    if (seededNext(rng) > 0.35) {
+      const wingW = Math.max(0.95, w * (0.42 + seededNext(rng) * 0.16));
+      const wingD = Math.max(0.75, d * (0.5 + seededNext(rng) * 0.18));
+      const offX = (seededNext(rng) > 0.5 ? 1 : -1) * (w * 0.22);
+      const offZ = (seededNext(rng) > 0.5 ? 1 : -1) * (d * 0.38);
       boxes.push({
         minX: cx + offX - wingW * 0.5,
         minY: cy,
@@ -432,22 +275,6 @@ export function createBlockyCloudRingGeometry(
         maxX: cx + offX + wingW * 0.5,
         maxY: cy + h,
         maxZ: cz + offZ + wingD * 0.5,
-        color: '#f5f9ff',
-        shadeFaces: true,
-      });
-    }
-
-    // 顶层微凸云冠，呈现经典立体方块云体积感
-    if (seededNext(rng) > 0.45) {
-      const capW = w * 0.52;
-      const capD = d * 0.55;
-      boxes.push({
-        minX: cx - capW * 0.5,
-        minY: cy + h,
-        minZ: cz - capD * 0.5,
-        maxX: cx + capW * 0.5,
-        maxY: cy + h + 0.3,
-        maxZ: cz + capD * 0.5,
         color: '#ffffff',
         shadeFaces: true,
       });
@@ -469,11 +296,11 @@ export function createBlockyCloudGeometry(
   return createBlockyCloudRingGeometry(inner, outer, cloudCount, seed);
 }
 
-/** 构建夜晚高空方块星点群（单次合批 Draw Call，含暖白/浅蓝星色层次） */
+/** 构建夜晚高空方块星点群（单次合批 Draw Call） */
 export function createStarFieldGeometry(
   minRadius = 28,
   maxRadius = 42,
-  count = 110,
+  count = 88,
   seed = 9001
 ): THREE.BufferGeometry {
   const rng = { value: seed >>> 0 };
@@ -481,15 +308,13 @@ export function createStarFieldGeometry(
 
   for (let i = 0; i < count; i += 1) {
     const theta = seededNext(rng) * Math.PI * 2;
-    const elev = 0.22 + seededNext(rng) * 1.18;
+    const elev = 0.28 + seededNext(rng) * 1.12;
     const dist = minRadius + seededNext(rng) * (maxRadius - minRadius);
     const x = Math.cos(theta) * Math.cos(elev) * dist;
     const y = Math.sin(elev) * dist + 4;
     const z = Math.sin(theta) * Math.cos(elev) * dist;
-    const size = seededNext(rng) > 0.78 ? 0.3 : seededNext(rng) > 0.4 ? 0.2 : 0.14;
+    const size = seededNext(rng) > 0.75 ? 0.25 : 0.16;
     const half = size * 0.5;
-    const tintRoll = seededNext(rng);
-    const color = tintRoll > 0.82 ? '#bae6fd' : tintRoll > 0.66 ? '#fef3c7' : '#ffffff';
     boxes.push({
       minX: x - half,
       minY: y - half,
@@ -497,7 +322,7 @@ export function createStarFieldGeometry(
       maxX: x + half,
       maxY: y + half,
       maxZ: z + half,
-      color,
+      color: seededNext(rng) > 0.8 ? '#cfe6ff' : '#ffffff',
       shadeFaces: false,
     });
   }
@@ -505,7 +330,7 @@ export function createStarFieldGeometry(
   return createSolidColorVoxelGeometry(boxes);
 }
 
-/** 构建 3 段直线折线轨道几何（轴对齐长方体） */
+/** 构建 3 段直线折线轨道几何（替代旧 CatmullRom 弧线，全部轴对齐长方体） */
 export function createRectilinearPulseGuideGeometry(
   points: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
   thickness = 0.015625

@@ -31,6 +31,8 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 
 // decode 只解析一次请求，同时建立 Canonical 与协议回显两个互不污染的投影。
 func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
+	// Codex 客户端私有字段在派生 DTO 之前统一剥离，避免不同输入项类型各放行一次。
+	body = scrubClientInputFields(body)
 	wireRequest, err := decodeStrict[requestDTO](body, "$")
 	if err != nil {
 		return decodedRequest{}, err

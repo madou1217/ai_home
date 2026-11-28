@@ -1,7 +1,15 @@
 # Paste Lumen V7 — Cross-Platform Native Client Contract
 
-> Applies to **macOS (AppKit/Swift — Phase 1 implemented)**, **Windows (C# WPF)**, and **Linux (GTK4)**.
+> Applies to **macOS (AppKit/Swift — implemented)**, **Windows (C# WPF — implemented)**,
+> and **Linux (GTK4/Adwaita — implemented)**.
 > All clients deliver **100% native UI**: no WebView, WKWebView, WebView2, WebKitGTK, or HTML rendering in any surface.
+>
+> Implementation status (2026-11-28): all three surfaces on all three platforms are
+> implemented under `native/clipboard/` (Swift), `native/clipboard/windows/` (C#) and
+> `native/linux-clipboard/` (Python + GTK4). Verified natively on macOS 27, Windows 11
+> (WPF build + live window against the local server) and Ubuntu 24.04 / GTK 4.22 under
+> Xvfb; the Windows/Linux Quick Look queue, the primary-button styling and the Windows
+> helper build were fixed during that pass.
 
 ---
 

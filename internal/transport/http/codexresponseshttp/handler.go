@@ -168,6 +168,21 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	if err != nil {
+		// JSON 在结尾处不完整（unexpected end of JSON input）不是请求形状错误，
+		// 而是上传被截断：客户端收到的 CL 与实际实体一致，但正文提前结束。
+		// 这属于可重试的传输事实，返回 408 让 Codex 自动重试，而不是不可重试的
+		// 400；同时保持 decode-rejected 标记不置位，避免前置宿主误判为解码缺口。
+		if strings.Contains(err.Error(), "unexpected end of JSON input") {
+			log.Printf(
+				"Codex Responses truncated body: request_id=%s content_length=%d content_encoding=%q err=%v",
+				requestid.FromContext(ctx),
+				request.ContentLength,
+				strings.TrimSpace(request.Header.Get("Content-Encoding")),
+				err,
+			)
+			writeError(response, "request_timeout")
+			return
+		}
 		// 读取/解压/解析都发生在选账号和联系上游之前，属于解码阶段失败；
 		// 标记为解码拒收，供前置宿主识别失败类别。
 		inferenceapi.MarkDecodeRejected(response)

@@ -174,8 +174,9 @@
 
 ## Phase 5 — DNS Guard
 
-- [ ] 严格默认：禁止本地 DNS 直出
-- [ ] 代理端域名解析验证（HTTP CONNECT / socks5h）
+- [x] Linux：nftables nat 链把 cgroup 的 UDP/TCP 53 redirect 到 DoH bridge；AWS 真机 `getent example.com` 成功且代理日志出现 `CONNECT 1.1.1.1:443`
+- [ ] Windows/macOS 的 DNS 严格阻断
+- [x] 代理端域名解析验证：DoH over HTTP CONNECT 真机通过（Linux）
 - [ ] 本地 DoH/DoT 桥：DNS 流量走代理（兼容档）
 - [ ] mDNSResponder / Windows Dnscache 特殊处理
 - [ ] 出口 IP/国家与 DNS 落点一致性验证
@@ -251,12 +252,12 @@
 | macOS CLI strict | 机制+Claude/Codex 真实 API 通过 | 50% | 🚧 Phase 3 |
 | macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
-| DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
+| DNS Guard | Linux redirect→DoH 真机通过 | 30% | 🚧 Phase 5 |
 | LaunchProfile / preflight | App Desk 持久化+预填+代理预检真机通过 | 50% | 🚧 Phase 6 |
 | 统一实例台账 / 可观测 | App Desk Guard + Provider open-app/原生 CLI 台账 | 65% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈38%** | 🚧 |
+| **总目标** | — | **≈40%** | 🚧 |
 
 ---
 
